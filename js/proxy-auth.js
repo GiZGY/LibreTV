@@ -13,23 +13,29 @@ async function getPasswordHash() {
     if (cachedPasswordHash) {
         return cachedPasswordHash;
     }
-    
+
     // 1. 优先从已存储的代理鉴权哈希获取
     const storedHash = localStorage.getItem('proxyAuthHash');
     if (storedHash) {
         cachedPasswordHash = storedHash;
         return storedHash;
     }
-    
+
     // 2. 尝试从密码验证状态获取（password.js 验证后存储的哈希）
-    const passwordVerified = localStorage.getItem('passwordVerified');
-    const storedPasswordHash = localStorage.getItem('passwordHash');
-    if (passwordVerified === 'true' && storedPasswordHash) {
-        localStorage.setItem('proxyAuthHash', storedPasswordHash);
-        cachedPasswordHash = storedPasswordHash;
-        return storedPasswordHash;
+    const passwordVerifiedJson = localStorage.getItem('passwordVerified');
+    if (passwordVerifiedJson) {
+        try {
+            const authData = JSON.parse(passwordVerifiedJson);
+            if (authData && authData.verified && authData.passwordHash) {
+                localStorage.setItem('proxyAuthHash', authData.passwordHash);
+                cachedPasswordHash = authData.passwordHash;
+                return authData.passwordHash;
+            }
+        } catch (e) {
+            console.error('解析密码验证数据失败:', e);
+        }
     }
-    
+
     // 3. 尝试从用户输入的密码生成哈希
     const userPassword = localStorage.getItem('userPassword');
     if (userPassword) {
@@ -44,13 +50,13 @@ async function getPasswordHash() {
             console.error('生成密码哈希失败:', error);
         }
     }
-    
+
     // 4. 如果用户没有设置密码，尝试使用环境变量中的密码哈希
     if (window.__ENV__ && window.__ENV__.PASSWORD) {
         cachedPasswordHash = window.__ENV__.PASSWORD;
         return window.__ENV__.PASSWORD;
     }
-    
+
     return null;
 }
 
@@ -64,13 +70,13 @@ async function addAuthToProxyUrl(url) {
             console.warn('无法获取密码哈希，代理请求可能失败');
             return url;
         }
-        
+
         // 添加时间戳防止重放攻击
         const timestamp = Date.now();
-        
+
         // 检查URL是否已包含查询参数
         const separator = url.includes('?') ? '&' : '?';
-        
+
         return `${url}${separator}auth=${encodeURIComponent(hash)}&t=${timestamp}`;
     } catch (error) {
         console.error('添加代理鉴权失败:', error);
@@ -85,21 +91,21 @@ function validateProxyAuth(authHash, serverPasswordHash, timestamp) {
     if (!authHash || !serverPasswordHash) {
         return false;
     }
-    
+
     // 验证哈希是否匹配
     if (authHash !== serverPasswordHash) {
         return false;
     }
-    
+
     // 验证时间戳（10分钟有效期）
     const now = Date.now();
     const maxAge = 10 * 60 * 1000; // 10分钟
-    
+
     if (timestamp && (now - parseInt(timestamp)) > maxAge) {
         console.warn('代理请求时间戳过期');
         return false;
     }
-    
+
     return true;
 }
 
