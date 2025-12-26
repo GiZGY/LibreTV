@@ -1027,3 +1027,35 @@ body {
         font-size: 0.8rem;
     }
 }
+/* 延迟显示样式 */
+.latency-badge {
+    font-size: 10px;
+    padding: 1px 4px;
+    border-radius: 4px;
+    margin-left: 4px;
+    font-weight: bold;
+}
+
+.latency-low {
+    color: #10b981;
+    background-color: rgba(16, 185, 129, 0.1);
+}
+
+.latency-medium {
+    color: #f59e0b;
+    background-color: rgba(245, 158, 11, 0.1);
+}
+
+.latency-high {
+    color: #ef4444;
+    background-color: rgba(239, 68, 68, 0.1);
+}
+
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+.animate-spin {
+    animation: spin 1s linear infinite;
+}
