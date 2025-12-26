@@ -10,6 +10,36 @@ let currentEpisodes = [];
 let currentVideoTitle = '';
 // 全局变量用于倒序状态
 let episodesReversed = false;
+// 存储API延迟数据（从localStorage加载缓存）
+let apiLatencies = {};
+let latencyTestTime = null; // 测速时间戳
+
+// 从localStorage加载延迟缓存
+function loadLatencyCache() {
+    try {
+        const cached = localStorage.getItem('apiLatencies');
+        const cachedTime = localStorage.getItem('latencyTestTime');
+        if (cached && cachedTime) {
+            apiLatencies = JSON.parse(cached);
+            latencyTestTime = parseInt(cachedTime);
+        }
+    } catch (e) {
+        console.error('加载延迟缓存失败:', e);
+    }
+}
+
+// 保存延迟缓存
+function saveLatencyCache() {
+    try {
+        localStorage.setItem('apiLatencies', JSON.stringify(apiLatencies));
+        localStorage.setItem('latencyTestTime', latencyTestTime.toString());
+    } catch (e) {
+        console.error('保存延迟缓存失败:', e);
+    }
+}
+
+// 初始化时加载缓存
+loadLatencyCache();
 
 // 页面初始化
 document.addEventListener('DOMContentLoaded', function () {
@@ -40,7 +70,24 @@ document.addEventListener('DOMContentLoaded', function () {
 
         // 标记已初始化默认值
         localStorage.setItem('hasInitializedDefaults', 'true');
+
+        // 首次访问自动测速
+        setTimeout(() => {
+            if (typeof testAllApiLatency === 'function') {
+                testAllApiLatency();
+            }
+        }, 1000);
+    } else if (!latencyTestTime) {
+        // 如果不是首次访问但没有测速缓存，也自动测速
+        setTimeout(() => {
+            if (typeof testAllApiLatency === 'function') {
+                testAllApiLatency();
+            }
+        }, 1000);
     }
+
+    // 更新测速时间显示
+    updateLatencyTimeDisplay();
 
     // 设置黄色内容过滤器开关初始状态
     const yellowFilterToggle = document.getElementById('yellowFilterToggle');
@@ -76,20 +123,48 @@ function initAPICheckboxes() {
     normaldiv.appendChild(normalTitle);
 
     // 创建普通API源的复选框
-    Object.keys(API_SITES).forEach(apiKey => {
+    const sortedApiKeys = Object.keys(API_SITES).sort((a, b) => {
+        const latencyA = apiLatencies[a] || 999999;
+        const latencyB = apiLatencies[b] || 999999;
+        return latencyA - latencyB;
+    });
+
+    sortedApiKeys.forEach(apiKey => {
         const api = API_SITES[apiKey];
         if (api.adult) return; // 跳过成人内容API，稍后添加
 
         const checked = selectedAPIs.includes(apiKey);
+        const latency = apiLatencies[apiKey];
+        let latencyHtml = '';
+        if (latency !== undefined && latency < 9999) {
+            let displayLatency, colorClass;
+            if (latency >= 1000) {
+                displayLatency = '1000+';
+                colorClass = 'latency-timeout';
+            } else if (latency < 500) {
+                displayLatency = latency + 'ms';
+                colorClass = 'latency-excellent';
+            } else if (latency < 700) {
+                displayLatency = latency + 'ms';
+                colorClass = 'latency-good';
+            } else {
+                displayLatency = latency + 'ms';
+                colorClass = 'latency-poor';
+            }
+            latencyHtml = `<span class="latency-badge ${colorClass}">${displayLatency}</span>`;
+        }
 
         const checkbox = document.createElement('div');
-        checkbox.className = 'flex items-center';
+        checkbox.className = 'flex items-center justify-between pr-1';
         checkbox.innerHTML = `
-            <input type="checkbox" id="api_${apiKey}" 
-                   class="form-checkbox h-3 w-3 text-blue-600 bg-[#222] border border-[#333]" 
-                   ${checked ? 'checked' : ''} 
-                   data-api="${apiKey}">
-            <label for="api_${apiKey}" class="ml-1 text-xs text-gray-400 truncate">${api.name}</label>
+            <div class="flex items-center min-w-0 flex-1">
+                <input type="checkbox" id="api_${apiKey}" 
+                       class="form-checkbox h-3 w-3 text-blue-600 bg-[#222] border border-[#333]" 
+                       ${checked ? 'checked' : ''} 
+                       data-api="${apiKey}">
+                <label for="api_${apiKey}" class="ml-1 text-xs text-gray-400 truncate" title="${api.name}">${api.name}</label>
+            </div>
+            ${latencyHtml}
         `;
         normaldiv.appendChild(checkbox);
 
@@ -128,20 +203,46 @@ function addAdultAPI() {
         adultdiv.appendChild(adultTitle);
 
         // 创建成人API源的复选框
-        Object.keys(API_SITES).forEach(apiKey => {
-            const api = API_SITES[apiKey];
-            if (!api.adult) return; // 仅添加成人内容API
+        const sortedAdultKeys = Object.keys(API_SITES).filter(k => API_SITES[k].adult).sort((a, b) => {
+            const latencyA = apiLatencies[a] || 999999;
+            const latencyB = apiLatencies[b] || 999999;
+            return latencyA - latencyB;
+        });
 
+        sortedAdultKeys.forEach(apiKey => {
+            const api = API_SITES[apiKey];
             const checked = selectedAPIs.includes(apiKey);
+            const latency = apiLatencies[apiKey];
+            let latencyHtml = '';
+            if (latency !== undefined && latency < 9999) {
+                let displayLatency, colorClass;
+                if (latency >= 1000) {
+                    displayLatency = '1000+';
+                    colorClass = 'latency-timeout';
+                } else if (latency < 500) {
+                    displayLatency = latency + 'ms';
+                    colorClass = 'latency-excellent';
+                } else if (latency < 700) {
+                    displayLatency = latency + 'ms';
+                    colorClass = 'latency-good';
+                } else {
+                    displayLatency = latency + 'ms';
+                    colorClass = 'latency-poor';
+                }
+                latencyHtml = `<span class="latency-badge ${colorClass}">${displayLatency}</span>`;
+            }
 
             const checkbox = document.createElement('div');
-            checkbox.className = 'flex items-center';
+            checkbox.className = 'flex items-center justify-between pr-1';
             checkbox.innerHTML = `
-                <input type="checkbox" id="api_${apiKey}" 
-                       class="form-checkbox h-3 w-3 text-blue-600 bg-[#222] border border-[#333] api-adult" 
-                       ${checked ? 'checked' : ''} 
-                       data-api="${apiKey}">
-                <label for="api_${apiKey}" class="ml-1 text-xs text-pink-400 truncate">${api.name}</label>
+                <div class="flex items-center min-w-0 flex-1">
+                    <input type="checkbox" id="api_${apiKey}" 
+                           class="form-checkbox h-3 w-3 text-blue-600 bg-[#222] border border-[#333] api-adult" 
+                           ${checked ? 'checked' : ''} 
+                           data-api="${apiKey}">
+                    <label for="api_${apiKey}" class="ml-1 text-xs text-pink-400 truncate" title="${api.name}">${api.name}</label>
+                </div>
+                ${latencyHtml}
             `;
             adultdiv.appendChild(checkbox);
 
@@ -217,13 +318,44 @@ function renderCustomAPIsList() {
     }
 
     container.innerHTML = '';
-    customAPIs.forEach((api, index) => {
+
+    // 对自定义API进行排序
+    const sortedCustomApis = customAPIs.map((api, index) => ({ ...api, originalIndex: index }))
+        .sort((a, b) => {
+            const latencyA = apiLatencies['custom_' + a.originalIndex] || 999999;
+            const latencyB = apiLatencies['custom_' + b.originalIndex] || 999999;
+            return latencyA - latencyB;
+        });
+
+    sortedCustomApis.forEach((api) => {
+        const index = api.originalIndex;
         const apiItem = document.createElement('div');
         apiItem.className = 'flex items-center justify-between p-1 mb-1 bg-[#222] rounded';
         const textColorClass = api.isAdult ? 'text-pink-400' : 'text-white';
         const adultTag = api.isAdult ? '<span class="text-xs text-pink-400 mr-1">(18+)</span>' : '';
         // 新增 detail 地址显示
         const detailLine = api.detail ? `<div class="text-xs text-gray-400 truncate">detail: ${api.detail}</div>` : '';
+
+        const latency = apiLatencies['custom_' + index];
+        let latencyHtml = '';
+        if (latency !== undefined && latency < 9999) {
+            let displayLatency, colorClass;
+            if (latency >= 1000) {
+                displayLatency = '1000+';
+                colorClass = 'latency-timeout';
+            } else if (latency < 500) {
+                displayLatency = latency + 'ms';
+                colorClass = 'latency-excellent';
+            } else if (latency < 700) {
+                displayLatency = latency + 'ms';
+                colorClass = 'latency-good';
+            } else {
+                displayLatency = latency + 'ms';
+                colorClass = 'latency-poor';
+            }
+            latencyHtml = `<span class="latency-badge ${colorClass} flex-shrink-0">${displayLatency}</span>`;
+        }
+
         apiItem.innerHTML = `
             <div class="flex items-center flex-1 min-w-0">
                 <input type="checkbox" id="custom_api_${index}" 
@@ -231,14 +363,17 @@ function renderCustomAPIsList() {
                        ${selectedAPIs.includes('custom_' + index) ? 'checked' : ''} 
                        data-custom-index="${index}">
                 <div class="flex-1 min-w-0">
-                    <div class="text-xs font-medium ${textColorClass} truncate">
-                        ${adultTag}${api.name}
+                    <div class="flex items-center justify-between">
+                        <div class="text-xs font-medium ${textColorClass} truncate">
+                            ${adultTag}${api.name}
+                        </div>
+                        ${latencyHtml}
                     </div>
                     <div class="text-xs text-gray-500 truncate">${api.url}</div>
                     ${detailLine}
                 </div>
             </div>
-            <div class="flex items-center">
+            <div class="flex items-center ml-1">
                 <button class="text-blue-500 hover:text-blue-700 text-xs px-1" onclick="editCustomApi(${index})">✎</button>
                 <button class="text-red-500 hover:text-red-700 text-xs px-1" onclick="removeCustomApi(${index})">✕</button>
             </div>
@@ -642,7 +777,7 @@ async function search() {
 
         // 从所有选中的API源搜索
         let allResults = [];
-        const searchPromises = selectedAPIs.map(apiId => 
+        const searchPromises = selectedAPIs.map(apiId =>
             searchByAPIAndKeyWord(apiId, query)
         );
 
@@ -661,7 +796,7 @@ async function search() {
             // 首先按照视频名称排序
             const nameCompare = (a.vod_name || '').localeCompare(b.vod_name || '');
             if (nameCompare !== 0) return nameCompare;
-            
+
             // 如果名称相同，则按照来源排序
             return (a.source_name || '').localeCompare(b.source_name || '');
         });
@@ -1351,6 +1486,187 @@ function saveStringAsFile(content, fileName) {
     // 清理临时对象
     document.body.removeChild(a);
     window.URL.revokeObjectURL(url);
+}
+
+// 根据延迟质量选择API
+function selectApisByLatency(quality) {
+    if (Object.keys(apiLatencies).length === 0) {
+        showToast('请先进行测速', 'error');
+        return;
+    }
+
+    // 定义质量阈值
+    const thresholds = {
+        excellent: { min: 0, max: 500 },    // 优质: < 500ms
+        good: { min: 500, max: 700 },       // 普通: 500-700ms
+        poor: { min: 700, max: 1000 }       // 低质: 700-1000ms
+    };
+
+    const threshold = thresholds[quality];
+    if (!threshold) return;
+
+    // 清空当前选择
+    selectedAPIs = [];
+
+    // 选择符合条件的内置API
+    Object.keys(API_SITES).forEach(apiKey => {
+        const latency = apiLatencies[apiKey];
+        if (latency !== undefined && latency >= threshold.min && latency < threshold.max) {
+            selectedAPIs.push(apiKey);
+        }
+    });
+
+    // 选择符合条件的自定义API
+    customAPIs.forEach((api, index) => {
+        const latency = apiLatencies['custom_' + index];
+        if (latency !== undefined && latency >= threshold.min && latency < threshold.max) {
+            selectedAPIs.push('custom_' + index);
+        }
+    });
+
+    // 更新UI和本地存储
+    initAPICheckboxes();
+    renderCustomAPIsList();
+    updateSelectedApiCount();
+    localStorage.setItem('selectedAPIs', JSON.stringify(selectedAPIs));
+
+    const qualityNames = {
+        excellent: '优质',
+        good: '普通',
+        poor: '低质'
+    };
+    showToast(`已选择${selectedAPIs.length}个${qualityNames[quality]}资源`, 'success');
+}
+
+// 测速并排序所有API源
+async function testAllApiLatency() {
+    const btn = document.getElementById('testSpeedBtn');
+    if (!btn || btn.disabled) return;
+
+    btn.disabled = true;
+    const originalBtnHtml = btn.innerHTML;
+    btn.innerHTML = `<svg class="w-3 h-3 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg> 测速中...`;
+
+    try {
+        showToast('正在对所有数据源进行测速，请稍候...', 'info');
+
+        // 获取所有需要测试的API（仅测试内置API，跳过自定义API）
+        const builtinApis = Object.keys(API_SITES);
+        const allApiIds = [...builtinApis]; // 不包含自定义API
+
+        console.log(`开始测速，共${allApiIds.length}个内置API源`);
+
+        // 并行测试延迟，提高并发数以加快测速
+        const concurrency = 10; // 从5提升到10
+        const results = [];
+
+        for (let i = 0; i < allApiIds.length; i += concurrency) {
+            const batch = allApiIds.slice(i, i + concurrency);
+            const batchPromises = batch.map(async (apiId) => {
+                let apiUrl;
+                if (apiId.startsWith('custom_')) {
+                    const index = parseInt(apiId.replace('custom_', ''));
+                    apiUrl = customAPIs[index].url;
+                } else {
+                    apiUrl = API_SITES[apiId].api;
+                }
+
+                const latency = await measureApiLatency(apiUrl);
+                console.log(`${apiId}: ${latency}ms`);
+                return { apiId, latency };
+            });
+
+            const batchResults = await Promise.all(batchPromises);
+            results.push(...batchResults);
+        }
+
+        console.log('测速完成，处理结果...');
+
+        // 更新全局延迟数据和时间戳
+        results.forEach(res => {
+            apiLatencies[res.apiId] = res.latency;
+        });
+        latencyTestTime = Date.now();
+
+        // 保存到localStorage
+        saveLatencyCache();
+
+        // 自动选择延迟最低的前5个资源
+        const sortedResults = results
+            .filter(res => res.latency < 9999) // 排除失败的API
+            .sort((a, b) => a.latency - b.latency) // 按延迟升序排序
+            .slice(0, 5); // 取前5个
+
+        selectedAPIs = sortedResults.map(res => res.apiId);
+        localStorage.setItem('selectedAPIs', JSON.stringify(selectedAPIs));
+
+        // 重新初始化UI以应用排序和显示延迟
+        initAPICheckboxes();
+        renderCustomAPIsList();
+        updateSelectedApiCount();
+
+        btn.disabled = false;
+        btn.innerHTML = originalBtnHtml;
+
+        // 更新测速时间显示
+        updateLatencyTimeDisplay();
+
+        showToast(`测速完成！已自动选择延迟最低的${selectedAPIs.length}个资源`, 'success');
+    } catch (error) {
+        console.error('测速过程出错:', error);
+        btn.disabled = false;
+        btn.innerHTML = originalBtnHtml;
+        showToast('测速失败: ' + error.message, 'error');
+    }
+}
+
+// 测量单个API的延迟
+async function measureApiLatency(apiUrl) {
+    const start = performance.now();
+    try {
+        // 使用一个极简的搜索请求来测试延迟
+        // 我们通过 handleApiRequest 拦截这个请求，它会走代理
+        const response = await fetch('/api/search?wd=1&customApi=' + encodeURIComponent(apiUrl), {
+            signal: AbortSignal.timeout(3000) // 3秒超时（从5秒优化到3秒）
+        });
+
+        if (!response.ok) {
+            return 9999; // 请求失败视为极高延迟
+        }
+
+        const end = performance.now();
+        const latency = Math.round(end - start);
+        // 不再限制返回值，保留真实延迟
+        return latency;
+    } catch (error) {
+        console.warn(`测速失败 (${apiUrl}):`, error);
+        return 9999; // 超时或错误
+    }
+}
+
+// 获取相对时间显示
+function getRelativeTime(timestamp) {
+    if (!timestamp) return '';
+
+    const now = Date.now();
+    const diff = now - timestamp;
+    const seconds = Math.floor(diff / 1000);
+    const minutes = Math.floor(seconds / 60);
+    const hours = Math.floor(minutes / 60);
+    const days = Math.floor(hours / 24);
+
+    if (seconds < 60) return 'just now';
+    if (minutes < 60) return `${minutes}min ago`;
+    if (hours < 24) return `${hours}h ago`;
+    return `${days}d ago`;
+}
+
+// 更新测速时间显示
+function updateLatencyTimeDisplay() {
+    const timeElement = document.getElementById('latencyTestTime');
+    if (timeElement && latencyTestTime) {
+        timeElement.textContent = `测速时间: ${getRelativeTime(latencyTestTime)}`;
+    }
 }
 
 // 移除Node.js的require语句，因为这是在浏览器环境中运行的

@@ -7,7 +7,7 @@
 function isPasswordProtected() {
     // 只检查普通密码
     const pwd = window.__ENV__ && window.__ENV__.PASSWORD;
-    
+
     // 检查普通密码是否有效
     return typeof pwd === 'string' && pwd.length === 64 && !/^0+$/.test(pwd);
 }
@@ -52,6 +52,9 @@ async function verifyPassword(password) {
         const isValid = inputHash === correctHash;
 
         if (isValid) {
+            // 清除旧的代理鉴权缓存，确保使用最新的哈希
+            localStorage.removeItem('proxyAuthHash');
+
             localStorage.setItem(PASSWORD_CONFIG.localStorageKey, JSON.stringify({
                 verified: true,
                 timestamp: Date.now(),
@@ -123,7 +126,7 @@ function showPasswordModal() {
             const description = passwordModal.querySelector('p');
             if (title) title.textContent = '需要设置密码';
             if (description) description.textContent = '请先在部署平台设置 PASSWORD 环境变量来保护您的实例';
-            
+
             // 隐藏密码输入框和提交按钮，只显示提示信息
             const form = passwordModal.querySelector('form');
             const errorMsg = document.getElementById('passwordError');
@@ -139,7 +142,7 @@ function showPasswordModal() {
             const description = passwordModal.querySelector('p');
             if (title) title.textContent = '访问验证';
             if (description) description.textContent = '请输入密码继续访问';
-            
+
             const form = passwordModal.querySelector('form');
             if (form) form.style.display = 'block';
         }
@@ -231,7 +234,7 @@ function initPasswordProtection() {
         showPasswordModal();
         return;
     }
-    
+
     // 如果设置了密码但用户未验证，显示密码输入框
     if (isPasswordProtected() && !isPasswordVerified()) {
         showPasswordModal();
