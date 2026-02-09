@@ -190,8 +190,14 @@ app.get('/proxy/:encodedUrl', async (req, res) => {
             'User-Agent': config.userAgent,
             // 避免部分图片/资源的热链限制
             'Referer': (() => {
-              try { return new URL(targetUrl).origin; } catch { return undefined; }
-            })()
+              try {
+                const u = new URL(targetUrl);
+                if (u.hostname.endsWith('doubanio.com')) return 'https://movie.douban.com/';
+                return u.origin;
+              } catch {
+                return undefined;
+              }
+            })(),
           }
         });
       } catch (error) {

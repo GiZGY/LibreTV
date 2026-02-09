@@ -140,9 +140,13 @@ async function fetchContentWithType(targetUrl, requestHeaders) {
     // 准备请求头
     const accept = requestHeaders['accept'] || '*/*';
     // 对图片请求：优先使用目标站点自身作为 Referer，避免热链被挡
-    const refererForProxy = (accept.includes('image/'))
-        ? new URL(targetUrl).origin
-        : (requestHeaders['referer'] || new URL(targetUrl).origin);
+    const targetHost = new URL(targetUrl).hostname;
+    const refererForProxy = (() => {
+        // 豆瓣图片域名对 Referer 有 ACL：必须是 movie.douban.com 才能取到
+        if (targetHost.endsWith('doubanio.com')) return 'https://movie.douban.com/';
+        if (accept.includes('image/')) return new URL(targetUrl).origin;
+        return requestHeaders['referer'] || new URL(targetUrl).origin;
+    })();
     const headers = {
         'User-Agent': getRandomUserAgent(),
         'Accept': accept, // 传递原始 Accept 头（如果有）
