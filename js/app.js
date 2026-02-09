@@ -18,6 +18,21 @@ let apiQualities = {};
 let qualityTestTime = null; // 质量检测时间戳
 let hideZombieApis = localStorage.getItem('hideZombieApis') !== 'false'; // 默认隐藏僵尸源
 
+function isPasswordReadyForApiCalls() {
+    try {
+        // 兼容两套实现：ensurePasswordProtection / isPasswordProtected + isPasswordVerified
+        if (window.isPasswordProtected && window.isPasswordVerified) {
+            if (window.isPasswordProtected() && !window.isPasswordVerified()) {
+                return false;
+            }
+        }
+        return true;
+    } catch (_) {
+        // 保守：不确定就不要自动跑，避免把所有源打成 0 分
+        return false;
+    }
+}
+
 // 从localStorage加载延迟缓存
 function loadLatencyCache() {
     try {
@@ -100,19 +115,34 @@ document.addEventListener('DOMContentLoaded', function () {
         // 标记已初始化默认值
         localStorage.setItem('hasInitializedDefaults', 'true');
 
-        // 首次访问自动检测
+        // 首次访问自动检测（必须在密码验证完成后再跑）
         setTimeout(() => {
-            if (typeof testAllApiQuality === 'function') {
+            if (typeof testAllApiQuality !== 'function') return;
+            if (isPasswordReadyForApiCalls()) {
                 testAllApiQuality();
+                return;
             }
-        }, 1000);
+            // 密码未验证时，等验证事件再触发一次
+            const handler = () => {
+                document.removeEventListener('passwordVerified', handler);
+                setTimeout(() => testAllApiQuality(), 300);
+            };
+            document.addEventListener('passwordVerified', handler, { once: true });
+        }, 800);
     } else if (!latencyTestTime && !qualityTestTime) {
-        // 如果不是首次访问但没有检测缓存，也自动检测
+        // 如果不是首次访问但没有检测缓存，也自动检测（同样等待密码验证）
         setTimeout(() => {
-            if (typeof testAllApiQuality === 'function') {
+            if (typeof testAllApiQuality !== 'function') return;
+            if (isPasswordReadyForApiCalls()) {
                 testAllApiQuality();
+                return;
             }
-        }, 1000);
+            const handler = () => {
+                document.removeEventListener('passwordVerified', handler);
+                setTimeout(() => testAllApiQuality(), 300);
+            };
+            document.addEventListener('passwordVerified', handler, { once: true });
+        }, 800);
     }
 
     // 更新检测时间显示
@@ -1698,22 +1728,54 @@ async function testAllApiQuality() {
     const btn = document.getElementById('testSpeedBtn');
     if (!btn || btn.disabled) return;
 
+    // 没有完成密码验证时，/api/* 可能被拦截成空响应，导致“瞬间完成且全 0 分”
+    if (!isPasswordReadyForApiCalls()) {
+        try {
+            if (typeof showPasswordModal === 'function') showPasswordModal();
+        } catch (_) {}
+        showToast('请先完成密码验证后再进行质量检测', 'warning');
+        return;
+    }
+
     btn.disabled = true;
     const originalBtnHtml = btn.innerHTML;
     btn.innerHTML = `<svg class="w-3 h-3 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg> 检测中...`;
 
     try {
-        showToast('正在对所有数据源进行质量检测（搜索/详情/播放链接），请稍候...', 'info');
+        showToast('正在对所有数据源进行质量检测（先测搜索/详情，再抽样测播放），请稍候...', 'info');
 
         const builtinApis = Object.keys(API_SITES);
-        const concurrency = 6; // 比延迟测速更重，适当降低并发
-        const results = [];
+        // 两阶段：先全量测搜索+详情（快），再只对候选源测播放（慢）
+        const baseConcurrency = 10;
+        const playConcurrency = 5;
+        const baseResults = [];
 
-        for (let i = 0; i < builtinApis.length; i += concurrency) {
-            const batch = builtinApis.slice(i, i + concurrency);
-            const batchResults = await Promise.all(batch.map(measureApiQuality));
-            results.push(...batchResults);
+        for (let i = 0; i < builtinApis.length; i += baseConcurrency) {
+            const batch = builtinApis.slice(i, i + baseConcurrency);
+            const batchResults = await Promise.all(batch.map((id) => measureApiQuality(id, { playTest: false })));
+            baseResults.push(...batchResults);
         }
+
+        // 候选：有集数的源里，按详情耗时优先挑前 N 个做播放检测
+        const candidates = baseResults
+            .filter(r => r.quality?.detailOk && (r.quality.episodesCount || 0) > 0)
+            .sort((a, b) => {
+                const am = typeof a.quality.detailMs === 'number' ? a.quality.detailMs : 1e9;
+                const bm = typeof b.quality.detailMs === 'number' ? b.quality.detailMs : 1e9;
+                return am - bm;
+            })
+            .slice(0, 10); // Top 10 才测播放链路，显著提速
+
+        const playResults = [];
+        for (let i = 0; i < candidates.length; i += playConcurrency) {
+            const batch = candidates.slice(i, i + playConcurrency);
+            const batchResults = await Promise.all(batch.map((r) => measureApiQuality(r.apiId, { playTest: true })));
+            playResults.push(...batchResults);
+        }
+
+        // 合并：以 baseResults 为底，候选用 playResults 覆盖
+        const playMap = new Map(playResults.map(r => [r.apiId, r]));
+        const results = baseResults.map(r => playMap.get(r.apiId) || r);
 
         results.forEach(res => {
             apiQualities[res.apiId] = res.quality;
@@ -1841,13 +1903,14 @@ function computeQualityScore(q) {
     return Math.max(0, Math.min(100, Math.round(score)));
 }
 
-async function measureApiQuality(apiId) {
+async function measureApiQuality(apiId, opts) {
+    const options = { playTest: true, ...(opts || {}) };
     const quality = {
         score: 0,
         searchOk: false,
         detailOk: false,
         playOk: false,
-        segmentOk: false,
+        segmentOk: false, // 目前不强依赖，必要时再打开
         searchMs: null,
         detailMs: null,
         playTtfbMs: null,
@@ -1889,30 +1952,12 @@ async function measureApiQuality(apiId) {
             return { apiId, quality };
         }
 
-        // 3) 播放链接可达性（以浏览器 CORS 能否 GET 到首包为准，贴近 Hls.js）
         const playUrl = episodes[0];
-        const playTtfb = await measureTtfb(playUrl, 7000);
-        quality.playOk = !!playTtfb.ok;
-        quality.playTtfbMs = playTtfb.ms;
-
-        // 4) 如果是 m3u8，尝试再测一个分片首包（更贴近不卡顿）
-        if (quality.playOk && /\.m3u8($|\\?)/i.test(playUrl)) {
-            try {
-                const res = await fetch(playUrl, { method: 'GET', cache: 'no-store', mode: 'cors', signal: AbortSignal.timeout(7000) });
-                const text = await res.text();
-                if (res.ok && text && text.includes('#EXTM3U')) {
-                    const base = new URL(playUrl);
-                    const line = text.split('\\n').map(s => s.trim()).find(s => s && !s.startsWith('#'));
-                    if (line) {
-                        const segUrl = new URL(line, base).toString();
-                        const segTtfb = await measureTtfb(segUrl, 7000);
-                        quality.segmentOk = !!segTtfb.ok;
-                        quality.segmentTtfbMs = segTtfb.ms;
-                    }
-                }
-            } catch (_) {
-                // ignore
-            }
+        // 3) 播放链接可达性（慢）：只对候选源执行，避免全量过慢
+        if (options.playTest) {
+            const playTtfb = await measureTtfb(playUrl, 6000);
+            quality.playOk = !!playTtfb.ok;
+            quality.playTtfbMs = playTtfb.ms;
         }
 
         quality.score = computeQualityScore(quality);
