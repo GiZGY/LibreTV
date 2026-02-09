@@ -236,7 +236,14 @@ app.get('/proxy/:encodedUrl', async (req, res) => {
 });
 
 app.use(express.static(path.join(__dirname), {
-  maxAge: config.cacheMaxAge
+  maxAge: config.cacheMaxAge,
+  setHeaders(res, filePath) {
+    // 开发/自托管环境下，强制让 HTML/JS/CSS 走 revalidate，避免浏览器缓存旧脚本导致功能不生效。
+    // Vercel/CF Pages 等静态托管通常另有缓存策略，不走这里。
+    if (/\.(html|js|css)$/i.test(filePath)) {
+      res.setHeader('Cache-Control', 'no-store');
+    }
+  }
 }));
 
 app.use((err, req, res, next) => {
