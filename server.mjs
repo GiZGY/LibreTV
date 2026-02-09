@@ -187,7 +187,11 @@ app.get('/proxy/:encodedUrl', async (req, res) => {
           responseType: 'stream',
           timeout: config.timeout,
           headers: {
-            'User-Agent': config.userAgent
+            'User-Agent': config.userAgent,
+            // 避免部分图片/资源的热链限制
+            'Referer': (() => {
+              try { return new URL(targetUrl).origin; } catch { return undefined; }
+            })()
           }
         });
       } catch (error) {

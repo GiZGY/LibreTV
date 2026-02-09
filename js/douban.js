@@ -501,6 +501,30 @@ async function fetchDoubanData(url) {
 
 // 抽取渲染豆瓣卡片的逻辑到单独函数
 function renderDoubanCards(data, container) {
+    function getProxyAuthHashSync() {
+        // proxy-auth.js 会把 hash 缓存在 localStorage(proxyAuthHash) 或 passwordVerified 里
+        try {
+            const h = localStorage.getItem('proxyAuthHash');
+            if (h) return h;
+        } catch (_) {}
+        try {
+            const raw = localStorage.getItem('passwordVerified');
+            if (!raw) return null;
+            const obj = JSON.parse(raw);
+            if (obj && obj.verified && obj.passwordHash) return obj.passwordHash;
+        } catch (_) {}
+        return null;
+    }
+
+    function buildAuthedProxyUrlSync(targetUrl) {
+        const base = PROXY_URL + encodeURIComponent(targetUrl);
+        const hash = getProxyAuthHashSync();
+        if (!hash) return base;
+        const ts = Date.now();
+        const sep = base.includes('?') ? '&' : '?';
+        return `${base}${sep}auth=${encodeURIComponent(hash)}&t=${ts}`;
+    }
+
     // 创建文档片段以提高性能
     const fragment = document.createDocumentFragment();
     
@@ -533,7 +557,8 @@ function renderDoubanCards(data, container) {
             const originalCoverUrl = item.cover;
             
             // 2. 也准备代理URL作为备选
-            const proxiedCoverUrl = PROXY_URL + encodeURIComponent(originalCoverUrl);
+            // 注意：代理需要鉴权参数，img 的 onerror 不能 await，因此这里使用同步拼接（从 localStorage 取 hash）
+            const proxiedCoverUrl = buildAuthedProxyUrlSync(originalCoverUrl);
             
             // 为不同设备优化卡片布局
             card.innerHTML = `
