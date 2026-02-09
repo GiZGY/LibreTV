@@ -169,12 +169,26 @@ async function fetchContentWithType(targetUrl, requestHeaders) {
             throw err; // 抛出错误
         }
 
-        // 读取响应内容
-        const content = await response.text();
         const contentType = response.headers.get('content-type') || '';
-        logDebug(`请求成功: ${targetUrl}, Content-Type: ${contentType}, 内容长度: ${content.length}`);
+        // 读取响应内容：对图片/二进制返回 Buffer，避免 text 解码导致资源损坏
+        const isBinary =
+            contentType.startsWith('image/') ||
+            contentType.startsWith('video/') ||
+            contentType.startsWith('audio/') ||
+            contentType.includes('application/octet-stream');
+
+        let content;
+        if (isBinary) {
+            const ab = await response.arrayBuffer();
+            content = Buffer.from(ab);
+            logDebug(`请求成功(二进制): ${targetUrl}, Content-Type: ${contentType}, bytes: ${content.length}`);
+        } else {
+            content = await response.text();
+            logDebug(`请求成功: ${targetUrl}, Content-Type: ${contentType}, 内容长度: ${content.length}`);
+        }
+
         // 返回结果
-        return { content, contentType, responseHeaders: response.headers };
+        return { content, contentType, responseHeaders: response.headers, isBinary };
 
     } catch (error) {
         // 捕获 fetch 本身的错误（网络、超时等）或上面抛出的 HTTP 错误
@@ -418,7 +432,7 @@ export default async function handler(req, res) {
         console.info(`开始处理目标 URL 的代理请求: ${targetUrl}`);
 
         // --- 获取并处理目标内容 ---
-        const { content, contentType, responseHeaders } = await fetchContentWithType(targetUrl, req.headers);
+        const { content, contentType, responseHeaders, isBinary } = await fetchContentWithType(targetUrl, req.headers);
 
         // --- 如果是 M3U8，处理并返回 ---
         if (isM3u8Content(content, contentType)) {
@@ -452,6 +466,7 @@ export default async function handler(req, res) {
             res.setHeader('Cache-Control', `public, max-age=${CACHE_TTL}`);
 
             // 发送原始（已解压）内容
+            // 对 Buffer 直接 send 即可；对 string 也是 send
             res.status(200).send(content);
         }
 
