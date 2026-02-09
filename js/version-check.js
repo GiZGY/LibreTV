@@ -46,10 +46,10 @@ async function checkForUpdates() {
         try {
             // 尝试使用代理URL获取最新版本
             const proxyPromise = fetchVersion(VERSION_URL.PROXY, '代理请求失败');
-            const timeoutPromise = new Promise((_, reject) => 
+            const timeoutPromise = new Promise((_, reject) =>
                 setTimeout(() => reject(new Error('代理请求超时')), FETCH_TIMEOUT)
             );
-            
+
             latestVersion = await Promise.race([proxyPromise, timeoutPromise]);
             console.log('通过代理服务器获取版本成功');
         } catch (error) {
@@ -59,8 +59,10 @@ async function checkForUpdates() {
                 latestVersion = await fetchVersion(VERSION_URL.DIRECT, '获取最新版本失败');
                 console.log('直接请求获取版本成功');
             } catch (directError) {
-                console.error('所有版本检查请求均失败:', directError);
-                throw new Error('无法获取最新版本信息');
+                // 对“最新版本获取失败”不再视为致命错误：
+                // 例如还没把 VERSION.txt 合并到 main，raw 可能是 404。
+                console.warn('获取最新版本信息失败，将仅展示当前版本:', directError);
+                latestVersion = currentVersion;
             }
         }
         
