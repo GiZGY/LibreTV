@@ -37,8 +37,9 @@ async function checkForUpdates() {
         // 获取最新版本
         let latestVersion;
         const VERSION_URL = {
-            PROXY: 'https://ghfast.top/raw.githubusercontent.com/LibreSpark/LibreTV/main/VERSION.txt',
-            DIRECT: 'https://raw.githubusercontent.com/LibreSpark/LibreTV/main/VERSION.txt'
+            // 你自己的仓库（避免误报“发现新版”）
+            PROXY: 'https://ghfast.top/raw.githubusercontent.com/GiZGY/LibreTV/main/VERSION.txt',
+            DIRECT: 'https://raw.githubusercontent.com/GiZGY/LibreTV/main/VERSION.txt'
         };
         const FETCH_TIMEOUT = 1500;
         
@@ -74,7 +75,7 @@ async function checkForUpdates() {
         return {
             current: cleanCurrentVersion,
             latest: cleanLatestVersion,
-            hasUpdate: parseInt(cleanLatestVersion) > parseInt(cleanCurrentVersion),
+            hasUpdate: compareVersions(cleanLatestVersion, cleanCurrentVersion) > 0,
             currentFormatted: formatVersion(cleanCurrentVersion),
             latestFormatted: formatVersion(cleanLatestVersion)
         };
@@ -106,6 +107,34 @@ function formatVersion(versionString) {
     }
     
     return cleanedString;
+}
+
+// 版本比较：支持时间戳(12位)和 semver(1.2.3) 两种常见格式
+function compareVersions(a, b) {
+    const av = (a || '').trim();
+    const bv = (b || '').trim();
+    if (!av && !bv) return 0;
+    if (!av) return -1;
+    if (!bv) return 1;
+
+    // 时间戳版本：yyyyMMddhhmm
+    const tsRe = /^\d{12}$/;
+    if (tsRe.test(av) && tsRe.test(bv)) {
+        if (av === bv) return 0;
+        return av > bv ? 1 : -1;
+    }
+
+    // semver / 数字片段：按数字段落依次比较
+    const parseParts = (s) => s.split(/[^0-9]+/).filter(Boolean).map(n => parseInt(n, 10));
+    const ap = parseParts(av);
+    const bp = parseParts(bv);
+    const len = Math.max(ap.length, bp.length);
+    for (let i = 0; i < len; i++) {
+        const x = ap[i] ?? 0;
+        const y = bp[i] ?? 0;
+        if (x !== y) return x > y ? 1 : -1;
+    }
+    return 0;
 }
 
 // 创建错误版本信息元素
@@ -146,12 +175,12 @@ function addVersionInfoToFooter() {
             
             setTimeout(() => {
                 const updateBtn = versionElement.querySelector('span');
-                if (updateBtn) {
-                    updateBtn.addEventListener('click', () => {
-                        window.open('https://github.com/LibreSpark/LibreTV', '_blank');
-                    });
-                }
-            }, 100);
+                    if (updateBtn) {
+                        updateBtn.addEventListener('click', () => {
+                        window.open('https://github.com/GiZGY/LibreTV', '_blank');
+                        });
+                    }
+                }, 100);
         } else {
             // 如果没有更新，显示当前版本为最新版本
             versionElement.innerHTML = `版本: ${result.currentFormatted} <span class="text-green-500">(最新版本)</span>`;
