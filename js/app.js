@@ -13,6 +13,10 @@ let episodesReversed = false;
 // 存储API延迟数据（从localStorage加载缓存）
 let apiLatencies = {};
 let latencyTestTime = null; // 测速时间戳
+// 存储API质量检测数据（从localStorage加载缓存）
+let apiQualities = {};
+let qualityTestTime = null; // 质量检测时间戳
+let hideZombieApis = localStorage.getItem('hideZombieApis') !== 'false'; // 默认隐藏僵尸源
 
 // 从localStorage加载延迟缓存
 function loadLatencyCache() {
@@ -38,8 +42,33 @@ function saveLatencyCache() {
     }
 }
 
+// 从localStorage加载质量缓存
+function loadQualityCache() {
+    try {
+        const cached = localStorage.getItem('apiQualities');
+        const cachedTime = localStorage.getItem('qualityTestTime');
+        if (cached && cachedTime) {
+            apiQualities = JSON.parse(cached);
+            qualityTestTime = parseInt(cachedTime);
+        }
+    } catch (e) {
+        console.error('加载质量缓存失败:', e);
+    }
+}
+
+// 保存质量缓存
+function saveQualityCache() {
+    try {
+        localStorage.setItem('apiQualities', JSON.stringify(apiQualities));
+        localStorage.setItem('qualityTestTime', qualityTestTime.toString());
+    } catch (e) {
+        console.error('保存质量缓存失败:', e);
+    }
+}
+
 // 初始化时加载缓存
 loadLatencyCache();
+loadQualityCache();
 
 // 页面初始化
 document.addEventListener('DOMContentLoaded', function () {
@@ -71,23 +100,34 @@ document.addEventListener('DOMContentLoaded', function () {
         // 标记已初始化默认值
         localStorage.setItem('hasInitializedDefaults', 'true');
 
-        // 首次访问自动测速
+        // 首次访问自动检测
         setTimeout(() => {
-            if (typeof testAllApiLatency === 'function') {
-                testAllApiLatency();
+            if (typeof testAllApiQuality === 'function') {
+                testAllApiQuality();
             }
         }, 1000);
-    } else if (!latencyTestTime) {
-        // 如果不是首次访问但没有测速缓存，也自动测速
+    } else if (!latencyTestTime && !qualityTestTime) {
+        // 如果不是首次访问但没有检测缓存，也自动检测
         setTimeout(() => {
-            if (typeof testAllApiLatency === 'function') {
-                testAllApiLatency();
+            if (typeof testAllApiQuality === 'function') {
+                testAllApiQuality();
             }
         }, 1000);
     }
 
-    // 更新测速时间显示
+    // 更新检测时间显示
     updateLatencyTimeDisplay();
+
+    // 设置隐藏僵尸源开关初始状态
+    const hideZombieToggle = document.getElementById('hideZombieToggle');
+    if (hideZombieToggle) {
+        hideZombieToggle.checked = hideZombieApis;
+        hideZombieToggle.addEventListener('change', (e) => {
+            hideZombieApis = !!e.target.checked;
+            localStorage.setItem('hideZombieApis', hideZombieApis ? 'true' : 'false');
+            initAPICheckboxes();
+        });
+    }
 
     // 设置黄色内容过滤器开关初始状态
     const yellowFilterToggle = document.getElementById('yellowFilterToggle');
@@ -124,6 +164,14 @@ function initAPICheckboxes() {
 
     // 创建普通API源的复选框
     const sortedApiKeys = Object.keys(API_SITES).sort((a, b) => {
+        // 优先按质量分排序（高分在前），没有质量分时按延迟排序（低延迟在前）
+        const qa = apiQualities[a]?.score;
+        const qb = apiQualities[b]?.score;
+        if (typeof qa === 'number' || typeof qb === 'number') {
+            if (typeof qa !== 'number') return 1;
+            if (typeof qb !== 'number') return -1;
+            if (qb !== qa) return qb - qa;
+        }
         const latencyA = apiLatencies[a] || 999999;
         const latencyB = apiLatencies[b] || 999999;
         return latencyA - latencyB;
@@ -132,11 +180,20 @@ function initAPICheckboxes() {
     sortedApiKeys.forEach(apiKey => {
         const api = API_SITES[apiKey];
         if (api.adult) return; // 跳过成人内容API，稍后添加
+        if (hideZombieApis && !selectedAPIs.includes(apiKey) && apiQualities[apiKey]?.score === 0) return;
 
         const checked = selectedAPIs.includes(apiKey);
         const latency = apiLatencies[apiKey];
+        const q = apiQualities[apiKey];
         let latencyHtml = '';
-        if (latency !== undefined && latency < 9999) {
+        if (q && typeof q.score === 'number') {
+            const score = Math.round(q.score);
+            let colorClass = 'latency-poor';
+            if (score >= 80) colorClass = 'latency-excellent';
+            else if (score >= 60) colorClass = 'latency-good';
+            else if (score < 30) colorClass = 'latency-timeout';
+            latencyHtml = `<span class="latency-badge ${colorClass}" title="质量分: ${score}">${score}</span>`;
+        } else if (latency !== undefined && latency < 9999) {
             let displayLatency, colorClass;
             if (latency >= 1000) {
                 displayLatency = '1000+';
@@ -204,6 +261,13 @@ function addAdultAPI() {
 
         // 创建成人API源的复选框
         const sortedAdultKeys = Object.keys(API_SITES).filter(k => API_SITES[k].adult).sort((a, b) => {
+            const qa = apiQualities[a]?.score;
+            const qb = apiQualities[b]?.score;
+            if (typeof qa === 'number' || typeof qb === 'number') {
+                if (typeof qa !== 'number') return 1;
+                if (typeof qb !== 'number') return -1;
+                if (qb !== qa) return qb - qa;
+            }
             const latencyA = apiLatencies[a] || 999999;
             const latencyB = apiLatencies[b] || 999999;
             return latencyA - latencyB;
@@ -211,10 +275,19 @@ function addAdultAPI() {
 
         sortedAdultKeys.forEach(apiKey => {
             const api = API_SITES[apiKey];
+            if (hideZombieApis && !selectedAPIs.includes(apiKey) && apiQualities[apiKey]?.score === 0) return;
             const checked = selectedAPIs.includes(apiKey);
             const latency = apiLatencies[apiKey];
+            const q = apiQualities[apiKey];
             let latencyHtml = '';
-            if (latency !== undefined && latency < 9999) {
+            if (q && typeof q.score === 'number') {
+                const score = Math.round(q.score);
+                let colorClass = 'latency-poor';
+                if (score >= 80) colorClass = 'latency-excellent';
+                else if (score >= 60) colorClass = 'latency-good';
+                else if (score < 30) colorClass = 'latency-timeout';
+                latencyHtml = `<span class="latency-badge ${colorClass}" title="质量分: ${score}">${score}</span>`;
+            } else if (latency !== undefined && latency < 9999) {
                 let displayLatency, colorClass;
                 if (latency >= 1000) {
                     displayLatency = '1000+';
@@ -1620,6 +1693,237 @@ async function testAllApiLatency() {
     }
 }
 
+// 质量检测：更贴近真实播放体验（搜索 + 详情 + 首集链接可达性）
+async function testAllApiQuality() {
+    const btn = document.getElementById('testSpeedBtn');
+    if (!btn || btn.disabled) return;
+
+    btn.disabled = true;
+    const originalBtnHtml = btn.innerHTML;
+    btn.innerHTML = `<svg class="w-3 h-3 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg> 检测中...`;
+
+    try {
+        showToast('正在对所有数据源进行质量检测（搜索/详情/播放链接），请稍候...', 'info');
+
+        const builtinApis = Object.keys(API_SITES);
+        const concurrency = 6; // 比延迟测速更重，适当降低并发
+        const results = [];
+
+        for (let i = 0; i < builtinApis.length; i += concurrency) {
+            const batch = builtinApis.slice(i, i + concurrency);
+            const batchResults = await Promise.all(batch.map(measureApiQuality));
+            results.push(...batchResults);
+        }
+
+        results.forEach(res => {
+            apiQualities[res.apiId] = res.quality;
+            // 兼容旧逻辑：把搜索耗时也存到 apiLatencies，便于没有质量分时展示
+            if (typeof res.quality?.searchMs === 'number') {
+                apiLatencies[res.apiId] = res.quality.searchMs;
+            }
+        });
+
+        qualityTestTime = Date.now();
+        // 保留旧字段，避免只读依赖 latencyTestTime 的逻辑失效
+        latencyTestTime = qualityTestTime;
+
+        saveQualityCache();
+        saveLatencyCache();
+
+        // 自动选择质量最高的前5个资源（优先挑“有集数且播放检测通过”的）
+        const sorted = results
+            .filter(r => r.quality && typeof r.quality.score === 'number')
+            .sort((a, b) => (b.quality.score || 0) - (a.quality.score || 0));
+
+        const preferred = [];
+        for (const r of sorted) {
+            if (preferred.length >= 5) break;
+            const q = r.quality;
+            const good =
+                q.searchOk &&
+                q.detailOk &&
+                (q.episodesCount || 0) > 0 &&
+                (q.playOk || false);
+            if (good) preferred.push(r.apiId);
+        }
+        if (preferred.length < 5) {
+            for (const r of sorted) {
+                if (preferred.length >= 5) break;
+                if (!preferred.includes(r.apiId)) preferred.push(r.apiId);
+            }
+        }
+
+        if (preferred.length > 0) {
+            selectedAPIs = preferred;
+            localStorage.setItem('selectedAPIs', JSON.stringify(selectedAPIs));
+        }
+
+        initAPICheckboxes();
+        renderCustomAPIsList();
+        updateSelectedApiCount();
+        updateLatencyTimeDisplay();
+
+        showToast(`检测完成！已自动选择质量最高的${selectedAPIs.length}个资源`, 'success');
+    } catch (error) {
+        console.error('质量检测过程出错:', error);
+        showToast('质量检测失败: ' + (error?.message || '未知错误'), 'error');
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = originalBtnHtml;
+    }
+}
+
+function withTimeout(promise, ms, label) {
+    return Promise.race([
+        promise,
+        new Promise((_, reject) => setTimeout(() => reject(new Error(label || `超时(${ms}ms)`)), ms))
+    ]);
+}
+
+async function safeFetchJson(url, timeoutMs) {
+    const t0 = performance.now();
+    const res = await withTimeout(fetch(url), timeoutMs, `请求超时(${timeoutMs}ms)`);
+    const json = await withTimeout(res.json(), Math.max(1000, timeoutMs), '解析超时');
+    const ms = Math.round(performance.now() - t0);
+    return { json, ms };
+}
+
+async function measureTtfb(url, timeoutMs) {
+    const t0 = performance.now();
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+        const res = await fetch(url, {
+            method: 'GET',
+            cache: 'no-store',
+            mode: 'cors',
+            signal: controller.signal
+        });
+        if (!res.ok) {
+            return { ok: false, ms: Math.round(performance.now() - t0), status: res.status };
+        }
+        if (!res.body || !res.body.getReader) {
+            return { ok: true, ms: Math.round(performance.now() - t0), status: res.status, note: 'no-stream' };
+        }
+        const reader = res.body.getReader();
+        await reader.read(); // 读取第一个chunk即可，近似 TTFB
+        try { reader.cancel(); } catch (_) {}
+        return { ok: true, ms: Math.round(performance.now() - t0), status: res.status };
+    } catch (e) {
+        const ms = Math.round(performance.now() - t0);
+        return { ok: false, ms, error: e?.name === 'AbortError' ? '超时' : (e?.message || '失败') };
+    } finally {
+        clearTimeout(timeoutId);
+    }
+}
+
+function computeQualityScore(q) {
+    let score = 0;
+    if (q.searchOk) score += 20;
+    if (q.detailOk) score += 20;
+    if ((q.episodesCount || 0) > 0) score += 10;
+    if ((q.episodesCount || 0) >= 10) score += 5;
+    if (q.playOk) score += 30;
+    if (q.segmentOk) score += 15;
+
+    // 延迟惩罚（轻惩罚，避免“延迟高但播放好”被误杀）
+    const penalty = (ms, w) => {
+        if (typeof ms !== 'number' || ms <= 0) return 0;
+        if (ms <= 1000) return 0;
+        return Math.min(w, Math.log(ms / 1000) * w);
+    };
+    score -= penalty(q.searchMs, 8);
+    score -= penalty(q.detailMs, 12);
+    score -= penalty(q.playTtfbMs, 15);
+    score -= penalty(q.segmentTtfbMs, 10);
+
+    if (!q.searchOk) score = 0;
+    return Math.max(0, Math.min(100, Math.round(score)));
+}
+
+async function measureApiQuality(apiId) {
+    const quality = {
+        score: 0,
+        searchOk: false,
+        detailOk: false,
+        playOk: false,
+        segmentOk: false,
+        searchMs: null,
+        detailMs: null,
+        playTtfbMs: null,
+        segmentTtfbMs: null,
+        episodesCount: 0,
+        error: null
+    };
+
+    try {
+        // 1) 搜索（走现有 /api/search 拦截逻辑，更贴近真实）
+        const searchUrl = `/api/search?wd=1&source=${encodeURIComponent(apiId)}`;
+        const { json: searchJson, ms: searchMs } = await safeFetchJson(searchUrl, 12000);
+        quality.searchMs = searchMs;
+        const effectiveList = Array.isArray(searchJson?.list) ? searchJson.list : [];
+        quality.searchOk = searchJson && searchJson.code === 200 && Array.isArray(effectiveList);
+
+        let vodId = null;
+        if (effectiveList.length > 0) {
+            vodId = effectiveList[0]?.vod_id;
+        }
+
+        if (!vodId) {
+            quality.error = quality.searchOk ? '无搜索结果' : (searchJson?.msg || '搜索失败');
+            quality.score = computeQualityScore(quality);
+            return { apiId, quality };
+        }
+
+        // 2) 详情（拿到集数 + 首集链接）
+        const detailUrl = `/api/detail?id=${encodeURIComponent(String(vodId))}&source=${encodeURIComponent(apiId)}`;
+        const { json: detailJson, ms: detailMs } = await safeFetchJson(detailUrl, 15000);
+        quality.detailMs = detailMs;
+        const episodes = Array.isArray(detailJson?.episodes) ? detailJson.episodes : [];
+        quality.episodesCount = episodes.length;
+        quality.detailOk = detailJson && detailJson.code === 200 && Array.isArray(episodes);
+
+        if (!quality.detailOk || episodes.length === 0 || !episodes[0]) {
+            quality.error = !quality.detailOk ? (detailJson?.msg || '详情失败') : '无播放地址';
+            quality.score = computeQualityScore(quality);
+            return { apiId, quality };
+        }
+
+        // 3) 播放链接可达性（以浏览器 CORS 能否 GET 到首包为准，贴近 Hls.js）
+        const playUrl = episodes[0];
+        const playTtfb = await measureTtfb(playUrl, 7000);
+        quality.playOk = !!playTtfb.ok;
+        quality.playTtfbMs = playTtfb.ms;
+
+        // 4) 如果是 m3u8，尝试再测一个分片首包（更贴近不卡顿）
+        if (quality.playOk && /\.m3u8($|\\?)/i.test(playUrl)) {
+            try {
+                const res = await fetch(playUrl, { method: 'GET', cache: 'no-store', mode: 'cors', signal: AbortSignal.timeout(7000) });
+                const text = await res.text();
+                if (res.ok && text && text.includes('#EXTM3U')) {
+                    const base = new URL(playUrl);
+                    const line = text.split('\\n').map(s => s.trim()).find(s => s && !s.startsWith('#'));
+                    if (line) {
+                        const segUrl = new URL(line, base).toString();
+                        const segTtfb = await measureTtfb(segUrl, 7000);
+                        quality.segmentOk = !!segTtfb.ok;
+                        quality.segmentTtfbMs = segTtfb.ms;
+                    }
+                }
+            } catch (_) {
+                // ignore
+            }
+        }
+
+        quality.score = computeQualityScore(quality);
+        return { apiId, quality };
+    } catch (e) {
+        quality.error = e?.message || '检测失败';
+        quality.score = computeQualityScore(quality);
+        return { apiId, quality };
+    }
+}
+
 // 测量单个API的延迟
 async function measureApiLatency(apiUrl) {
     const start = performance.now();
@@ -1664,8 +1968,12 @@ function getRelativeTime(timestamp) {
 // 更新测速时间显示
 function updateLatencyTimeDisplay() {
     const timeElement = document.getElementById('latencyTestTime');
-    if (timeElement && latencyTestTime) {
-        timeElement.textContent = `测速时间: ${getRelativeTime(latencyTestTime)}`;
+    if (!timeElement) return;
+    const ts = qualityTestTime || latencyTestTime;
+    if (ts) {
+        timeElement.textContent = `检测时间: ${getRelativeTime(ts)}`;
+    } else {
+        timeElement.textContent = '';
     }
 }
 
