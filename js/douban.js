@@ -513,6 +513,11 @@ function renderDoubanCards(data, container) {
             const obj = JSON.parse(raw);
             if (obj && obj.verified && obj.passwordHash) return obj.passwordHash;
         } catch (_) {}
+        // 兜底：直接使用页面注入的密码哈希（本身就是代理鉴权所需的值）
+        try {
+            const h = window.__ENV__ && window.__ENV__.PASSWORD;
+            if (typeof h === 'string' && h.length === 64) return h;
+        } catch (_) {}
         return null;
     }
 
