@@ -79,6 +79,8 @@ app.get(['/', '/index.html', '/player.html'], async (req, res) => {
     }
 
     const content = await renderPage(filePath, config.password);
+    // 避免浏览器缓存旧 HTML，导致脚本加载顺序/逻辑更新不生效
+    res.setHeader('Cache-Control', 'no-store');
     res.send(content);
   } catch (error) {
     console.error('页面渲染错误:', error);
@@ -90,6 +92,7 @@ app.get('/s=:keyword', async (req, res) => {
   try {
     const filePath = path.join(__dirname, 'index.html');
     const content = await renderPage(filePath, config.password);
+    res.setHeader('Cache-Control', 'no-store');
     res.send(content);
   } catch (error) {
     console.error('搜索页面渲染错误:', error);
