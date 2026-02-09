@@ -79,6 +79,8 @@ app.get(['/', '/index.html', '/player.html'], async (req, res) => {
     }
 
     const content = await renderPage(filePath, config.password);
+    // 避免浏览器缓存旧 HTML，导致脚本加载顺序/逻辑更新不生效
+    res.setHeader('Cache-Control', 'no-store');
     res.send(content);
   } catch (error) {
     console.error('页面渲染错误:', error);
@@ -90,6 +92,7 @@ app.get('/s=:keyword', async (req, res) => {
   try {
     const filePath = path.join(__dirname, 'index.html');
     const content = await renderPage(filePath, config.password);
+    res.setHeader('Cache-Control', 'no-store');
     res.send(content);
   } catch (error) {
     console.error('搜索页面渲染错误:', error);
@@ -187,7 +190,17 @@ app.get('/proxy/:encodedUrl', async (req, res) => {
           responseType: 'stream',
           timeout: config.timeout,
           headers: {
-            'User-Agent': config.userAgent
+            'User-Agent': config.userAgent,
+            // 避免部分图片/资源的热链限制
+            'Referer': (() => {
+              try {
+                const u = new URL(targetUrl);
+                if (u.hostname.endsWith('doubanio.com')) return 'https://movie.douban.com/';
+                return u.origin;
+              } catch {
+                return undefined;
+              }
+            })(),
           }
         });
       } catch (error) {
@@ -226,7 +239,14 @@ app.get('/proxy/:encodedUrl', async (req, res) => {
 });
 
 app.use(express.static(path.join(__dirname), {
-  maxAge: config.cacheMaxAge
+  maxAge: config.cacheMaxAge,
+  setHeaders(res, filePath) {
+    // 开发/自托管环境下，强制让 HTML/JS/CSS 走 revalidate，避免浏览器缓存旧脚本导致功能不生效。
+    // Vercel/CF Pages 等静态托管通常另有缓存策略，不走这里。
+    if (/\.(html|js|css)$/i.test(filePath)) {
+      res.setHeader('Cache-Control', 'no-store');
+    }
+  }
 }));
 
 app.use((err, req, res, next) => {

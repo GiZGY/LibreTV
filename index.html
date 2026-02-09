@@ -102,14 +102,19 @@
                         class="px-2 py-1 bg-[#333] hover:bg-[#444] text-white text-xs rounded">全不选</button>
                     <button onclick="selectAllAPIs(true, true)"
                         class="px-2 py-1 bg-[#333] hover:bg-[#444] text-white text-xs rounded">全选普通资源</button>
-                    <button id="testSpeedBtn" onclick="testAllApiLatency()"
+                    <button id="testSpeedBtn" onclick="testAllApiQuality()"
                         class="px-2 py-1 bg-blue-600 hover:bg-blue-700 text-white text-xs rounded transition-colors flex items-center gap-1">
                         <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                                 d="M13 10V3L4 14h7v7l9-11h-7z"></path>
                         </svg>
-                        测速并排序
+                        质量检测并排序
                     </button>
+                    <label class="flex items-center gap-1 px-2 py-1 bg-[#222] border border-[#333] rounded text-xs text-gray-400 select-none">
+                        <input type="checkbox" id="hideZombieToggle"
+                            class="form-checkbox h-3 w-3 text-blue-600 bg-[#222] border border-[#333]">
+                        隐藏僵尸源
+                    </label>
                 </div>
 
                 <!-- API选择区域 - 使用滚动区域 -->
@@ -493,6 +498,13 @@
         window._jsSha256 = window.sha256;
     </script>
     <script src="js/config.js"></script>
+    <!-- 环境变量注入脚本：必须在依赖 window.__ENV__ 的脚本之前执行 -->
+    <script>
+        window.__ENV__ = window.__ENV__ || {};
+        // 注入服务器端环境变量 (将由服务器端替换)
+        window.__ENV__.PASSWORD = "{{PASSWORD}}";
+    </script>
+
     <script src="js/proxy-auth.js"></script>
     <script src="js/customer_site.js"></script>
     <script src="js/ui.js"></script>
@@ -504,16 +516,6 @@
 
     <!-- PWA 注册 -->
     <script src="js/pwa-register.js"></script>
-
-    <!-- 环境变量注入脚本 -->
-    <script>
-        // 创建全局环境变量对象
-        window.__ENV__ = window.__ENV__ || {};
-
-        // 注入服务器端环境变量 (将由服务器端替换)
-        // PASSWORD 变量将在这里被服务器端注入
-        window.__ENV__.PASSWORD = "{{PASSWORD}}";
-    </script>
 
     <!-- 版本检测脚本 -->
     <script src="js/version-check.js"></script>

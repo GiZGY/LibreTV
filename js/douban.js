@@ -501,6 +501,35 @@ async function fetchDoubanData(url) {
 
 // 抽取渲染豆瓣卡片的逻辑到单独函数
 function renderDoubanCards(data, container) {
+    function getProxyAuthHashSync() {
+        // proxy-auth.js 会把 hash 缓存在 localStorage(proxyAuthHash) 或 passwordVerified 里
+        try {
+            const h = localStorage.getItem('proxyAuthHash');
+            if (h) return h;
+        } catch (_) {}
+        try {
+            const raw = localStorage.getItem('passwordVerified');
+            if (!raw) return null;
+            const obj = JSON.parse(raw);
+            if (obj && obj.verified && obj.passwordHash) return obj.passwordHash;
+        } catch (_) {}
+        // 兜底：直接使用页面注入的密码哈希（本身就是代理鉴权所需的值）
+        try {
+            const h = window.__ENV__ && window.__ENV__.PASSWORD;
+            if (typeof h === 'string' && h.length === 64) return h;
+        } catch (_) {}
+        return null;
+    }
+
+    function buildAuthedProxyUrlSync(targetUrl) {
+        const base = PROXY_URL + encodeURIComponent(targetUrl);
+        const hash = getProxyAuthHashSync();
+        if (!hash) return base;
+        const ts = Date.now();
+        const sep = base.includes('?') ? '&' : '?';
+        return `${base}${sep}auth=${encodeURIComponent(hash)}&t=${ts}`;
+    }
+
     // 创建文档片段以提高性能
     const fragment = document.createDocumentFragment();
     
@@ -529,19 +558,18 @@ function renderDoubanCards(data, container) {
                 .replace(/>/g, '&gt;');
             
             // 处理图片URL
-            // 1. 直接使用豆瓣图片URL (添加no-referrer属性)
+            // 豆瓣图片对 Referer 有严格限制：直接从本站发起通常会 403/418，因此默认走代理。
             const originalCoverUrl = item.cover;
-            
-            // 2. 也准备代理URL作为备选
-            const proxiedCoverUrl = PROXY_URL + encodeURIComponent(originalCoverUrl);
+            // 注意：代理需要鉴权参数，img 的 onerror 不能 await，因此这里使用同步拼接（从 localStorage 取 hash）
+            const proxiedCoverUrl = buildAuthedProxyUrlSync(originalCoverUrl);
             
             // 为不同设备优化卡片布局
             card.innerHTML = `
                 <div class="relative w-full aspect-[2/3] overflow-hidden cursor-pointer" onclick="fillAndSearchWithDouban('${safeTitle}')">
-                    <img src="${originalCoverUrl}" alt="${safeTitle}" 
+                    <img src="${proxiedCoverUrl}" alt="${safeTitle}" 
                         class="w-full h-full object-cover transition-transform duration-500 hover:scale-110"
-                        onerror="this.onerror=null; this.src='${proxiedCoverUrl}'; this.classList.add('object-contain');"
-                        loading="lazy" referrerpolicy="no-referrer">
+                        onerror="this.onerror=null; this.src='data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyMDAiIGhlaWdodD0iMzAwIiB2aWV3Qm94PSIwIDAgMjAwIDMwMCI+PHJlY3Qgd2lkdGg9IjIwMCIgaGVpZ2h0PSIzMDAiIGZpbGw9IiMxMTExMTEiLz48dGV4dCB4PSI1MCUiIHk9IjUwJSIgZmlsbD0iIzY2NiIgZm9udC1zaXplPSIxNCIgdGV4dC1hbmNob3I9Im1pZGRsZSI+5peg5rOV6K6+5aSHPC90ZXh0Pjwvc3ZnPg=='; this.classList.add('object-contain');"
+                        loading="lazy">
                     <div class="absolute inset-0 bg-gradient-to-t from-black to-transparent opacity-60"></div>
                     <div class="absolute bottom-2 left-2 bg-black/70 text-white text-xs px-2 py-1 rounded-sm">
                         <span class="text-yellow-400">★</span> ${safeRate}
