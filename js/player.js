@@ -437,42 +437,84 @@ function initPlayer(videoUrl) {
         liveDurationInfinity: false
     };
 
-    // Create new ArtPlayer instance
-    art = new Artplayer({
-        container: '#player',
-        url: videoUrl,
-        type: 'm3u8',
-        title: videoTitle,
-        volume: 0.8,
-        isLive: false,
-        muted: false,
-        autoplay: true,
-        pip: true,
-        autoSize: false,
-        autoMini: true,
-        screenshot: true,
-        setting: true,
-        loop: false,
-        flip: false,
-        playbackRate: true,
-        aspectRatio: false,
-        fullscreen: true,
-        fullscreenWeb: true,
-        subtitleOffset: false,
-        miniProgressBar: true,
-        mutex: true,
-        backdrop: true,
-        playsInline: true,
-        autoPlayback: false,
-        airplay: true,
-        hotkey: false,
-        theme: '#23ade5',
-        lang: navigator.language.toLowerCase(),
-        moreVideoAttr: {
-            crossOrigin: 'anonymous',
-        },
-        customType: {
-            m3u8: function (video, url) {
+	    // Create new ArtPlayer instance
+	    art = new Artplayer({
+	        container: '#player',
+	        url: videoUrl,
+	        type: 'm3u8',
+	        title: videoTitle,
+	        volume: 0.8,
+	        isLive: false,
+	        muted: false,
+	        autoplay: true,
+	        pip: true,
+	        autoSize: false,
+	        autoMini: true,
+	        screenshot: true,
+	        setting: true,
+	        loop: false,
+	        flip: false,
+	        // 使用自定义倍速设置项，避免 Artplayer 内置显示将 0.75/1.25 四舍五入为 0.8/1.3
+	        playbackRate: false,
+	        aspectRatio: false,
+	        fullscreen: true,
+	        fullscreenWeb: true,
+	        subtitleOffset: false,
+	        miniProgressBar: true,
+	        mutex: true,
+	        backdrop: true,
+	        playsInline: true,
+	        autoPlayback: false,
+	        airplay: true,
+	        hotkey: false,
+	        theme: '#23ade5',
+	        lang: navigator.language.toLowerCase(),
+	        settings: [
+	            (() => {
+	                const rates = [0.5, 0.75, 1, 1.25, 1.5, 2];
+	                const formatRate = (rate) => {
+	                    if (rate === 2) return '2.0';
+	                    if (rate === 1) return '1';
+	                    return String(rate);
+	                };
+	                const nameOfRate = (rate) => `playback-rate-custom-${String(rate).replace('.', '_')}`;
+
+	                const updateSettingState = (art) => {
+	                    const currentRate = Number(art.video.playbackRate || 1);
+	                    const parent = art.setting?.find?.('playback-rate-custom');
+	                    if (parent) parent.tooltip = formatRate(currentRate);
+
+	                    const item = art.setting?.find?.(nameOfRate(currentRate));
+	                    if (item) art.setting.check(item);
+	                };
+
+	                return {
+	                    name: 'playback-rate-custom',
+	                    html: '播放速度',
+	                    tooltip: '1',
+	                    selector: rates.map((rate) => ({
+	                        name: nameOfRate(rate),
+	                        value: rate,
+	                        default: rate === 1,
+	                        html: formatRate(rate),
+	                    })),
+	                    onSelect(item) {
+	                        this.playbackRate = item.value;
+	                        return item.html;
+	                    },
+	                    mounted() {
+	                        // 初始化与同步（外部逻辑也可能修改 playbackRate，例如长按三倍速）
+	                        updateSettingState(this);
+	                        this.on('video:ratechange', () => updateSettingState(this));
+	                    },
+	                };
+	            })(),
+	        ],
+	        moreVideoAttr: {
+	            crossOrigin: 'anonymous',
+	        },
+	        customType: {
+	            m3u8: function (video, url) {
                 // 清理之前的HLS实例
                 if (currentHls && currentHls.destroy) {
                     try {
