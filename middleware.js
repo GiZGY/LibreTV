@@ -5,11 +5,11 @@ export default async function middleware(request) {
   // Get the URL from the request
   const url = new URL(request.url);
   
-  // Only process HTML pages
-  const isHtmlPage = url.pathname.endsWith('.html') || url.pathname.endsWith('/');
-  if (!isHtmlPage) {
-    return; // Let the request pass through unchanged
-  }
+  // 仅跳过“明显的静态资源”请求；像 /s=xxx 这类无扩展名路径会被 rewrite 到 HTML，
+  // 必须在这里注入 PASSWORD 哈希，否则会误判为“未设置 PASSWORD 环境变量”。
+  const pathname = url.pathname || '/';
+  const looksLikeAsset = pathname.includes('.') && !pathname.endsWith('.html');
+  if (looksLikeAsset) return;
 
   // Fetch the original response
   const response = await fetch(request);
