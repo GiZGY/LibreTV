@@ -123,6 +123,65 @@ div.player-loading-text {
     display: block !important;
 }
 
+/* Playback rate hover menu (B 站风格) */
+.libretv-rate-control-root {
+    position: relative;
+}
+
+.libretv-rate-control {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 46px;
+    height: 100%;
+    padding: 0 8px;
+}
+
+.libretv-rate-label {
+    font-size: 14px;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+}
+
+.libretv-rate-panel {
+    position: absolute;
+    right: 0;
+    bottom: calc(var(--art-control-height) + 8px);
+    width: 86px;
+    padding: 10px 0;
+    border-radius: 8px;
+    background: rgba(0, 0, 0, 0.75);
+    backdrop-filter: saturate(160%) blur(12px);
+    -webkit-backdrop-filter: saturate(160%) blur(12px);
+    display: none;
+    z-index: 2000;
+}
+
+.libretv-rate-panel.show {
+    display: block;
+}
+
+.libretv-rate-item {
+    height: 42px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    font-size: 18px;
+    line-height: 1;
+    color: rgba(255, 255, 255, 0.92);
+    user-select: none;
+}
+
+.libretv-rate-item:hover {
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.libretv-rate-item.active {
+    color: #23ade5;
+    font-weight: 600;
+}
+
 /* Fix for Chrome-specific issues */
 @media screen and (-webkit-min-device-pixel-ratio: 0) {
     .art-video-player video {

@@ -531,6 +531,105 @@ function initPlayer(videoUrl) {
 	        hotkey: false,
 	        theme: '#23ade5',
 	        lang: navigator.language.toLowerCase(),
+	        controls: [
+	            (() => {
+	                const rates = [2, 1.5, 1.25, 1, 0.75, 0.5];
+	                const formatX = (rate) => {
+	                    const r = Number(rate);
+	                    if (r === 1.25 || r === 0.75) return r.toFixed(2);
+	                    return r.toFixed(1);
+	                };
+
+	                return {
+	                    name: 'playback-rate-hover',
+	                    position: 'right',
+	                    tooltip: '倍速',
+	                    html: '<div class="libretv-rate-control"><span class="libretv-rate-label">1.0x</span></div>',
+	                    mounted($control) {
+	                        const art = this;
+	                        const isTouch =
+	                            (typeof window.matchMedia === 'function' && window.matchMedia('(hover: none)').matches) ||
+	                            (navigator.maxTouchPoints && navigator.maxTouchPoints > 0);
+	                        const label = $control.querySelector('.libretv-rate-label') || $control;
+	                        $control.classList.add('libretv-rate-control-root');
+
+	                        const panel = document.createElement('div');
+	                        panel.className = 'libretv-rate-panel';
+	                        panel.innerHTML = rates
+	                            .map((r) => `<div class="libretv-rate-item" data-rate="${r}">${formatX(r)}x</div>`)
+	                            .join('');
+	                        $control.appendChild(panel);
+
+	                        let hideTimer = null;
+	                        const show = () => {
+	                            if (hideTimer) clearTimeout(hideTimer);
+	                            panel.classList.add('show');
+	                        };
+	                        const hideNow = () => {
+	                            if (hideTimer) clearTimeout(hideTimer);
+	                            panel.classList.remove('show');
+	                        };
+	                        const hideSoon = () => {
+	                            if (hideTimer) clearTimeout(hideTimer);
+	                            hideTimer = setTimeout(hideNow, 120);
+	                        };
+
+	                        const update = () => {
+	                            const current = Number(art.video?.playbackRate || 1);
+	                            label.textContent = `${formatX(current)}x`;
+	                            panel.querySelectorAll('.libretv-rate-item').forEach((el) => {
+	                                const r = Number(el.dataset.rate);
+	                                el.classList.toggle('active', Math.abs(r - current) < 0.001);
+	                            });
+	                        };
+
+	                        const setRate = (rate) => {
+	                            const r = Number(rate);
+	                            if (!art.video) return;
+	                            // art.playbackRate 会同步触发内部状态与事件
+	                            art.playbackRate = r;
+	                            art.video.playbackRate = r;
+	                            update();
+	                            hideNow();
+	                        };
+
+	                        panel.addEventListener('click', (ev) => {
+	                            const item = ev.target.closest('.libretv-rate-item');
+	                            if (!item) return;
+	                            setRate(item.dataset.rate);
+	                            ev.preventDefault();
+	                            ev.stopPropagation();
+	                        });
+
+	                        // 桌面端：悬停展开
+	                        $control.addEventListener('mouseenter', show);
+	                        $control.addEventListener('mouseleave', hideSoon);
+	                        panel.addEventListener('mouseenter', show);
+	                        panel.addEventListener('mouseleave', hideSoon);
+
+	                        // 触屏端：点击展开/收起
+	                        $control.addEventListener('click', (ev) => {
+	                            if (!isTouch) return;
+	                            if (panel.classList.contains('show')) hideNow();
+	                            else show();
+	                            ev.preventDefault();
+	                            ev.stopPropagation();
+	                        });
+
+	                        // 点击空白处收起（避免面板悬停状态异常）
+	                        const onDocClick = (ev) => {
+	                            if (!$control.contains(ev.target)) hideNow();
+	                        };
+	                        document.addEventListener('click', onDocClick);
+	                        art.on('destroy', () => document.removeEventListener('click', onDocClick));
+
+	                        art.on('video:ratechange', update);
+	                        art.on('ready', update);
+	                        update();
+	                    },
+	                };
+	            })(),
+	        ],
 	        settings: [
 	            (() => {
 	                const rates = [0.5, 0.75, 1, 1.25, 1.5, 2];
