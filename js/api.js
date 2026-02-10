@@ -52,6 +52,16 @@ async function handleApiRequest(url) {
                     throw new Error('API返回的数据格式无效');
                 }
 
+                // 360 资源疑似不支持关键词搜索：无论 wd 是什么都会返回同一批“短剧”列表
+                // 这里直接将其标记为搜索失败，避免污染站点可用性测试/质量评分/排序
+                if (source === 'zy360') {
+                    return JSON.stringify({
+                        code: 400,
+                        msg: '360资源疑似不支持关键词搜索，已忽略该源结果',
+                        list: [],
+                    });
+                }
+
                 // 添加源信息到每个结果
                 data.list.forEach(item => {
                     item.source_name = source === 'custom' ? '自定义源' : API_SITES[source].name;

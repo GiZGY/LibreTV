@@ -1,5 +1,18 @@
 async function searchByAPIAndKeyWord(apiId, query) {
     try {
+        // 360 资源当前疑似不支持关键词搜索：无论 wd 是什么都会返回同一批“短剧”列表
+        // 为避免污染搜索结果，直接忽略它（用户仍可在设置里取消勾选）。
+        if (apiId === 'zy360') {
+            if (!window.__ZY360_SEARCH_WARNED__) {
+                window.__ZY360_SEARCH_WARNED__ = true;
+                // showToast 在 app.js 里定义，这里用可选调用避免报错
+                try {
+                    window.showToast && window.showToast('360资源疑似不支持关键词搜索，已自动忽略该源结果（避免短剧刷屏）', 'info');
+                } catch (_) {}
+            }
+            return [];
+        }
+
         let apiUrl, apiName, apiBaseUrl;
         
         // 处理自定义API
