@@ -282,6 +282,21 @@ function initializePageContent() {
 }
 
 // 处理键盘快捷键
+let arrowRightLongPressTimer = null;
+let arrowRightOriginalPlaybackRate = 1.0;
+let arrowRightLongPressActive = false;
+let arrowRightKeyDown = false;
+const ARROW_RIGHT_LONG_PRESS_MS = 450;
+const ARROW_RIGHT_LONG_PRESS_RATE = 2.0;
+
+function formatSpeedHintValue(rate) {
+    const r = Number(rate);
+    if (Number.isNaN(r)) return '1';
+    if (r === 2) return '2.0';
+    if (r === 1) return '1';
+    return String(r);
+}
+
 function handleKeyboardShortcuts(e) {
     // 忽略输入框中的按键事件
     if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
@@ -313,13 +328,30 @@ function handleKeyboardShortcuts(e) {
         }
     }
 
-    // 右箭头 = 快进
+    // 右箭头：短按快进，长按临时 2.0x（松开恢复）
     if (!e.altKey && e.key === 'ArrowRight') {
-        if (art && art.currentTime < art.duration - 5) {
-            art.currentTime += 5;
-            showShortcutHint('快进', 'right');
+        if (!art || !art.video) return;
+
+        // keydown 会持续触发重复事件，这里做去重
+        if (arrowRightKeyDown) {
             e.preventDefault();
+            return;
         }
+        arrowRightKeyDown = true;
+
+        arrowRightLongPressActive = false;
+        arrowRightOriginalPlaybackRate = art.video.playbackRate || 1.0;
+
+        if (arrowRightLongPressTimer) clearTimeout(arrowRightLongPressTimer);
+        arrowRightLongPressTimer = setTimeout(() => {
+            // 仅在播放中启用临时倍速，避免暂停时误触
+            if (art.video.paused) return;
+            arrowRightLongPressActive = true;
+            art.video.playbackRate = ARROW_RIGHT_LONG_PRESS_RATE;
+            showShortcutHint(`${formatSpeedHintValue(ARROW_RIGHT_LONG_PRESS_RATE)}倍速`, 'right');
+        }, ARROW_RIGHT_LONG_PRESS_MS);
+
+        e.preventDefault();
     }
 
     // 上箭头 = 音量+
@@ -358,6 +390,36 @@ function handleKeyboardShortcuts(e) {
         }
     }
 }
+
+// keyup 用于区分短按与长按（适配遥控器/键盘）
+document.addEventListener('keyup', function (e) {
+    if (e.key !== 'ArrowRight') return;
+    if (!arrowRightKeyDown) return;
+    arrowRightKeyDown = false;
+
+    if (!art || !art.video) return;
+
+    if (arrowRightLongPressTimer) {
+        clearTimeout(arrowRightLongPressTimer);
+        arrowRightLongPressTimer = null;
+    }
+
+    if (arrowRightLongPressActive) {
+        // 长按结束：恢复原速度
+        art.video.playbackRate = arrowRightOriginalPlaybackRate || 1.0;
+        showShortcutHint(`${formatSpeedHintValue(art.video.playbackRate)}倍速`, 'right');
+        arrowRightLongPressActive = false;
+        e.preventDefault();
+        return;
+    }
+
+    // 短按：快进 5 秒
+    if (art.currentTime < art.duration - 5) {
+        art.currentTime += 5;
+        showShortcutHint('快进', 'right');
+        e.preventDefault();
+    }
+});
 
 // 显示快捷键提示
 function showShortcutHint(text, direction) {
@@ -503,7 +565,7 @@ function initPlayer(videoUrl) {
 	                        return item.html;
 	                    },
 	                    mounted() {
-	                        // 初始化与同步（外部逻辑也可能修改 playbackRate，例如长按三倍速）
+	                        // 初始化与同步（外部逻辑也可能修改 playbackRate，例如长按临时倍速）
 	                        updateSettingState(this);
 	                        this.on('video:ratechange', () => updateSettingState(this));
 	                    },
@@ -749,7 +811,7 @@ function initPlayer(videoUrl) {
         showError('视频播放失败: ' + (error.message || '未知错误'));
     });
 
-    // 添加移动端长按三倍速播放功能
+    // 添加移动端长按临时倍速播放功能
     setupLongPressSpeedControl();
 
     // 视频播放结束事件
@@ -1312,8 +1374,8 @@ function saveCurrentProgress() {
     }
 }
 
-// 设置移动端长按三倍速播放功能
-function setupLongPressSpeedControl() {
+    // 设置移动端长按临时倍速播放功能
+    function setupLongPressSpeedControl() {
     if (!art || !art.video) return;
 
     const playerElement = document.getElementById('player');
@@ -1321,10 +1383,10 @@ function setupLongPressSpeedControl() {
     let originalPlaybackRate = 1.0;
     let isLongPress = false;
 
-    // 显示快速提示
-    function showSpeedHint(speed) {
-        showShortcutHint(`${speed}倍速`, 'right');
-    }
+	    // 显示快速提示
+	    function showSpeedHint(speed) {
+	        showShortcutHint(`${formatSpeedHintValue(speed)}倍速`, 'right');
+	    }
 
     // 禁用右键
     playerElement.oncontextmenu = () => {
@@ -1361,10 +1423,10 @@ function setupLongPressSpeedControl() {
                 return;
             }
 
-            // 长按超过500ms，设置为3倍速
-            art.video.playbackRate = 3.0;
-            isLongPress = true;
-            showSpeedHint(3.0);
+        // 长按超过500ms，设置为2倍速
+        art.video.playbackRate = 2.0;
+        isLongPress = true;
+        showSpeedHint(2.0);
 
             // 只在确认为长按时阻止默认行为
             e.preventDefault();
