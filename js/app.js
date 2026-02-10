@@ -615,6 +615,35 @@ function selectAllAPIs(selectAll = true, excludeAdult = false) {
     checkAdultAPIsSelected();
 }
 
+// 全选优质资源（质量检测绿色：score >= 80），并自动排除成人源
+function selectHighQualityAPIs(minScore = 80) {
+    const checkboxes = document.querySelectorAll('#apiCheckboxes input[type="checkbox"]');
+    let selectedCount = 0;
+
+    checkboxes.forEach(checkbox => {
+        const apiId = checkbox.dataset.api;
+        if (!apiId) return;
+
+        // 排除成人源
+        if (checkbox.classList.contains('api-adult')) {
+            checkbox.checked = false;
+            return;
+        }
+
+        const score = apiQualities?.[apiId]?.score;
+        const isHighQuality = typeof score === 'number' && score >= minScore;
+        checkbox.checked = isHighQuality;
+        if (isHighQuality) selectedCount += 1;
+    });
+
+    updateSelectedAPIs();
+    checkAdultAPIsSelected();
+
+    try {
+        showToast && showToast(`已选择优质资源：${selectedCount} 个`, 'success');
+    } catch (_) {}
+}
+
 // 显示添加自定义API表单
 function showAddCustomApiForm() {
     const form = document.getElementById('addCustomApiForm');
