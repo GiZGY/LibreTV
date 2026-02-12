@@ -104,7 +104,7 @@
 }
 
 .douban-toggle-button.active {
-    background: #db2777;
+    background: #f97316;
     color: white;
 }
 
@@ -119,7 +119,7 @@
 .douban-refresh-button {
     font-size: 0.875rem;
     padding: 0.25rem 0.75rem;
-    background: #db2777;
+    background: #f97316;
     color: white;
     border-radius: 0.5rem;
     display: flex;
@@ -128,7 +128,7 @@
 }
 
 .douban-refresh-button:hover {
-    background: #be185d;
+    background: #ea580c;
 }
 
 .douban-tags-container {
@@ -144,23 +144,189 @@
 
 .douban-tag {
     padding: 0.25rem 0.75rem;
-    background: rgba(219, 39, 119, 0.1);
-    border: 1px solid rgba(219, 39, 119, 0.2);
+    background: rgba(249, 115, 22, 0.1);
+    border: 1px solid rgba(249, 115, 22, 0.2);
     border-radius: 0.5rem;
-    color: #f9a8d4;
+    color: #fdba74;
     font-size: 0.875rem;
     transition: all 0.2s;
 }
 
 .douban-tag:hover {
-    background: rgba(219, 39, 119, 0.2);
-    border-color: rgba(219, 39, 119, 0.4);
+    background: rgba(249, 115, 22, 0.2);
+    border-color: rgba(249, 115, 22, 0.4);
 }
 
 .douban-tag.active {
-    background: #db2777;
-    border-color: #db2777;
+    background: #f97316;
+    border-color: #f97316;
     color: white;
+}
+
+.douban-filter-row {
+    display: flex;
+    align-items: end;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+}
+
+.douban-mode-switches {
+    display: flex;
+    align-items: center;
+    background: #222;
+    border: 1px solid #333;
+    border-radius: 9999px;
+    padding: 3px;
+}
+
+.douban-mode-button {
+    height: 30px;
+    padding: 0 12px;
+    border-radius: 9999px;
+    font-size: 0.8125rem;
+    color: #9ca3af;
+    transition: all 0.2s ease;
+}
+
+.douban-mode-button:hover {
+    color: #fff;
+}
+
+.douban-mode-button.is-active {
+    background: #f97316;
+    color: #fff;
+}
+
+.is-hidden {
+    display: none !important;
+}
+
+.douban-filter-item {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.douban-filter-item span {
+    color: #9ca3af;
+    font-size: 0.75rem;
+}
+
+.douban-filter-item select {
+    appearance: none;
+    -webkit-appearance: none;
+    background: linear-gradient(180deg, #1f1f1f 0%, #101010 100%);
+    border: 1px solid #3a3a3a;
+    color: #fff;
+    border-radius: 10px;
+    min-width: 120px;
+    height: 38px;
+    padding: 0 36px 0 12px;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+    background-image:
+        linear-gradient(45deg, transparent 50%, #e5e7eb 50%),
+        linear-gradient(135deg, #e5e7eb 50%, transparent 50%);
+    background-position:
+        calc(100% - 16px) calc(50% - 3px),
+        calc(100% - 10px) calc(50% - 3px);
+    background-size: 6px 6px, 6px 6px;
+    background-repeat: no-repeat;
+}
+
+.douban-filter-item select:focus {
+    outline: none;
+    border-color: #f97316;
+    box-shadow: 0 0 0 3px rgba(249, 115, 22, 0.22);
+}
+
+.douban-filter-reset {
+    height: 34px;
+    padding: 0 12px;
+    background: #1a1a1a;
+    border: 1px solid #333;
+    color: #d1d5db;
+    border-radius: 8px;
+    transition: all 0.2s ease;
+}
+
+.douban-filter-reset:hover {
+    background: #27272a;
+    color: #fff;
+}
+
+.douban-filter-meta-row {
+    margin-bottom: 10px;
+}
+
+.douban-filter-meta-title {
+    display: block;
+    color: #9ca3af;
+    font-size: 0.75rem;
+    margin-bottom: 6px;
+}
+
+.douban-filter-chips {
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    padding-bottom: 4px;
+    white-space: nowrap;
+}
+
+.douban-filter-chip {
+    flex: 0 0 auto;
+    height: 30px;
+    padding: 0 12px;
+    border-radius: 999px;
+    border: 1px solid #333;
+    background: #181818;
+    color: #d1d5db;
+    font-size: 0.8125rem;
+    transition: all 0.2s ease;
+}
+
+.douban-filter-chip:hover {
+    border-color: #4b5563;
+    color: #fff;
+}
+
+.douban-filter-chip.is-active {
+    background: #f97316;
+    border-color: #f97316;
+    color: #fff;
+}
+
+.douban-pagination {
+    margin-top: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+}
+
+.douban-pagination button {
+    background: #1a1a1a;
+    border: 1px solid #3a3a3a;
+    color: #f3f4f6;
+    border-radius: 8px;
+    padding: 6px 12px;
+    font-size: 0.875rem;
+    transition: all 0.2s ease;
+}
+
+.douban-pagination button:hover:not(:disabled) {
+    border-color: #f97316;
+    color: #fff;
+}
+
+.douban-pagination button:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
+.douban-pagination span {
+    color: #9ca3af;
+    font-size: 0.875rem;
 }
 
 /* 搜索结果样式 */

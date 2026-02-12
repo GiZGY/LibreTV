@@ -105,10 +105,10 @@ const SITE_CONFIG = {
         api: 'https://cj.lziapi.com/api.php/provide/vod/',
         name: '量子资源站'
     },
-    name: 'LibreTV',
+    name: 'OpenStream',
     url: 'https://libretv.is-an.org',
     description: '免费在线视频搜索与观看平台',
-    logo: 'image/logo.png',
+    logo: 'image/openstream-logo.svg?v=20260212g',
     version: '1.0.3'
 };
 
@@ -252,6 +252,35 @@ const API_CONFIG = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
             'Accept': 'application/json'
         }
+    }
+};
+
+// 搜索筛选配置（关键词 + 年份 + 大类 + 题材）
+const SEARCH_FILTERS_CONFIG = {
+    storageKey: 'searchFilters',
+    default: {
+        type: 'all',
+        year: '',
+        genre: ''
+    },
+    types: [
+        { value: 'all', label: '全部' },
+        { value: 'movie', label: '电影' },
+        { value: 'tv', label: '电视剧' }
+    ],
+    genres: [
+        '动作', '喜剧', '爱情', '科幻', '悬疑', '惊悚', '恐怖', '犯罪',
+        '战争', '剧情', '动画', '纪录片', '家庭', '冒险', '古装', '奇幻'
+    ],
+    yearRange: {
+        start: new Date().getFullYear(),
+        totalYears: 30
+    },
+    noKeywordPages: 5,
+    // 本地兜底匹配规则：不同源字段命名不统一，使用关键词匹配
+    typeKeywords: {
+        movie: ['电影', '影片', '院线', '剧情片', '动作片', '爱情片', '科幻片', '动画电影'],
+        tv: ['电视剧', '连续剧', '剧集', '短剧', '网剧', '美剧', '韩剧', '日剧', '国产剧', '台剧', '港剧']
     }
 };
 

@@ -42,8 +42,8 @@ LibreTV 全局样式
     /* 霓虹蓝主色调 */
     --primary-light: #33d6ff;
     /* 浅霓虹蓝变体 */
-    --secondary-color: #0f1622;
-    /* 深蓝黑背景色 */
+    --secondary-color: #050505;
+    /* 纯黑背景色 */
     --accent-color: #ff3c78;
     /* 霓虹粉强调色 */
     --text-color: #e6f2ff;
@@ -51,13 +51,13 @@ LibreTV 全局样式
     --text-muted: #8599b2;
     /* 淡蓝灰色次级文本 */
     --border-color: rgba(0, 204, 255, 0.15);
-    --page-gradient-start: #0f1622;
-    /* 深蓝黑起始色 */
-    --page-gradient-end: #192231;
-    /* 深靛蓝结束色 */
-    --card-gradient-start: #121b29;
+    --page-gradient-start: #050505;
+    /* 纯黑起始色 */
+    --page-gradient-end: #000000;
+    /* 纯黑结束色 */
+    --card-gradient-start: #111111;
     /* 卡片起始色 */
-    --card-gradient-end: #1c2939;
+    --card-gradient-end: #181818;
     /* 卡片结束色 */
     --card-accent: rgba(0, 204, 255, 0.12);
     /* 霓虹蓝卡片强调色 */
@@ -68,12 +68,12 @@ LibreTV 全局样式
 .page-bg {
     background: linear-gradient(180deg, var(--page-gradient-start), var(--page-gradient-end));
     min-height: 100vh;
-    /* 柔和赛博点状背景 */
+    /* 黑色基底 + 极轻微纹理层次 */
     background-image:
         linear-gradient(180deg, var(--page-gradient-start), var(--page-gradient-end)),
-        radial-gradient(circle at 25px 25px, rgba(0, 204, 255, 0.04) 2px, transparent 3px),
-        radial-gradient(circle at 75px 75px, rgba(255, 60, 120, 0.02) 1px, transparent 2px),
-        radial-gradient(circle at 50px 50px, rgba(150, 255, 250, 0.015) 1px, transparent 2px);
+        radial-gradient(circle at 25px 25px, rgba(255, 255, 255, 0.02) 1px, transparent 2px),
+        radial-gradient(circle at 75px 75px, rgba(255, 255, 255, 0.015) 1px, transparent 2px),
+        radial-gradient(circle at 50px 50px, rgba(255, 255, 255, 0.01) 1px, transparent 2px);
     background-blend-mode: normal;
     background-size: cover, 100px 100px, 50px 50px, 75px 75px;
 }
@@ -183,29 +183,44 @@ button,
     background: var(--primary-light);
 }
 
-::-webkit-scrollbar {
-    width: 8px;
-    height: 8px;
-}
-
-::-webkit-scrollbar-track {
-    background: #111;
-    border-radius: 4px;
-}
-
-::-webkit-scrollbar-thumb {
-    background: #333;
-    border-radius: 4px;
-    transition: all 0.3s ease;
-}
-
-::-webkit-scrollbar-thumb:hover {
-    background: #444;
+:root {
+    --scrollbar-size: 8px;
+    --scrollbar-track: #111;
+    --scrollbar-thumb: #333;
+    --scrollbar-thumb-hover: #444;
+    --scrollbar-thumb-focus: #555;
 }
 
 * {
     scrollbar-width: thin;
-    scrollbar-color: #333 #111;
+    scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+}
+
+*::-webkit-scrollbar {
+    width: var(--scrollbar-size);
+    height: var(--scrollbar-size);
+}
+
+*::-webkit-scrollbar-track {
+    background: var(--scrollbar-track);
+    border-radius: 6px;
+}
+
+*::-webkit-scrollbar-thumb {
+    background: var(--scrollbar-thumb);
+    border-radius: 6px;
+    transition: background-color 0.2s ease;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+    background: var(--scrollbar-thumb-hover);
+}
+
+*:hover::-webkit-scrollbar-thumb,
+*:focus::-webkit-scrollbar-thumb,
+*:focus-within::-webkit-scrollbar-thumb,
+*:active::-webkit-scrollbar-thumb {
+    background: var(--scrollbar-thumb-focus);
 }
 
 .search-tag {
@@ -874,8 +889,24 @@ body {
     display: none;
 }
 
-.logo-text {
-    display: inline;
+.brand-logo {
+    display: block;
+    height: auto;
+    user-select: none;
+    -webkit-user-drag: none;
+}
+
+.brand-logo--hero {
+    width: min(420px, 82vw);
+}
+
+.brand-logo--footer {
+    width: 178px;
+    opacity: 0.96;
+}
+
+.brand-logo--header {
+    width: 178px;
 }
 
 .home-btn-text {
@@ -883,16 +914,16 @@ body {
 }
 
 @media (max-width: 640px) {
-    .logo-text {
-        display: none;
+    .brand-logo--header {
+        width: 132px;
+    }
+
+    .brand-logo--hero {
+        width: min(320px, 86vw);
     }
 
     .home-btn-text {
         display: none;
-    }
-
-    .logo-icon {
-        margin-right: 0;
     }
 
     .home-btn svg {
@@ -1137,4 +1168,78 @@ body {
 
 .animate-spin {
     animation: spin 1s linear infinite;
+}
+
+/* 搜索筛选栏 */
+.search-filters {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0.5rem;
+    align-items: end;
+}
+
+.search-filter-item {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.search-filter-item span {
+    color: #9ca3af;
+    font-size: 0.75rem;
+}
+
+.search-filter-item select {
+    height: 2.35rem;
+    border-radius: 0.5rem;
+    border: 1px solid #333;
+    background: #111;
+    color: #fff;
+    padding: 0 0.65rem;
+    outline: none;
+}
+
+.search-filter-item select:focus {
+    border-color: #4b5563;
+}
+
+.search-filter-item--grow {
+    min-width: 0;
+}
+
+.search-filter-reset {
+    height: 2.35rem;
+    border-radius: 0.5rem;
+    border: 1px solid #333;
+    background: #1a1a1a;
+    color: #d1d5db;
+    font-size: 0.875rem;
+    transition: all 0.2s ease;
+}
+
+.search-filter-reset:hover {
+    background: #262626;
+    color: #fff;
+}
+
+.results-meta-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+}
+
+.results-filter-summary {
+    min-height: 1.25rem;
+}
+
+@media (max-width: 768px) {
+    .search-filters {
+        grid-template-columns: 1fr 1fr;
+    }
+
+    .search-filter-item--grow {
+        grid-column: span 2;
+    }
 }

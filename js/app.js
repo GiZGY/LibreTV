@@ -17,6 +17,177 @@ let latencyTestTime = null; // 测速时间戳
 let apiQualities = {};
 let qualityTestTime = null; // 质量检测时间戳
 let hideZombieApis = localStorage.getItem('hideZombieApis') !== 'false'; // 默认隐藏僵尸源
+let searchFilters = loadSearchFilters();
+
+function getDefaultSearchFilters() {
+    const defaults = SEARCH_FILTERS_CONFIG?.default || { type: 'all', year: '', genre: '' };
+    return {
+        type: defaults.type || 'all',
+        year: defaults.year || '',
+        genre: defaults.genre || ''
+    };
+}
+
+function loadSearchFilters() {
+    const defaults = getDefaultSearchFilters();
+    try {
+        const raw = localStorage.getItem(SEARCH_FILTERS_CONFIG.storageKey);
+        if (!raw) return defaults;
+        const parsed = JSON.parse(raw);
+        if (window.normalizeSearchFilters) {
+            return window.normalizeSearchFilters(parsed);
+        }
+        return defaults;
+    } catch (_) {
+        return defaults;
+    }
+}
+
+function saveSearchFilters() {
+    try {
+        localStorage.setItem(SEARCH_FILTERS_CONFIG.storageKey, JSON.stringify(searchFilters));
+    } catch (e) {
+        console.error('保存搜索筛选失败:', e);
+    }
+}
+
+function setSearchFilters(filters, save = true) {
+    if (window.normalizeSearchFilters) {
+        searchFilters = window.normalizeSearchFilters(filters);
+    } else {
+        searchFilters = getDefaultSearchFilters();
+    }
+
+    const typeSelect = document.getElementById('typeSelect');
+    const yearSelect = document.getElementById('yearSelect');
+    const genreSelect = document.getElementById('genreSelect');
+
+    if (typeSelect) typeSelect.value = searchFilters.type;
+    if (yearSelect) yearSelect.value = searchFilters.year;
+    if (genreSelect) genreSelect.value = searchFilters.genre;
+
+    if (save) {
+        saveSearchFilters();
+    }
+
+    updateSearchSummaryUI(searchFilters, 0, 0);
+}
+
+function getSearchFiltersFromUI() {
+    const typeSelect = document.getElementById('typeSelect');
+    const yearSelect = document.getElementById('yearSelect');
+    const genreSelect = document.getElementById('genreSelect');
+
+    const fromUI = {
+        type: typeSelect ? typeSelect.value : searchFilters.type,
+        year: yearSelect ? yearSelect.value : searchFilters.year,
+        genre: genreSelect ? genreSelect.value : searchFilters.genre
+    };
+
+    setSearchFilters(fromUI, true);
+    return searchFilters;
+}
+
+function initSearchFilterOptions() {
+    const typeSelect = document.getElementById('typeSelect');
+    const yearSelect = document.getElementById('yearSelect');
+    const genreSelect = document.getElementById('genreSelect');
+
+    if (!typeSelect || !yearSelect || !genreSelect || !SEARCH_FILTERS_CONFIG) return;
+
+    // 初始化大类选项（避免未来调整配置后忘记同步）
+    if (typeSelect.options.length <= 1) {
+        typeSelect.innerHTML = '';
+        SEARCH_FILTERS_CONFIG.types.forEach(item => {
+            const option = document.createElement('option');
+            option.value = item.value;
+            option.textContent = item.label;
+            typeSelect.appendChild(option);
+        });
+    }
+
+    // 初始化年份选项
+    yearSelect.innerHTML = '<option value=\"\">不限</option>';
+    const start = SEARCH_FILTERS_CONFIG.yearRange.start;
+    const total = SEARCH_FILTERS_CONFIG.yearRange.totalYears;
+    for (let year = start; year > start - total; year--) {
+        const option = document.createElement('option');
+        option.value = String(year);
+        option.textContent = String(year);
+        yearSelect.appendChild(option);
+    }
+
+    // 初始化题材选项
+    genreSelect.innerHTML = '<option value=\"\">不限</option>';
+    SEARCH_FILTERS_CONFIG.genres.forEach(genre => {
+        const option = document.createElement('option');
+        option.value = genre;
+        option.textContent = genre;
+        genreSelect.appendChild(option);
+    });
+
+    setSearchFilters(searchFilters, false);
+}
+
+function getSearchFilterSummary(filters) {
+    const f = filters || getDefaultSearchFilters();
+    const labels = [];
+
+    if (f.type && f.type !== 'all') {
+        labels.push(`大类: ${f.type === 'movie' ? '电影' : '电视剧'}`);
+    }
+    if (f.year) {
+        labels.push(`年份: ${f.year}`);
+    }
+    if (f.genre) {
+        labels.push(`题材: ${f.genre}`);
+    }
+    return labels.join(' · ');
+}
+
+function updateSearchSummaryUI(filters, rawCount, finalCount) {
+    const summaryEl = document.getElementById('searchFilterSummary');
+    const rawEl = document.getElementById('searchRawResultsCount');
+    const finalEl = document.getElementById('searchResultsCount');
+
+    if (summaryEl) {
+        const summary = getSearchFilterSummary(filters);
+        summaryEl.textContent = summary ? `当前筛选：${summary}` : '';
+    }
+    if (rawEl) rawEl.textContent = String(rawCount || 0);
+    if (finalEl) finalEl.textContent = String(finalCount || 0);
+}
+
+function buildSearchPath(query, filters) {
+    if (query) {
+        return `/s=${encodeURIComponent(query)}`;
+    }
+    const params = new URLSearchParams();
+    if (filters.type && filters.type !== 'all') params.set('type', filters.type);
+    if (filters.year) params.set('year', filters.year);
+    if (filters.genre) params.set('genre', filters.genre);
+
+    const queryString = params.toString();
+    return `/${queryString ? `?${queryString}` : ''}`;
+}
+
+function resetSearchFiltersState(save = true) {
+    setSearchFilters(getDefaultSearchFilters(), save);
+    updateSearchSummaryUI(searchFilters, 0, 0);
+}
+
+window.resetSearchFilters = function () {
+    resetSearchFiltersState(true);
+    const input = document.getElementById('searchInput');
+    const hasQuery = !!(input && input.value.trim());
+    // 清空筛选后，如果当前没有关键词，直接回到首页态（显示豆瓣热门）
+    if (!hasQuery) {
+        resetSearchArea();
+    }
+};
+window.setSearchFilters = setSearchFilters;
+window.getSearchFiltersFromUI = getSearchFiltersFromUI;
+window.buildSearchPath = buildSearchPath;
 
 function isPasswordReadyForApiCalls() {
     try {
@@ -830,6 +1001,7 @@ function resetSearchArea() {
     // 清理搜索结果
     document.getElementById('results').innerHTML = '';
     document.getElementById('searchInput').value = '';
+    toggleClearButton();
 
     // 恢复搜索区域的样式
     document.getElementById('searchArea').classList.add('flex-1');
@@ -851,11 +1023,11 @@ function resetSearchArea() {
     try {
         window.history.pushState(
             {},
-            `LibreTV - 免费在线视频搜索与观看平台`,
+            `OpenStream - 免费在线视频搜索与观看平台`,
             `/`
         );
         // 更新页面标题
-        document.title = `LibreTV - 免费在线视频搜索与观看平台`;
+        document.title = `OpenStream - 免费在线视频搜索与观看平台`;
     } catch (e) {
         console.error('更新浏览器历史失败:', e);
     }
@@ -910,7 +1082,7 @@ async function search() {
         // 从所有选中的API源搜索
         let allResults = [];
         const searchPromises = selectedAPIs.map(apiId =>
-            searchByAPIAndKeyWord(apiId, query)
+            searchByAPIAndKeyWord(apiId, query, getDefaultSearchFilters())
         );
 
         // 等待所有搜索请求完成
@@ -952,6 +1124,29 @@ async function search() {
 
         const resultsDiv = document.getElementById('results');
 
+        // 更新URL（支持关键词 + 年份/大类/题材）
+        try {
+            const encodedQuery = encodeURIComponent(query);
+            window.history.pushState(
+                { search: query },
+                `搜索: ${query} - OpenStream`,
+                `/s=${encodedQuery}`
+            );
+            document.title = `搜索: ${query} - OpenStream`;
+        } catch (e) {
+            console.error('更新浏览器历史失败:', e);
+        }
+
+        // 处理搜索结果过滤：如果启用了黄色内容过滤，则过滤掉分类含有敏感内容的项目
+        const yellowFilterEnabled = localStorage.getItem('yellowFilterEnabled') === 'true';
+        if (yellowFilterEnabled) {
+            const banned = ['伦理片', '福利', '里番动漫', '门事件', '萝莉少女', '制服诱惑', '国产传媒', 'cosplay', '黑丝诱惑', '无码', '日本无码', '有码', '日本有码', 'SWAG', '网红主播', '色情片', '同性片', '福利视频', '福利片'];
+            allResults = allResults.filter(item => {
+                const typeName = item.type_name || '';
+                return !banned.some(keyword => typeName.includes(keyword));
+            });
+        }
+
         // 如果没有结果
         if (!allResults || allResults.length === 0) {
             resultsDiv.innerHTML = `
@@ -966,33 +1161,6 @@ async function search() {
             `;
             hideLoading();
             return;
-        }
-
-        // 有搜索结果时，才更新URL
-        try {
-            // 使用URI编码确保特殊字符能够正确显示
-            const encodedQuery = encodeURIComponent(query);
-            // 使用HTML5 History API更新URL，不刷新页面
-            window.history.pushState(
-                { search: query },
-                `搜索: ${query} - LibreTV`,
-                `/s=${encodedQuery}`
-            );
-            // 更新页面标题
-            document.title = `搜索: ${query} - LibreTV`;
-        } catch (e) {
-            console.error('更新浏览器历史失败:', e);
-            // 如果更新URL失败，继续执行搜索
-        }
-
-        // 处理搜索结果过滤：如果启用了黄色内容过滤，则过滤掉分类含有敏感内容的项目
-        const yellowFilterEnabled = localStorage.getItem('yellowFilterEnabled') === 'true';
-        if (yellowFilterEnabled) {
-            const banned = ['伦理片', '福利', '里番动漫', '门事件', '萝莉少女', '制服诱惑', '国产传媒', 'cosplay', '黑丝诱惑', '无码', '日本无码', '有码', '日本有码', 'SWAG', '网红主播', '色情片', '同性片', '福利视频', '福利片'];
-            allResults = allResults.filter(item => {
-                const typeName = item.type_name || '';
-                return !banned.some(keyword => typeName.includes(keyword));
-            });
         }
 
         // 添加XSS保护，使用textContent和属性转义
@@ -1484,7 +1652,7 @@ async function importConfigFromUrl() {
             }
 
             const config = await response.json();
-            if (config.name !== 'LibreTV-Settings') throw '配置文件格式不正确';
+            if (!['LibreTV-Settings', 'NovaStream-Settings', 'OpenStream-Settings'].includes(config.name)) throw '配置文件格式不正确';
 
             // 验证哈希
             const dataHash = await sha256(JSON.stringify(config.data));
@@ -1536,7 +1704,7 @@ async function importConfig() {
 
             // 解析并验证配置
             const config = JSON.parse(content);
-            if (config.name !== 'LibreTV-Settings') throw '配置文件格式不正确';
+            if (!['LibreTV-Settings', 'NovaStream-Settings', 'OpenStream-Settings'].includes(config.name)) throw '配置文件格式不正确';
 
             // 验证哈希
             const dataHash = await sha256(JSON.stringify(config.data));
@@ -1570,7 +1738,8 @@ async function exportConfig() {
         'yellowFilterEnabled',
         'adFilteringEnabled',
         'doubanEnabled',
-        'hasInitializedDefaults'
+        'hasInitializedDefaults',
+        SEARCH_FILTERS_CONFIG.storageKey
     ];
 
     // 导出设置项
@@ -1593,14 +1762,14 @@ async function exportConfig() {
     }
 
     const times = Date.now().toString();
-    config['name'] = 'LibreTV-Settings';  // 配置文件名，用于校验
+    config['name'] = 'OpenStream-Settings';  // 配置文件名，用于校验
     config['time'] = times;               // 配置文件生成时间
     config['cfgVer'] = '1.0.0';           // 配置文件版本
     config['data'] = items;               // 配置文件数据
     config['hash'] = await sha256(JSON.stringify(config['data']));  // 计算数据的哈希值，用于校验
 
     // 将配置数据保存为 JSON 文件
-    saveStringAsFile(JSON.stringify(config), 'LibreTV-Settings_' + times + '.json');
+    saveStringAsFile(JSON.stringify(config), 'OpenStream-Settings_' + times + '.json');
 }
 
 // 将字符串保存为文件

@@ -1,19 +1,14 @@
 // 页面加载后显示弹窗脚本
 document.addEventListener('DOMContentLoaded', function() {
     // 弹窗显示脚本
-    // 检查用户是否已经看过声明
     const hasSeenDisclaimer = localStorage.getItem('hasSeenDisclaimer');
-    
+
     if (!hasSeenDisclaimer) {
-        // 显示弹窗
         const disclaimerModal = document.getElementById('disclaimerModal');
         disclaimerModal.style.display = 'flex';
-        
-        // 添加接受按钮事件
+
         document.getElementById('acceptDisclaimerBtn').addEventListener('click', function() {
-            // 保存用户已看过声明的状态
             localStorage.setItem('hasSeenDisclaimer', 'true');
-            // 隐藏弹窗
             disclaimerModal.style.display = 'none';
         });
     }
@@ -24,7 +19,7 @@ document.addEventListener('DOMContentLoaded', function() {
         // 播放URL，不做额外处理，watch.html会处理重定向
         return;
     }
-    
+
     // 检查页面路径中的搜索参数 (格式: /s=keyword)
     const path = window.location.pathname;
     const searchPrefix = '/s=';
@@ -45,7 +40,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 try {
                     window.history.replaceState(
                         { search: keyword }, 
-                        `搜索: ${keyword} - LibreTV`, 
+                        `搜索: ${keyword} - OpenStream`, 
                         window.location.href
                     );
                 } catch (e) {
@@ -62,14 +57,16 @@ document.addEventListener('DOMContentLoaded', function() {
     if (searchQuery) {
         // 设置搜索框的值
         document.getElementById('searchInput').value = searchQuery;
+        toggleClearButton();
         // 执行搜索
         setTimeout(() => {
             search();
             // 更新URL为规范格式
+            // 注意：如果用户同时带有其他查询参数（如豆瓣筛选参数），这里会规范为 /s=关键词
             try {
                 window.history.replaceState(
                     { search: searchQuery }, 
-                    `搜索: ${searchQuery} - LibreTV`, 
+                    `搜索: ${searchQuery} - OpenStream`, 
                     `/s=${encodeURIComponent(searchQuery)}`
                 );
             } catch (e) {

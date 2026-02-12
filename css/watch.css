@@ -1,7 +1,7 @@
 /* 添加重定向页面的基本样式 */
 body {
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-    background-color: #0f1622;
+    background-color: #050505;
     color: white;
     margin: 0;
     padding: 0;
@@ -31,20 +31,10 @@ body {
     margin-bottom: 1.5rem;
 }
 
-.logo-icon {
-    width: 40px;
-    height: 40px;
-    color: #00ccff;
-    margin-right: 10px;
-}
-
-.logo-text {
-    font-size: 2rem;
-    margin: 0;
-    background: linear-gradient(to right, #00ccff, #ff3c78);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
+.watch-logo {
+    width: min(280px, 70vw);
+    height: auto;
+    display: block;
 }
 
 .loading-animation {
@@ -103,13 +93,8 @@ body {
         width: 85%;
     }
 
-    .logo-icon {
-        width: 30px;
-        height: 30px;
-    }
-
-    .logo-text {
-        font-size: 1.7rem;
+    .watch-logo {
+        width: min(230px, 78vw);
     }
 
     .loading-animation {
