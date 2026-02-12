@@ -91,6 +91,7 @@ let shortcutHintTimeout = null; // 用于控制快捷键提示显示时间
 let adFilteringEnabled = true; // 默认开启广告过滤
 let progressSaveInterval = null; // 定期保存进度的计时器
 let currentVideoUrl = ''; // 记录当前实际的视频URL
+let currentSourceCode = ''; // 当前播放源 code，用于过滤策略兜底
 const isWebkit = (typeof window.webkitConvertPointFromNodeToPage === 'function')
 Artplayer.FULLSCREEN_WEB_IN_BODY = true;
 
@@ -162,6 +163,7 @@ function initializePageContent() {
 
     // 保存当前视频URL
     currentVideoUrl = videoUrl || '';
+    currentSourceCode = sourceCode || urlParams.get('source_code') || '';
 
     // 从localStorage获取数据
     currentVideoTitle = title || localStorage.getItem('currentVideoTitle') || '未知视频';
@@ -989,17 +991,143 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
 function filterAdsFromM3U8(m3u8Content, strictMode = false) {
     if (!m3u8Content) return '';
 
-    // 按行分割M3U8内容
     const lines = m3u8Content.split('\n');
-    const filteredLines = [];
+    const hasSegments = lines.some(line => line.startsWith('#EXTINF:'));
+    const isMasterPlaylist = lines.some(line => line.startsWith('#EXT-X-STREAM-INF')) && !hasSegments;
+    if (!hasSegments || isMasterPlaylist) {
+        return m3u8Content;
+    }
+
+    const adKeywordRe = /(ad[sx]?|advert|cm\.|commercial|guanggao|gg\.|market|promo)/i;
+    const sourceId = String(currentSourceCode || '').toLowerCase();
+    const preferredAggressive = sourceId.includes('mdzy') || sourceId.includes('modu');
+    const maxRemoveRatio = preferredAggressive ? 0.2 : 0.12;
+    const maxRemoveDuration = preferredAggressive ? 240 : 120; // 秒
+
+    const segments = [];
+    const hostCounter = {};
+    const blockStats = {};
+    let blockId = 0;
+    let pendingDuration = null;
+    let pendingExtinfIndex = -1;
+    let originalDuration = 0;
 
     for (let i = 0; i < lines.length; i++) {
-        const line = lines[i];
+        const rawLine = lines[i];
+        const line = rawLine.trim();
 
-        // 只过滤#EXT-X-DISCONTINUITY标识
-        if (!line.includes('#EXT-X-DISCONTINUITY')) {
-            filteredLines.push(line);
+        if (!line) continue;
+
+        if (line.startsWith('#EXT-X-DISCONTINUITY')) {
+            blockId++;
+            continue;
         }
+
+        if (line.startsWith('#EXTINF:')) {
+            const duration = parseFloat(line.slice(8));
+            pendingDuration = Number.isFinite(duration) ? duration : 0;
+            pendingExtinfIndex = i;
+            continue;
+        }
+
+        if (line.startsWith('#')) {
+            continue;
+        }
+
+        const duration = pendingDuration == null ? 0 : pendingDuration;
+        pendingDuration = null;
+        const extinfIndex = pendingExtinfIndex;
+        pendingExtinfIndex = -1;
+
+        let host = '';
+        try {
+            host = new URL(line, window.location.href).hostname || '';
+        } catch (_) {
+            host = '';
+        }
+        if (host) hostCounter[host] = (hostCounter[host] || 0) + 1;
+
+        const hasAdMarker = adKeywordRe.test(line) || adKeywordRe.test(host);
+        originalDuration += duration;
+        segments.push({ blockId, uriIndex: i, extinfIndex, duration, host, hasAdMarker });
+
+        if (!blockStats[blockId]) {
+            blockStats[blockId] = { duration: 0, count: 0, hosts: {}, hasAdMarker: false };
+        }
+        const stat = blockStats[blockId];
+        stat.duration += duration;
+        stat.count += 1;
+        stat.hasAdMarker = stat.hasAdMarker || hasAdMarker;
+        if (host) stat.hosts[host] = (stat.hosts[host] || 0) + 1;
+    }
+
+    if (!segments.length) return m3u8Content;
+
+    const dominantHost = Object.keys(hostCounter).sort((a, b) => hostCounter[b] - hostCounter[a])[0] || '';
+    if (!dominantHost) return m3u8Content;
+
+    const removableBlocks = new Set();
+    Object.keys(blockStats).forEach((key) => {
+        const id = Number(key);
+        const stat = blockStats[id];
+        const hosts = Object.keys(stat.hosts);
+        const blockMainHost = hosts.sort((a, b) => (stat.hosts[b] || 0) - (stat.hosts[a] || 0))[0] || '';
+        const hostSwitched = blockMainHost && blockMainHost !== dominantHost;
+        const shortBlock = stat.duration > 0 && stat.duration <= 90;
+        const smallBlock = stat.count <= 60;
+        const strongSignal = stat.hasAdMarker && stat.duration <= 180;
+        if ((hostSwitched && shortBlock && smallBlock) || strongSignal) {
+            removableBlocks.add(id);
+        }
+    });
+
+    if (!removableBlocks.size) return m3u8Content;
+
+    const removeLineIndex = new Set();
+    let removedDuration = 0;
+    let removedSegments = 0;
+    const maxRemovableSegments = Math.floor(segments.length * maxRemoveRatio);
+    const maxRemovableDuration = Math.min(maxRemoveDuration, originalDuration * maxRemoveRatio);
+
+    for (let i = 0; i < segments.length; i++) {
+        const seg = segments[i];
+        if (!removableBlocks.has(seg.blockId)) continue;
+
+        const nextDuration = removedDuration + seg.duration;
+        const nextSegments = removedSegments + 1;
+        if (nextSegments > maxRemovableSegments || nextDuration > maxRemovableDuration) {
+            continue;
+        }
+
+        if (seg.extinfIndex >= 0) removeLineIndex.add(seg.extinfIndex);
+        removeLineIndex.add(seg.uriIndex);
+        removedDuration = nextDuration;
+        removedSegments = nextSegments;
+    }
+
+    if (!removeLineIndex.size || removedSegments < 2) {
+        return m3u8Content;
+    }
+
+    const filteredLines = lines.filter((_, idx) => !removeLineIndex.has(idx));
+
+    // 兜底：保护主内容长度，避免误删导致时长异常。
+    let filteredDuration = 0;
+    let filteredSegments = 0;
+    for (let i = 0; i < filteredLines.length; i++) {
+        const line = filteredLines[i].trim();
+        if (line.startsWith('#EXTINF:')) {
+            const duration = parseFloat(line.slice(8));
+            if (Number.isFinite(duration)) filteredDuration += duration;
+            filteredSegments++;
+        }
+    }
+    if (!filteredSegments || filteredSegments < Math.floor(segments.length * 0.7)) {
+        return m3u8Content;
+    }
+    const droppedRatio = originalDuration > 0 ? (originalDuration - filteredDuration) / originalDuration : 0;
+    if (droppedRatio > maxRemoveRatio + 0.03) {
+        return m3u8Content;
     }
 
     return filteredLines.join('\n');
