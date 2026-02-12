@@ -57,6 +57,119 @@
     background: #191919;
 }
 
+/* OpenStream 新搜索框（仅输入框形态升级） */
+.os-search-wrap {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    min-height: 4rem;
+}
+
+.os-search-shell {
+    position: relative;
+    display: flex;
+    align-items: center;
+    flex: 1;
+    min-width: 0;
+    height: 4rem;
+    border-radius: 9999px;
+    background: rgba(255, 255, 255, 0.07);
+    border: 1px solid rgba(249, 115, 22, 0.25);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    transition: all 0.35s ease;
+}
+
+.os-search-shell:focus-within {
+    border-color: rgba(249, 115, 22, 0.75);
+    box-shadow: 0 14px 34px rgba(249, 115, 22, 0.2);
+    transform: translateY(-1px);
+}
+
+.os-search-shell::after {
+    content: "";
+    position: absolute;
+    left: 3rem;
+    right: 3rem;
+    bottom: -7px;
+    height: 8px;
+    border-radius: 9999px;
+    background: rgba(249, 115, 22, 0.45);
+    filter: blur(16px);
+    opacity: 0;
+    transition: opacity 0.35s ease;
+    pointer-events: none;
+}
+
+.os-search-shell:focus-within::after {
+    opacity: 0.6;
+}
+
+.os-search-icon {
+    color: #9ca3af;
+    padding-left: 1.15rem;
+    padding-right: 0.6rem;
+    transition: color 0.25s ease;
+}
+
+.os-search-shell:focus-within .os-search-icon {
+    color: #fb923c;
+}
+
+.os-search-input {
+    flex: 1;
+    min-width: 0;
+    background: transparent;
+    border: none;
+    outline: none;
+    color: #e5e7eb;
+    font-size: 1.12rem;
+    font-weight: 600;
+    padding-right: 0.35rem;
+}
+
+.os-search-input::placeholder {
+    color: #9ca3af;
+    font-weight: 600;
+}
+
+.os-clear-btn {
+    height: 100%;
+    width: 2.4rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: #9ca3af;
+    transition: color 0.2s ease;
+}
+
+.os-clear-btn:hover {
+    color: #fff;
+}
+
+.os-search-btn {
+    height: calc(100% - 12px);
+    min-width: 6.2rem;
+    margin-right: 6px;
+    padding: 0 1.2rem;
+    border-radius: 9999px;
+    color: #fff;
+    font-weight: 800;
+    letter-spacing: 0.05em;
+    background: linear-gradient(135deg, #fb923c, #f97316);
+    box-shadow: 0 8px 20px rgba(249, 115, 22, 0.35);
+    transition: all 0.25s ease;
+}
+
+.os-search-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 12px 24px rgba(249, 115, 22, 0.45);
+}
+
+.os-search-btn:active {
+    transform: translateY(0) scale(0.98);
+}
+
 /* 最近搜索记录样式 */
 .recent-search-tag {
     display: inline-block;
