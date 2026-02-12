@@ -4,14 +4,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>LibreTV - 免费在线视频搜索与观看平台</title>
-    <meta name="description" content="LibreTV是一个免费的在线视频搜索平台，无广告、安全，提供来自多个视频源的内容搜索与观看服务，无需注册即可使用。">
-    <meta name="keywords" content="在线视频,免费视频,视频搜索,电影,电视剧,LibreTV">
-    <meta name="author" content="LibreTV Team">
+    <title>OpenStream - 免费在线视频搜索与观看平台</title>
+    <meta name="description" content="OpenStream是一个免费的在线视频搜索平台，无广告、安全，提供来自多个视频源的内容搜索与观看服务，无需注册即可使用。">
+    <meta name="keywords" content="在线视频,免费视频,视频搜索,电影,电视剧,OpenStream">
+    <meta name="author" content="OpenStream Team">
 
     <!-- Favicon -->
-    <link rel="icon" href="image/logo.png">
-    <link rel="apple-touch-icon" href="image/logo-black.png">
+    <link rel="icon" href="image/openstream-logo.svg?v=20260212g">
+    <link rel="apple-touch-icon" href="image/openstream-logo.svg?v=20260212g">
     <link rel="manifest" href="manifest.json">
 
     <script src="libs/tailwindcss.min.js"></script>
@@ -67,7 +67,7 @@
         </div>
         <div class="mt-4 text-center sticky bottom-0 pb-2 pt-2 bg-[#111]">
             <button onclick="clearViewingHistory()"
-                class="px-4 py-2 w-full bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 hover:from-indigo-600 hover:via-purple-600 hover:to-pink-600 text-white rounded-lg text-sm transition-all duration-300 shadow-md hover:shadow-lg">
+                class="px-4 py-2 w-full bg-gradient-to-r from-orange-500 via-amber-500 to-orange-600 hover:from-orange-600 hover:via-amber-600 hover:to-orange-700 text-white rounded-lg text-sm transition-all duration-300 shadow-md hover:shadow-lg">
                 清空历史记录
             </button>
         </div>
@@ -158,8 +158,8 @@
                     <!-- 添加成人内容切换 -->
                     <div class="flex items-center mb-2">
                         <input type="checkbox" id="customApiIsAdult"
-                            class="form-checkbox h-4 w-4 text-pink-500 bg-[#222] border border-[#333]">
-                        <label for="customApiIsAdult" class="ml-2 text-xs text-pink-400">黄色资源站</label>
+                            class="form-checkbox h-4 w-4 text-orange-400 bg-[#222] border border-[#333]">
+                        <label for="customApiIsAdult" class="ml-2 text-xs text-orange-300">黄色资源站</label>
                     </div>
                     <div class="flex space-x-2">
                         <button onclick="addCustomApi()"
@@ -236,11 +236,11 @@
             <div class="p-3 bg-[#151515] rounded-lg shadow-inner">
                 <label class="block text-sm font-medium text-gray-400 mb-3 border-b border-[#333] pb-1">一般功能</label>
                 <button onclick="importConfig()"
-                    class="px-4 py-2 w-full bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 hover:from-indigo-600 hover:via-purple-600 hover:to-pink-600 text-white rounded-lg text-sm transition-all duration-300 shadow-md hover:shadow-lg mb-2">导入配置</button>
+                    class="px-4 py-2 w-full bg-gradient-to-r from-orange-500 via-amber-500 to-orange-600 hover:from-orange-600 hover:via-amber-600 hover:to-orange-700 text-white rounded-lg text-sm transition-all duration-300 shadow-md hover:shadow-lg mb-2">导入配置</button>
                 <button onclick="exportConfig()"
-                    class="px-4 py-2 mb-2 w-full bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 hover:from-indigo-600 hover:via-purple-600 hover:to-pink-600 text-white rounded-lg text-sm transition-all duration-300 shadow-md hover:shadow-lg">导出配置</button>
+                    class="px-4 py-2 mb-2 w-full bg-gradient-to-r from-orange-500 via-amber-500 to-orange-600 hover:from-orange-600 hover:via-amber-600 hover:to-orange-700 text-white rounded-lg text-sm transition-all duration-300 shadow-md hover:shadow-lg">导出配置</button>
                 <button onclick="clearLocalStorage()"
-                    class="px-4 py-2 w-full bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 hover:from-indigo-600 hover:via-purple-600 hover:to-pink-600 text-white rounded-lg text-sm transition-all duration-300 shadow-md hover:shadow-lg">清除Cookie</button>
+                    class="px-4 py-2 w-full bg-gradient-to-r from-orange-500 via-amber-500 to-orange-600 hover:from-orange-600 hover:via-amber-600 hover:to-orange-700 text-white rounded-lg text-sm transition-all duration-300 shadow-md hover:shadow-lg">清除Cookie</button>
             </div>
         </div>
     </div>
@@ -251,12 +251,7 @@
             <header class="text-center mb-2">
                 <div class="flex justify-center items-center mb-4">
                     <a href="#" onclick="resetToHome(); return false;" class="flex items-center">
-                        <svg class="w-10 h-10 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z">
-                            </path>
-                        </svg>
-                        <h1 class="text-5xl font-bold gradient-text">LibreTV</h1>
+                        <img src="image/openstream-logo.svg?v=20260212g" alt="OPENSTREAM" class="brand-logo brand-logo--hero">
                     </a>
                 </div>
                 <p class="text-gray-400 mb-8">自由观影，畅享精彩</p>
@@ -307,29 +302,58 @@
                     <!-- 改进标题和标签区域布局 -->
                     <div class="mb-4">
                         <!-- 标题和刷新按钮一行 -->
-                        <div class="flex items-center justify-between mb-4">
-                            <div class="flex items-center">
+                        <div class="flex items-center justify-between mb-4 gap-3">
+                            <div class="flex items-center flex-wrap gap-3">
                                 <h2 class="text-xl font-bold text-white mr-4">豆瓣热门</h2>
-                                <!-- 添加电影/电视剧切换开关 -->
-                                <div class="flex items-center bg-[#222] rounded-full p-1">
-                                    <button id="douban-movie-toggle"
-                                        class="px-3 py-1 text-sm rounded-full bg-pink-600 text-white">电影</button>
-                                    <button id="douban-tv-toggle"
+                                <!-- 大类筛选 -->
+                                <div class="flex items-center bg-[#222] rounded-full p-1" id="douban-category-switches">
+                                    <button id="douban-cat-movie"
+                                        class="px-3 py-1 text-sm rounded-full bg-orange-500 text-white">电影</button>
+                                    <button id="douban-cat-tv"
                                         class="px-3 py-1 text-sm rounded-full text-gray-300 hover:text-white">电视剧</button>
+                                    <button id="douban-cat-anime"
+                                        class="px-3 py-1 text-sm rounded-full text-gray-300 hover:text-white">动漫</button>
+                                    <button id="douban-cat-variety"
+                                        class="px-3 py-1 text-sm rounded-full text-gray-300 hover:text-white">综艺</button>
+                                </div>
+                                <div class="douban-mode-switches" id="douban-mode-switches">
+                                    <button id="douban-mode-recommend" class="douban-mode-button is-active" type="button">推荐</button>
+                                    <button id="douban-mode-filter" class="douban-mode-button" type="button">筛选</button>
                                 </div>
                             </div>
-                            <button id="douban-refresh"
-                                class="text-sm px-3 py-1 bg-pink-600 hover:bg-pink-700 text-white rounded-lg flex items-center gap-1">
-                                <span>换一批</span>
-                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24"
-                                    stroke="currentColor">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                        d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                                </svg>
-                            </button>
+                            <div id="douban-recommend-actions">
+                                <button id="douban-refresh"
+                                    class="text-sm px-3 py-1 bg-orange-500 hover:bg-orange-600 text-white rounded-lg flex items-center gap-1">
+                                    <span>换一批</span>
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24"
+                                        stroke="currentColor">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                            d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                    </svg>
+                                </button>
+                            </div>
+                        </div>
+                        <div id="douban-filter-controls" class="douban-filter-row mb-3 is-hidden">
+                            <label class="douban-filter-item">
+                                <span>年份</span>
+                                <select id="douban-year-select">
+                                    <option value="">不限</option>
+                                </select>
+                            </label>
+                            <button id="douban-filter-reset" class="douban-filter-reset" type="button">重置筛选</button>
+                        </div>
+                        <div id="douban-filter-meta" class="is-hidden">
+                            <div class="douban-filter-meta-row">
+                                <span class="douban-filter-meta-title">题材</span>
+                                <div id="douban-genre-chips" class="douban-filter-chips"></div>
+                            </div>
+                            <div class="douban-filter-meta-row">
+                                <span class="douban-filter-meta-title">排序</span>
+                                <div id="douban-sort-chips" class="douban-filter-chips"></div>
+                            </div>
                         </div>
                         <!-- 分类标签独立成行，添加滚动支持以适应移动设备 -->
-                        <div class="overflow-x-auto pb-2">
+                        <div id="douban-tags-wrap" class="overflow-x-auto pb-2">
                             <div id="douban-tags" class="flex space-x-2 min-w-max"></div>
                         </div>
                     </div>
@@ -337,6 +361,13 @@
                     <!-- 推荐内容 -->
                     <div id="douban-results"
                         class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-3">
+                    </div>
+                    <div id="douban-filter-pagination" class="is-hidden">
+                        <div id="douban-pagination" class="douban-pagination hidden">
+                            <button id="douban-page-prev" type="button">上一页</button>
+                            <span id="douban-page-info">第 1 页</span>
+                            <button id="douban-page-next" type="button">下一页</button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -364,14 +395,9 @@
             <div class="flex flex-col md:flex-row justify-between items-center">
                 <div class="mb-4 md:mb-0">
                     <div class="flex items-center justify-center md:justify-start">
-                        <svg class="w-6 h-6 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z">
-                            </path>
-                        </svg>
-                        <span class="gradient-text font-bold">LibreTV</span>
+                        <img src="image/openstream-logo.svg?v=20260212g" alt="OPENSTREAM" class="brand-logo brand-logo--footer">
                     </div>
-                    <p class="text-gray-500 text-sm mt-2 text-center md:text-left">© 2025 LibreTV - 自由观影，畅享精彩</p>
+                    <p class="text-gray-500 text-sm mt-2 text-center md:text-left">© 2025 OpenStream - 自由观影，畅享精彩</p>
                 </div>
 
                 <div class="text-center md:text-right">
@@ -439,10 +465,10 @@
             <h2 class="text-2xl font-bold gradient-text mb-6 text-center">使用声明</h2>
             <div class="text-gray-300 space-y-4">
                 <p>
-                    欢迎使用 LibreTV。在开始使用前，请您了解并同意以下条款：
+                    欢迎使用 OpenStream。在开始使用前，请您了解并同意以下条款：
                 </p>
                 <p>
-                    <strong class="text-blue-400">服务性质：</strong> LibreTV 仅提供视频搜索服务，不直接提供、存储或上传任何视频内容。所有搜索结果均来自第三方公开接口。
+                    <strong class="text-blue-400">服务性质：</strong> OpenStream 仅提供视频搜索服务，不直接提供、存储或上传任何视频内容。所有搜索结果均来自第三方公开接口。
                 </p>
                 <p>
                     <strong class="text-blue-400">用户责任：</strong> 用户在使用本站服务时，须遵守相关法律法规，不得利用搜索结果从事侵权行为，如下载、传播未经授权的作品等。
@@ -454,7 +480,7 @@
             </div>
             <div class="mt-6 flex justify-center">
                 <button id="acceptDisclaimerBtn"
-                    class="px-6 py-3 bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 text-white font-semibold rounded-lg hover:shadow-lg transition-all duration-300">
+                    class="px-6 py-3 bg-gradient-to-r from-orange-500 via-amber-500 to-orange-600 text-white font-semibold rounded-lg hover:shadow-lg transition-all duration-300">
                     我已了解并接受
                 </button>
             </div>
@@ -480,7 +506,7 @@
     {
         "@context": "https://schema.org",
         "@type": "WebSite",
-        "name": "LibreTV",
+        "name": "OpenStream",
         "url": "https://libretv.is-an.org/",
         "description": "免费在线视频搜索与观看平台",
         "potentialAction": {
