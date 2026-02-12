@@ -24,7 +24,8 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           ai-base-url: ${{ secrets.AI_BASE_URL }}
           ai-api-key: ${{ secrets.AI_API_KEY }}
-          ai-model: 'qwen3-235b-a22b'
+          # 使用 GitHub Models 可用且稳定的模型，避免 Unknown model 报错
+          ai-model: 'openai/gpt-4o'
           labels: 'bug,enhancement,question'
           analyze-file-changes: 'true'
           max-analysis-depth: 'normal'
