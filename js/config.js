@@ -302,7 +302,12 @@ const PLAYER_CONFIG = {
     filterAds: true,  // 是否启用广告过滤
     autoPlayNext: true,  // 默认启用自动连播功能
     adFilteringEnabled: true, // 默认开启分片广告过滤
-    adFilteringStorage: 'adFilteringEnabled' // 存储广告过滤设置的键名
+    adFilteringStorage: 'adFilteringEnabled', // 存储广告过滤设置的键名
+    resourceSwitch: {
+        searchConcurrency: 3, // 切换资源时跨源搜索并发，避免播放页瞬间打满代理
+        speedConcurrency: 2, // 切换资源测速并发，减少对上游和浏览器连接池的压力
+        cacheTtl: 5 * 60 * 1000
+    }
 };
 
 // 增加错误信息本地化
