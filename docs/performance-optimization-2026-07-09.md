@@ -18,6 +18,7 @@ OpenStream 部署在 Vercel Serverless 环境。用户反馈网络慢，主要�
 - 移除页面里的 Tailwind 浏览器运行时，改为构建期生成 `css/tailwind.generated.css`。
 - 删除未再引用的 `libs/tailwindcss.min.js`，减少部署包体积。
 - 移除空 Service Worker 注册，避免无缓存收益的 PWA 生命周期成本。
+- 播放页“切换资源”逻辑拆出到 `js/player-resource-switch.js`，并增加跨源搜索/测速并发限制与 5 分钟内存缓存。
 - `npm audit` 漏洞已清零。
 
 ## 验证
@@ -36,6 +37,7 @@ OpenStream 部署在 Vercel Serverless 环境。用户反馈网络慢，主要�
 - 本地 `PORT=8099 npm start` 冒烟：首页、播放页、版本文件、生成 CSS 均可访问。
 - 浏览器冒烟：首页加载 `css/tailwind.generated.css`，不再加载 `libs/tailwindcss.min.js`。
 - 首页不再加载 `js/pwa-register.js`。
+- 播放页资源切换脚本 `js/player-resource-switch.js` 通过语法检查。
 
 ## 受控例外
 
@@ -43,13 +45,13 @@ OpenStream 部署在 Vercel Serverless 环境。用户反馈网络慢，主要�
 
 - `js/app.js`：约 2253 行。
 - `js/douban.js`：约 1755 行。
-- `js/player.js`：约 1996 行。
+- `js/player.js`：约 1690 行。
 - `css/styles.css`：约 1245 行。
 
 建议下一阶段按职责拆分：
 
 - `js/app.js` 拆出搜索渲染、质量检测、数据源设置、详情缓存。
-- `js/player.js` 拆出播放器初始化、广告过滤、快捷键、播放历史。
+- `js/player.js` 已先拆出资源切换；仍建议继续拆播放器初始化、广告过滤、快捷键、播放历史。
 - `js/douban.js` 拆出推荐模式、筛选模式、分页缓存、封面代理。
 - `css/styles.css` 拆成 base、layout、components、utilities。
 
