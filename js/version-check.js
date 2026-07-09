@@ -26,6 +26,29 @@ async function fetchVersion(url, errorMessage, options = {}) {
     return await response.text();
 }
 
+const VERSION_CHECK_CACHE_KEY = 'openstreamVersionCheckCache';
+const VERSION_CHECK_INTERVAL = 24 * 60 * 60 * 1000;
+
+function readCachedVersionCheck() {
+    try {
+        const cached = JSON.parse(localStorage.getItem(VERSION_CHECK_CACHE_KEY) || 'null');
+        if (!cached || !cached.result || !cached.checkedAt) return null;
+        if (Date.now() - cached.checkedAt > VERSION_CHECK_INTERVAL) return null;
+        return cached.result;
+    } catch (_) {
+        return null;
+    }
+}
+
+function writeCachedVersionCheck(result) {
+    try {
+        localStorage.setItem(VERSION_CHECK_CACHE_KEY, JSON.stringify({
+            checkedAt: Date.now(),
+            result
+        }));
+    } catch (_) {}
+}
+
 // 版本检查函数
 async function checkForUpdates() {
     try {
@@ -74,13 +97,15 @@ async function checkForUpdates() {
         const cleanLatestVersion = latestVersion.trim();
         
         // 返回版本信息
-        return {
+        const result = {
             current: cleanCurrentVersion,
             latest: cleanLatestVersion,
             hasUpdate: compareVersions(cleanLatestVersion, cleanCurrentVersion) > 0,
             currentFormatted: formatVersion(cleanCurrentVersion),
             latestFormatted: formatVersion(cleanLatestVersion)
         };
+        writeCachedVersionCheck(result);
+        return result;
     } catch (error) {
         console.error('版本检测出错:', error);
         throw error;
@@ -139,6 +164,33 @@ function compareVersions(a, b) {
     return 0;
 }
 
+function createVersionElement(result) {
+    const versionElement = document.createElement('p');
+    versionElement.className = 'text-gray-500 text-sm mt-1 text-center md:text-left';
+
+    if (result.hasUpdate) {
+        versionElement.innerHTML = `版本: ${result.currentFormatted} <span class="inline-flex items-center bg-red-600 text-white text-xs px-2 py-0.5 rounded-md ml-1 cursor-pointer animate-pulse font-medium">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+            </svg>
+            发现新版
+        </span>`;
+
+        setTimeout(() => {
+            const updateBtn = versionElement.querySelector('span');
+            if (updateBtn) {
+                updateBtn.addEventListener('click', () => {
+                    window.open('https://github.com/GiZGY/LibreTV', '_blank');
+                });
+            }
+        }, 100);
+    } else {
+        versionElement.innerHTML = `版本: ${result.currentFormatted} <span class="text-green-500">(最新版本)</span>`;
+    }
+
+    return versionElement;
+}
+
 // 创建错误版本信息元素
 function createErrorVersionElement(errorMessage) {
     const errorElement = document.createElement('p');
@@ -150,7 +202,12 @@ function createErrorVersionElement(errorMessage) {
 
 // 添加版本信息到页脚
 function addVersionInfoToFooter() {
-    checkForUpdates().then(result => {
+    const cachedResult = readCachedVersionCheck();
+    if (cachedResult) {
+        displayVersionElement(createVersionElement(cachedResult));
+    }
+
+    const runCheck = () => checkForUpdates().then(result => {
         if (!result) {
             // 如果版本检测失败，显示错误信息
             const versionElement = createErrorVersionElement();
@@ -158,36 +215,8 @@ function addVersionInfoToFooter() {
             displayVersionElement(versionElement);
             return;
         }
-        
-        // 创建版本信息元素
-        const versionElement = document.createElement('p');
-        versionElement.className = 'text-gray-500 text-sm mt-1 text-center md:text-left';
-        
-        // 添加当前版本信息
-        versionElement.innerHTML = `版本: ${result.currentFormatted}`;
-        
-        // 如果有更新，添加更新提示
-        if (result.hasUpdate) {
-            versionElement.innerHTML += ` <span class="inline-flex items-center bg-red-600 text-white text-xs px-2 py-0.5 rounded-md ml-1 cursor-pointer animate-pulse font-medium">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
-                </svg>
-                发现新版
-            </span>`;
-            
-            setTimeout(() => {
-                const updateBtn = versionElement.querySelector('span');
-                    if (updateBtn) {
-                        updateBtn.addEventListener('click', () => {
-                        window.open('https://github.com/GiZGY/LibreTV', '_blank');
-                        });
-                    }
-                }, 100);
-        } else {
-            // 如果没有更新，显示当前版本为最新版本
-            versionElement.innerHTML = `版本: ${result.currentFormatted} <span class="text-green-500">(最新版本)</span>`;
-        }
-        
+
+        const versionElement = createVersionElement(result);
         // 显示版本元素
         displayVersionElement(versionElement);
     }).catch(error => {
@@ -196,10 +225,19 @@ function addVersionInfoToFooter() {
         const errorElement = createErrorVersionElement(`错误信息: ${error.message}`);
         displayVersionElement(errorElement);
     });
+
+    if (!cachedResult) {
+        const schedule = window.requestIdleCallback || ((callback) => setTimeout(callback, 3000));
+        schedule(runCheck, { timeout: 10000 });
+    }
 }
 
 // 在页脚显示版本元素的辅助函数
 function displayVersionElement(element) {
+    const existing = document.querySelector('[data-version-info="true"]');
+    if (existing) existing.remove();
+    element.dataset.versionInfo = 'true';
+
     // 获取页脚元素
     const footerElement = document.querySelector('.footer p.text-gray-500.text-sm');
     if (footerElement) {

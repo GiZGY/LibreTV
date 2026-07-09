@@ -8,6 +8,8 @@ import crypto from 'crypto'; // 导入 crypto 模块用于密码哈希
 const DEBUG_ENABLED = process.env.DEBUG === 'true';
 const CACHE_TTL = parseInt(process.env.CACHE_TTL || '86400', 10); // 默认 24 小时
 const MAX_RECURSION = parseInt(process.env.MAX_RECURSION || '5', 10); // 默认 5 层
+const CDN_CACHE_TTL = parseInt(process.env.CDN_CACHE_TTL || '300', 10);
+const CDN_STALE_TTL = parseInt(process.env.CDN_STALE_TTL || '600', 10);
 
 // --- User Agent 处理 ---
 // 默认 User Agent 列表
@@ -136,6 +138,11 @@ function getRandomUserAgent() {
     return USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
 }
 
+function setProxyCacheHeaders(res, browserMaxAge = CACHE_TTL) {
+    res.setHeader('Cache-Control', `public, max-age=${browserMaxAge}`);
+    res.setHeader('Vercel-CDN-Cache-Control', `public, s-maxage=${CDN_CACHE_TTL}, stale-while-revalidate=${CDN_STALE_TTL}`);
+}
+
 async function fetchContentWithType(targetUrl, requestHeaders) {
     // 准备请求头
     const accept = requestHeaders['accept'] || '*/*';
@@ -154,6 +161,9 @@ async function fetchContentWithType(targetUrl, requestHeaders) {
         // 尝试设置一个合理的 Referer
         'Referer': refererForProxy,
     };
+    if (requestHeaders.range) {
+        headers.Range = requestHeaders.range;
+    }
     // 清理空值的头
     Object.keys(headers).forEach(key => headers[key] === undefined || headers[key] === null || headers[key] === '' ? delete headers[key] : {});
 
@@ -183,16 +193,15 @@ async function fetchContentWithType(targetUrl, requestHeaders) {
 
         let content;
         if (isBinary) {
-            const ab = await response.arrayBuffer();
-            content = Buffer.from(ab);
-            logDebug(`请求成功(二进制): ${targetUrl}, Content-Type: ${contentType}, bytes: ${content.length}`);
+            content = response.body;
+            logDebug(`请求成功(二进制流): ${targetUrl}, Content-Type: ${contentType}`);
         } else {
             content = await response.text();
             logDebug(`请求成功: ${targetUrl}, Content-Type: ${contentType}, 内容长度: ${content.length}`);
         }
 
         // 返回结果
-        return { content, contentType, responseHeaders: response.headers, isBinary };
+        return { content, contentType, responseHeaders: response.headers, isBinary, status: response.status };
 
     } catch (error) {
         // 捕获 fetch 本身的错误（网络、超时等）或上面抛出的 HTTP 错误
@@ -387,6 +396,7 @@ export default async function handler(req, res) {
         const isAuthorized = await validateAuth(req);
         if (!isAuthorized) {
             console.warn('代理请求鉴权失败');
+            res.setHeader('Cache-Control', 'private, no-store');
             res.status(401).json({
                 success: false,
                 error: '代理访问未授权：请检查密码配置或鉴权参数'
@@ -436,7 +446,7 @@ export default async function handler(req, res) {
         console.info(`开始处理目标 URL 的代理请求: ${targetUrl}`);
 
         // --- 获取并处理目标内容 ---
-        const { content, contentType, responseHeaders, isBinary } = await fetchContentWithType(targetUrl, req.headers);
+        const { content, contentType, responseHeaders, isBinary, status } = await fetchContentWithType(targetUrl, req.headers);
 
         // --- 如果是 M3U8，处理并返回 ---
         if (isM3u8Content(content, contentType)) {
@@ -448,6 +458,7 @@ export default async function handler(req, res) {
             res.status(200)
                 .setHeader('Content-Type', 'application/vnd.apple.mpegurl;charset=utf-8')
                 .setHeader('Cache-Control', `public, max-age=${CACHE_TTL}`)
+                .setHeader('Vercel-CDN-Cache-Control', `public, s-maxage=${CDN_CACHE_TTL}, stale-while-revalidate=${CDN_STALE_TTL}`)
                 // 移除可能导致问题的原始响应头
                 .removeHeader('content-encoding') // 很重要！node-fetch 已解压
                 .removeHeader('content-length')   // 长度已改变
@@ -459,19 +470,23 @@ export default async function handler(req, res) {
 
             // 设置原始响应头，但排除有问题的头和 CORS 头（已设置）
             responseHeaders.forEach((value, key) => {
-                 const lowerKey = key.toLowerCase();
-                 if (!lowerKey.startsWith('access-control-') &&
-                     lowerKey !== 'content-encoding' && // 很重要！
-                     lowerKey !== 'content-length') {   // 很重要！
-                     res.setHeader(key, value); // 设置其他原始头
-                 }
-             });
+                const lowerKey = key.toLowerCase();
+                if (!lowerKey.startsWith('access-control-') &&
+                    lowerKey !== 'content-encoding' && // 很重要！
+                    lowerKey !== 'content-length' &&
+                    lowerKey !== 'transfer-encoding') {
+                    res.setHeader(key, value); // 设置其他原始头
+                }
+            });
             // 设置我们自己的缓存策略
-            res.setHeader('Cache-Control', `public, max-age=${CACHE_TTL}`);
+            setProxyCacheHeaders(res);
 
-            // 发送原始（已解压）内容
-            // 对 Buffer 直接 send 即可；对 string 也是 send
-            res.status(200).send(content);
+            res.status(status || 200);
+            if (isBinary && content && typeof content.pipe === 'function') {
+                content.pipe(res);
+            } else {
+                res.send(content);
+            }
         }
 
     // ---- 结束主处理逻辑的 try 块 ----
@@ -495,6 +510,7 @@ export default async function handler(req, res) {
         // 确保在发送错误响应前没有发送过响应头
         if (!res.headersSent) {
              res.setHeader('Content-Type', 'application/json');
+             res.setHeader('Cache-Control', 'private, no-store');
              // CORS 头应该已经在前面设置好了
              res.status(statusCode).json({
                 success: false,

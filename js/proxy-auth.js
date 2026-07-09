@@ -71,8 +71,8 @@ async function addAuthToProxyUrl(url) {
             return url;
         }
 
-        // 添加时间戳防止重放攻击
-        const timestamp = Date.now();
+        // 5 分钟时间桶：兼顾重放窗口和 Vercel CDN 缓存命中率。
+        const timestamp = Math.floor(Date.now() / (5 * 60 * 1000)) * (5 * 60 * 1000);
 
         // 检查URL是否已包含查询参数
         const separator = url.includes('?') ? '&' : '?';

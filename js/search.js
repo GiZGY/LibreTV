@@ -171,10 +171,33 @@ function dedupeResults(items) {
     return output;
 }
 
+async function runSearchQueue(items, concurrency, worker) {
+    const input = Array.isArray(items) ? items : [];
+    const limit = Math.max(1, Number(concurrency) || 1);
+    const results = new Array(input.length);
+    let nextIndex = 0;
+
+    const workers = Array.from({ length: Math.min(limit, input.length) }, async () => {
+        while (nextIndex < input.length) {
+            const currentIndex = nextIndex++;
+            results[currentIndex] = await worker(input[currentIndex], currentIndex);
+        }
+    });
+
+    await Promise.allSettled(workers);
+    return results;
+}
+
 async function fetchPagedResults(apiBaseUrl, apiId, apiName, query, filters, startPage, endPage) {
-    const promises = [];
+    const pages = [];
     for (let page = startPage; page <= endPage; page++) {
-        promises.push((async () => {
+        pages.push(page);
+    }
+
+    const pageResults = await runSearchQueue(
+        pages,
+        API_CONFIG.search.pageConcurrency || 2,
+        async (page) => {
             try {
                 const pageUrl = buildSearchApiUrl(apiBaseUrl, query, filters, page);
                 const pageData = await fetchApiListByUrl(pageUrl);
@@ -186,10 +209,10 @@ async function fetchPagedResults(apiBaseUrl, apiId, apiName, query, filters, sta
                 console.warn(`API ${apiId} 第${page}页搜索失败:`, error);
                 return [];
             }
-        })());
-    }
-    const pageResults = await Promise.all(promises);
-    return pageResults.flat();
+        }
+    );
+
+    return pageResults.flat().filter(Boolean);
 }
 
 async function searchByAPIAndKeyWord(apiId, query, filters) {
