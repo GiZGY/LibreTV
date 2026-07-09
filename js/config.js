@@ -239,7 +239,9 @@ const API_CONFIG = {
         // 只拼接参数部分，不再包含 /api.php/provide/vod/
         path: '?ac=videolist&wd=',
         pagePath: '?ac=videolist&wd={query}&pg={page}',
-        maxPages: 50, // 最大获取页数
+        maxPages: 5, // 关键词搜索每源最多抓取页数，避免无服务器代理被大量分页请求打满
+        sourceConcurrency: 4, // 跨源并发上限：优先展示快源，保护 Vercel 函数并发
+        pageConcurrency: 2, // 单源分页并发上限：防止一个慢源瞬间打出大量代理请求
         headers: {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
             'Accept': 'application/json'
