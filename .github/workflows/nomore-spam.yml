@@ -27,6 +27,6 @@ jobs:
           # 使用 GitHub Models 可用且稳定的模型，避免 Unknown model 报错
           ai-model: 'openai/gpt-4o'
           labels: 'bug,enhancement,question'
-          analyze-file-changes: 'true'
+          analyze-file-changes: 'false'
           max-analysis-depth: 'normal'
           blacklist: ${{ secrets.BLACKLIST }} # 可选：黑名单用户列表
