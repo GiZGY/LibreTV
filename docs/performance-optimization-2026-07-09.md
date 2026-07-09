@@ -16,6 +16,8 @@ OpenStream 部署在 Vercel Serverless 环境。用户反馈网络慢，主要�
 - Vercel 代理响应增加 `Vercel-CDN-Cache-Control`，错误和鉴权失败响应保持 `no-store`。
 - 代理二进制响应改为流式转发，并透传 `Range` 请求，减少 Serverless 内存占用。
 - 移除页面里的 Tailwind 浏览器运行时，改为构建期生成 `css/tailwind.generated.css`。
+- 删除未再引用的 `libs/tailwindcss.min.js`，减少部署包体积。
+- 移除空 Service Worker 注册，避免无缓存收益的 PWA 生命周期成本。
 - `npm audit` 漏洞已清零。
 
 ## 验证
@@ -33,6 +35,7 @@ OpenStream 部署在 Vercel Serverless 环境。用户反馈网络慢，主要�
 - `git diff --check`
 - 本地 `PORT=8099 npm start` 冒烟：首页、播放页、版本文件、生成 CSS 均可访问。
 - 浏览器冒烟：首页加载 `css/tailwind.generated.css`，不再加载 `libs/tailwindcss.min.js`。
+- 首页不再加载 `js/pwa-register.js`。
 
 ## 受控例外
 
@@ -52,7 +55,7 @@ OpenStream 部署在 Vercel Serverless 环境。用户反馈网络慢，主要�
 
 ## 回滚
 
-若上线后发现样式缺失，可临时回滚本次 Tailwind 替换相关改动：
+若上线后发现样式缺失，可通过 `git revert` 回滚本次 Tailwind 替换相关改动：
 
 - 恢复各 HTML 中的 `libs/tailwindcss.min.js` 脚本引用。
 - 移除 `css/tailwind.generated.css` 引用。
