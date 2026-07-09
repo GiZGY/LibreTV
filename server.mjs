@@ -53,7 +53,7 @@ function sha256Hash(input) {
 }
 
 async function renderPage(filePath, password) {
-  console.log(`[renderPage] 接收到的密码参数: "${password}" (长度: ${password.length})`);
+  if (config.debug) log(`[renderPage] PASSWORD configured: ${password ? 'yes' : 'no'}`);
   let content = fs.readFileSync(filePath, 'utf8');
   if (password !== '') {
     const sha256 = await sha256Hash(password);
@@ -141,7 +141,6 @@ function validateProxyAuth(req) {
 
   if (!authHash || authHash !== serverPasswordHash) {
     console.warn('代理请求鉴权失败：密码哈希不匹配');
-    console.warn(`期望: ${serverPasswordHash}, 收到: ${authHash}`);
     return false;
   }
 
