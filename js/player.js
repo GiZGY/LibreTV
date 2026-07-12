@@ -463,6 +463,7 @@ function initPlayer(videoUrl) {
     if (!videoUrl) {
         return
     }
+    const playbackStartedAt = performance.now();
 
     // 销毁旧实例
     if (art) {
@@ -696,10 +697,12 @@ function initPlayer(videoUrl) {
                 let playbackStarted = false;
                 // 跟踪视频是否出现bufferAppendError
                 let bufferAppendErrorCount = 0;
+                let fatalErrorRecorded = false;
 
                 // 监听视频播放事件
                 video.addEventListener('playing', function () {
                     playbackStarted = true;
+                    window.OpenStreamPlaybackHealth?.recordPlaybackReady(videoUrl, playbackStartedAt);
                     document.getElementById('player-loading').style.display = 'none';
                     document.getElementById('error').style.display = 'none';
                 });
@@ -766,6 +769,10 @@ function initPlayer(videoUrl) {
                                 // 仅在多次恢复尝试后显示错误
                                 if (errorCount > 3 && !errorDisplayed) {
                                     errorDisplayed = true;
+                                    if (!fatalErrorRecorded) {
+                                        fatalErrorRecorded = true;
+                                        window.OpenStreamPlaybackHealth?.recordPlaybackFailure(data.details || data.type || 'hls_fatal');
+                                    }
                                     showError('视频加载失败，可能是格式不兼容或源不可用');
                                 }
                                 break;
@@ -907,6 +914,7 @@ function initPlayer(videoUrl) {
             if (el) el.style.display = 'none';
         });
 
+        window.OpenStreamPlaybackHealth?.recordPlaybackFailure(error?.message || 'video_error');
         showError('视频播放失败: ' + (error.message || '未知错误'));
     });
 
@@ -934,6 +942,7 @@ function initPlayer(videoUrl) {
 
     // 添加双击全屏支持
     art.on('video:playing', () => {
+        window.OpenStreamPlaybackHealth?.recordPlaybackReady(currentVideoUrl || videoUrl, playbackStartedAt);
         // 绑定双击事件到视频容器
         if (art.video) {
             art.video.addEventListener('dblclick', () => {

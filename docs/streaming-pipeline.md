@@ -19,6 +19,11 @@ index.html
   -> js/result-aggregator.js
   -> js/streaming-search.js
   -> js/app.js search()
+
+player.html
+  -> js/source-health.js
+  -> js/playback-health.js
+  -> js/player.js
 ```
 
 ## 模块职责
@@ -43,6 +48,12 @@ index.html
 - 按总时限停止，不为慢源拖住用户。
 - 通过回调把部分结果持续交给页面渲染。
 
+`playback-health.js`
+
+- 播放开始后给当前源记录一次成功。
+- 播放器 fatal/error 时给当前源记录一次失败。
+- 不记录播放地址、凭据或用户私有信息。
+
 ## 电视源接入原则
 
 电视端源不直接塞进前端。后续如接入 LA VPS bridge，应作为 Remote Source Adapter 接入同一套状态契约。
@@ -66,6 +77,7 @@ error
 
 ```bash
 npm run smoke:streaming
+node --check js/player.js
 npm run build:css
 ```
 
