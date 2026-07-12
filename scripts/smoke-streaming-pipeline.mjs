@@ -57,6 +57,11 @@ vm.runInContext(`
 runFile('js/source-adapter.js');
 runFile('js/streaming-search.js');
 
+const bridgeProbe = await context.OpenStreamSourceAdapter.search('tvbox:厂长', '庆余年', {}, { maxPages: 1 });
+if (bridgeProbe.status !== 'unsupported') {
+  throw new Error('unconfigured tvbox bridge should report unsupported');
+}
+
 const updates = [];
 const result = await context.OpenStreamStreamingSearch.runStreamingSearch({
   sources: ['fast1', 'fast2', 'slow', 'timeout'],

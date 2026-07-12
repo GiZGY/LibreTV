@@ -41,6 +41,7 @@ player.html
 
 - 提供统一 `search / detail / episodes / play / health` 契约。
 - CMS 与自定义 CMS 源先接入这层，后续 Remote bridge 也接入这层。
+- `tvbox:` / `bridge:` 前缀源会按 Remote bridge 契约请求，不配置 bridge 时返回 `unsupported`。
 - 播放地址会排除 UC、夸克、阿里云盘、115 等登录网盘链接。
 
 `result-aggregator.js`
@@ -86,6 +87,15 @@ error
 ```
 
 不能把未执行、超时、不支持伪装成无结果。
+
+前端读取 bridge 配置的优先级：
+
+```text
+window.__ENV__.TVBOX_BRIDGE_URL
+localStorage.tvboxBridgeConfig.url
+```
+
+`TVBOX_BRIDGE_TOKEN` 只能作为 bridge 的客户端访问令牌，不应当放真实网盘凭据、cookie 或服务端 secret。
 
 ## 验证
 
