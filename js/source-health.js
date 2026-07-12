@@ -108,6 +108,20 @@
         return LOGIN_SOURCE_PATTERNS.some((pattern) => pattern.test(`${sourceKey} ${name}`));
     }
 
+    function isBridgeSource(sourceKey) {
+        return /^(tvbox|bridge):/.test(String(sourceKey || '')) || !!window.API_SITES?.[sourceKey]?.bridge;
+    }
+
+    function normalizeStoredStatus(sourceKey, status) {
+        if (
+            isBridgeSource(sourceKey) &&
+            [SOURCE_STATUS.UNSUPPORTED, SOURCE_STATUS.DEAD, SOURCE_STATUS.ERROR].includes(status)
+        ) {
+            return SOURCE_STATUS.READY;
+        }
+        return status || SOURCE_STATUS.READY;
+    }
+
     function getInitialMetrics(sourceKey) {
         const quality = getQualityMap()?.[sourceKey];
         const latency = getLatencyMap()?.[sourceKey];
@@ -115,7 +129,7 @@
 
         return {
             sourceKey,
-            status: base.status || SOURCE_STATUS.READY,
+            status: normalizeStoredStatus(sourceKey, base.status),
             success: Number(base.success || 0),
             failure: Number(base.failure || 0),
             timeout: Number(base.timeout || 0),
