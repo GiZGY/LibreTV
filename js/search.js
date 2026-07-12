@@ -215,7 +215,7 @@ async function fetchPagedResults(apiBaseUrl, apiId, apiName, query, filters, sta
     return pageResults.flat().filter(Boolean);
 }
 
-async function searchByAPIAndKeyWord(apiId, query, filters) {
+async function searchByAPIAndKeyWord(apiId, query, filters, options = {}) {
     try {
         // 360 资源当前疑似不支持关键词搜索：无论 wd 是什么都会返回同一批“短剧”列表
         // 为避免污染搜索结果，直接忽略它（用户仍可在设置里取消勾选）。
@@ -265,10 +265,12 @@ async function searchByAPIAndKeyWord(apiId, query, filters) {
 
         let allResults = mapApiResults(firstPageData.list, apiId, apiName);
 
-        // 无关键词筛选时每源只抓 1 页，避免请求暴涨。
+        const pageBudget = Math.max(1, Number(options.maxPages || API_CONFIG.search.maxPages || 1));
+
+        // 无关键词筛选时默认每源只抓 1 页，避免请求暴涨；调用方可通过 maxPages 显式放宽。
         if (hasKeyword) {
             const pageCount = Number(firstPageData.pagecount) || 1;
-            const pagesToFetch = Math.min(pageCount - 1, API_CONFIG.search.maxPages - 1);
+            const pagesToFetch = Math.min(pageCount - 1, pageBudget - 1);
 
             if (pagesToFetch > 0) {
                 const paged = await fetchPagedResults(
@@ -291,7 +293,8 @@ async function searchByAPIAndKeyWord(apiId, query, filters) {
 
         // 无关键词筛选：扩大候选集（每源多页）后再本地过滤，减少漏片。
         if (shouldUseFilterSearch) {
-            const noKeywordPages = Math.max(1, Number(SEARCH_FILTERS_CONFIG?.noKeywordPages || 3));
+            const configuredNoKeywordPages = Math.max(1, Number(SEARCH_FILTERS_CONFIG?.noKeywordPages || 3));
+            const noKeywordPages = Math.min(configuredNoKeywordPages, pageBudget);
 
             // 1) 继续抓筛选请求的后续页（若接口支持可直接提高命中率）
             if (noKeywordPages > 1) {
