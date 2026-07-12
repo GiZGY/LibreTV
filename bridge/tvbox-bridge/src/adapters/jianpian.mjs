@@ -4,6 +4,7 @@ const SOURCE_KEY = '荐片';
 const SOURCE_CODE = `tvbox:${SOURCE_KEY}`;
 const API_BASE_URL = 'https://api.ztcgi.com';
 const IMAGE_BASE_URL = 'https://img.jianpian.com';
+const UNSTABLE_IMAGE_HOSTS = new Set(['img.jianpian.com', 'img1.jianpian.com', 'img2.jianpian.com', 'img3.jianpian.com']);
 const REQUEST_HEADERS = {
   'User-Agent': 'Mozilla/5.0 (Linux; Android 9; V2196A Build/PQ3A.190705.08211809; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/91.0.4472.114 Mobile Safari/537.36;webank/h5face;webank/1.0;netType:NETWORK_WIFI;appVersion:416;packageName:com.jp3.xg3',
   'Accept': 'application/json,text/plain,*/*',
@@ -13,8 +14,49 @@ const REQUEST_HEADERS = {
 function normalizeImageUrl(value = '') {
   const url = String(value || '').trim();
   if (!url) return '';
-  if (/^https?:\/\//i.test(url)) return url;
-  return `${IMAGE_BASE_URL}${url.startsWith('/') ? '' : '/'}${url}`;
+  const absoluteUrl = /^https?:\/\//i.test(url)
+    ? url
+    : `${IMAGE_BASE_URL}${url.startsWith('/') ? '' : '/'}${url}`;
+
+  try {
+    const parsed = new URL(absoluteUrl);
+    if (UNSTABLE_IMAGE_HOSTS.has(parsed.hostname.toLowerCase())) return '';
+    return absoluteUrl;
+  } catch (_) {
+    return '';
+  }
+}
+
+function normalizePersonName(value) {
+  if (!value) return '';
+  if (typeof value === 'string') return value.trim();
+  if (typeof value === 'object') {
+    return String(
+      value.name ||
+      value.title ||
+      value.original_name ||
+      value.actor_name ||
+      value.director_name ||
+      ''
+    ).trim();
+  }
+  return String(value).trim();
+}
+
+function normalizePeople(value) {
+  if (Array.isArray(value)) {
+    return value.map(normalizePersonName).filter(Boolean).join(',');
+  }
+  return normalizePersonName(value);
+}
+
+function normalizeArea(value) {
+  if (Array.isArray(value)) {
+    return value.map((entry) => (
+      typeof entry === 'string' ? entry : entry?.area || entry?.name
+    )).filter(Boolean).join(',');
+  }
+  return String(value || '').trim();
 }
 
 function isPlayableUrl(url) {
@@ -75,10 +117,10 @@ function normalizeVideoInfo(data) {
     desc: String(data?.description || '').trim(),
     cover: normalizeImageUrl(data?.thumbnail || data?.tvimg),
     year: String(data?.year || '').trim(),
-    area: String(data?.area || '').trim(),
-    actor: Array.isArray(data?.actors) ? data.actors.join(',') : '',
-    director: Array.isArray(data?.directors) ? data.directors.join(',') : '',
-    type: data?.top_category?.name || '',
+    area: normalizeArea(data?.area || data?.areas),
+    actor: normalizePeople(data?.actors),
+    director: normalizePeople(data?.directors),
+    type: data?.top_category?.name || data?.category?.name || '',
     remarks: String(data?.mask || '').trim(),
     source_name: SOURCE_KEY,
     source_code: SOURCE_CODE
@@ -155,5 +197,6 @@ export const internals = {
   normalizeSearchItem,
   flattenPlayableEpisodes,
   normalizeVideoInfo,
+  normalizePeople,
   isPlayableUrl
 };

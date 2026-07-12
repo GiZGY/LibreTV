@@ -12,7 +12,9 @@ const searchPayload = {
         new_continue: '全36集',
         vod_area: '中国大陆',
         vod_pic: 'https://img.example/poster.jpg',
-        d_class: '剧情,古装'
+        t_id: 2,
+        d_class: ',22,81,',
+        tags: ['连续剧', '国产剧', '古装', '剧情']
       }
     ]
   }
@@ -69,6 +71,8 @@ assert.equal(internals.normalizeEpisodeList('60397', episodePayload.data.urls)[0
 const searchResult = await search('庆余年', { fetchImpl: fakeFetch });
 assert.equal(searchResult.status, 'ready');
 assert.equal(searchResult.list[0].source_code, 'tvbox:瓜子');
+assert.equal(searchResult.list[0].type_name, '电视剧');
+assert.equal(searchResult.list[0].vod_class, '古装,剧情');
 
 const detailResult = await detail('60397', { fetchImpl: fakeFetch });
 assert.equal(detailResult.status, 'ready');

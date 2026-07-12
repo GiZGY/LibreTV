@@ -12,7 +12,7 @@ services:
       HOST: "127.0.0.1"
       PORT: "9979"
       TVBOX_BRIDGE_TOKEN: ${TVBOX_BRIDGE_TOKEN:?TVBOX_BRIDGE_TOKEN is required}
-      BRIDGE_VERSION: ${BRIDGE_VERSION:-0.1.0}
+      BRIDGE_VERSION: ${BRIDGE_VERSION:-0.1.1}
     labels:
       openstream.project: tvbox-bridge
     healthcheck:

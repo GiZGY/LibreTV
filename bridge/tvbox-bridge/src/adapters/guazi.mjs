@@ -85,6 +85,40 @@ function normalizeImageUrl(value = '') {
   return `${SITE_BASE_URL}${url.startsWith('/') ? '' : '/'}${url}`;
 }
 
+function normalizeCategoryName(value) {
+  const name = String(value || '').trim();
+  if (['连续剧', '国产剧', '欧美剧', '日韩剧', '港台剧'].includes(name)) return '电视剧';
+  if (['动漫', '动画'].includes(name)) return '动漫';
+  if (name.includes('电影')) return '电影';
+  if (name.includes('综艺')) return '综艺';
+  return name;
+}
+
+function normalizeTagList(value) {
+  if (Array.isArray(value)) return value.map((item) => String(item || '').trim()).filter(Boolean);
+  return String(value || '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function normalizeSearchCategory(item) {
+  const tags = normalizeTagList(item?.tags);
+  const firstCategory = normalizeCategoryName(tags[0]);
+  const typeName = firstCategory || normalizeCategoryName(item?.type_name);
+  const fallbackType = String(item?.t_id || item?.d_type || '').trim();
+  const genreTags = tags.slice(firstCategory ? 1 : 0)
+    .map(normalizeCategoryName)
+    .filter((tag) => tag && tag !== typeName);
+
+  return {
+    typeName: typeName || fallbackType,
+    vodClass: genreTags.length > 0
+      ? Array.from(new Set(genreTags)).join(',')
+      : normalizeTagList(item?.videoTag || item?.d_class).join(',')
+  };
+}
+
 function isLoginRequiredUrl(url) {
   return LOGIN_URL_PATTERNS.some((pattern) => pattern.test(String(url || '')));
 }
@@ -99,6 +133,7 @@ function normalizeSearchItem(item) {
   const title = String(item?.vod_name || '').trim();
   const year = String(item?.vod_year || '').trim();
   const remarks = String(item?.new_continue || item?.vod_continu || item?.vod_title || '').trim();
+  const category = normalizeSearchCategory(item);
   return {
     vod_id: String(item?.vod_id || '').trim(),
     vod_name: title,
@@ -106,8 +141,8 @@ function normalizeSearchItem(item) {
     vod_remarks: remarks || year,
     vod_year: year,
     vod_area: String(item?.vod_area || '').trim(),
-    vod_class: Array.isArray(item?.videoTag) ? item.videoTag.join(',') : String(item?.d_class || '').trim(),
-    type_name: String(item?.t_id || item?.d_type || '').trim(),
+    vod_class: category.vodClass,
+    type_name: category.typeName,
     source_name: SOURCE_KEY,
     source_code: SOURCE_CODE,
     tvbox_source_key: SOURCE_KEY
@@ -239,6 +274,7 @@ export const internals = {
   encryptPayload,
   decryptPayload,
   normalizeImageUrl,
+  normalizeSearchCategory,
   normalizeSearchItem,
   normalizeVideoInfo,
   normalizeEpisodeList,
