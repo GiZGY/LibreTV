@@ -47,6 +47,17 @@ function runFile(relativePath) {
 }
 
 runFile('js/config.js');
+storage.set('openstreamSourceHealth', JSON.stringify({
+  version: 1,
+  updatedAt: Date.now(),
+  sources: {
+    'tvbox:荐片': {
+      status: 'unsupported',
+      failure: 3,
+      updatedAt: Date.now()
+    }
+  }
+}));
 runFile('js/source-health.js');
 runFile('js/result-aggregator.js');
 
@@ -68,6 +79,11 @@ vm.runInContext(`
 
 runFile('js/source-adapter.js');
 runFile('js/streaming-search.js');
+
+const recoveredBridgePlan = context.OpenStreamSourceHealth.getSearchPlan(['tvbox:荐片']);
+if (recoveredBridgePlan.length !== 1 || recoveredBridgePlan[0].sourceKey !== 'tvbox:荐片') {
+  throw new Error('stale unsupported bridge sources should remain searchable');
+}
 
 const bridgeProbe = await context.OpenStreamSourceAdapter.search('tvbox:厂长', '庆余年', {}, { maxPages: 1 });
 if (bridgeProbe.status !== 'unsupported') {
