@@ -38,7 +38,15 @@ export default async (request, context) => {
   const modifiedHtml = originalHtml.replace(
     'window.__ENV__.PASSWORD = "{{PASSWORD}}";',
     `window.__ENV__.PASSWORD = "${passwordHash}"; // SHA-256 hash`
-  );
+  )
+    .replace(
+      'window.__ENV__.TVBOX_BRIDGE_URL = "{{TVBOX_BRIDGE_URL}}";',
+      `window.__ENV__.TVBOX_BRIDGE_URL = ${JSON.stringify(Netlify.env.get('TVBOX_BRIDGE_URL') || '')};`
+    )
+    .replace(
+      'window.__ENV__.TVBOX_BRIDGE_TOKEN = "{{TVBOX_BRIDGE_TOKEN}}";',
+      `window.__ENV__.TVBOX_BRIDGE_TOKEN = ${JSON.stringify(Netlify.env.get('TVBOX_BRIDGE_TOKEN') || '')};`
+    );
   
   // Create a new response with the modified HTML
   return new Response(modifiedHtml, {

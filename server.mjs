@@ -63,6 +63,15 @@ async function renderPage(filePath, password) {
   } else {
     content = content.replace(/{{PASSWORD}}/g, '');
   }
+  content = content
+    .replace(
+      'window.__ENV__.TVBOX_BRIDGE_URL = "{{TVBOX_BRIDGE_URL}}";',
+      `window.__ENV__.TVBOX_BRIDGE_URL = ${JSON.stringify(process.env.TVBOX_BRIDGE_URL || '')};`
+    )
+    .replace(
+      'window.__ENV__.TVBOX_BRIDGE_TOKEN = "{{TVBOX_BRIDGE_TOKEN}}";',
+      `window.__ENV__.TVBOX_BRIDGE_TOKEN = ${JSON.stringify(process.env.TVBOX_BRIDGE_TOKEN || '')};`
+    );
   return content;
 }
 

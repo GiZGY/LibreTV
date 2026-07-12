@@ -97,13 +97,28 @@ localStorage.tvboxBridgeConfig.url
 
 `TVBOX_BRIDGE_TOKEN` 只能作为 bridge 的客户端访问令牌，不应当放真实网盘凭据、cookie 或服务端 secret。
 
+部署环境变量注入路径：
+
+```text
+Express: server.mjs
+Vercel: middleware.js
+Cloudflare Pages: functions/_middleware.js
+Netlify: netlify/edge-functions/inject-env.js
+```
+
 ## 验证
 
 ```bash
 npm run smoke:streaming
+npm run smoke:player-fallback
 node --check js/source-adapter.js
 node --check js/player.js
 npm run build:css
+
+PORT=8092 PASSWORD=opentest TVBOX_BRIDGE_URL=https://bridge.example.test npm start
+curl -fsS http://localhost:8092/ | rg 'TVBOX_BRIDGE_URL|bridge.example'
 ```
 
 `smoke:streaming` 会模拟快源、慢源和超时源，验证部分结果可先返回、重复影片可聚合、源健康状态可记录。
+
+`smoke:player-fallback` 会模拟当前线路失败，验证备用线路选择、集数继承和播放进度继承。

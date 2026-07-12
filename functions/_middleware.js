@@ -16,6 +16,15 @@ export async function onRequest(context) {
     }
     html = html.replace('window.__ENV__.PASSWORD = "{{PASSWORD}}";', 
       `window.__ENV__.PASSWORD = "${passwordHash}";`);
+    html = html
+      .replace(
+        'window.__ENV__.TVBOX_BRIDGE_URL = "{{TVBOX_BRIDGE_URL}}";',
+        `window.__ENV__.TVBOX_BRIDGE_URL = ${JSON.stringify(env.TVBOX_BRIDGE_URL || '')};`
+      )
+      .replace(
+        'window.__ENV__.TVBOX_BRIDGE_TOKEN = "{{TVBOX_BRIDGE_TOKEN}}";',
+        `window.__ENV__.TVBOX_BRIDGE_TOKEN = ${JSON.stringify(env.TVBOX_BRIDGE_TOKEN || '')};`
+      );
     
     return new Response(html, {
       headers: response.headers,

@@ -527,6 +527,8 @@
         window.__ENV__ = window.__ENV__ || {};
         // 注入服务器端环境变量 (将由服务器端替换)
         window.__ENV__.PASSWORD = "{{PASSWORD}}";
+        window.__ENV__.TVBOX_BRIDGE_URL = "{{TVBOX_BRIDGE_URL}}";
+        window.__ENV__.TVBOX_BRIDGE_TOKEN = "{{TVBOX_BRIDGE_TOKEN}}";
     </script>
 
     <script src="js/proxy-auth.js"></script>
