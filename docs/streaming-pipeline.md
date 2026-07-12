@@ -114,6 +114,7 @@ npm run smoke:streaming
 npm run smoke:player-fallback
 npm run smoke:tvbox-proxy
 cd bridge/tvbox-bridge && npm run smoke:jianpian && npm run smoke
+npm run smoke:production:tvbox -- https://tv.cursorflow.top
 node --check js/source-adapter.js
 node --check js/player.js
 npm run build:css

@@ -13,6 +13,7 @@
     "smoke:streaming": "node scripts/smoke-streaming-pipeline.mjs",
     "smoke:player-fallback": "node scripts/smoke-player-fallback.mjs",
     "smoke:tvbox-proxy": "node scripts/smoke-tvbox-proxy.mjs",
+    "smoke:production:tvbox": "node scripts/smoke-production-tvbox.mjs",
     "smoke:all": "npm run smoke:streaming && npm run smoke:player-fallback && npm run smoke:tvbox-proxy"
   },
   "dependencies": {
