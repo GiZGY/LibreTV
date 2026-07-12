@@ -586,11 +586,12 @@ async function handleMultipleCustomSearch(searchQuery, customApiUrls) {
 // 拦截API请求
 (function () {
     const originalFetch = window.fetch;
+    const handledApiPaths = new Set(['/api/search', '/api/detail']);
 
     window.fetch = async function (input, init) {
         const requestUrl = typeof input === 'string' ? new URL(input, window.location.origin) : input.url;
 
-        if (requestUrl.pathname.startsWith('/api/')) {
+        if (handledApiPaths.has(requestUrl.pathname)) {
             if (window.isPasswordProtected && window.isPasswordVerified) {
                 if (window.isPasswordProtected() && !window.isPasswordVerified()) {
                     return;
