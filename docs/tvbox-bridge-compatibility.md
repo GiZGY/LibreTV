@@ -28,13 +28,17 @@ Browser -> OpenStream /api/tvbox/* -> LA bridge -> TVBox adapter
 - `csp_*Guard`
 - 少量 `./api/drpy2.min.js`
 
-这些源不能在 Vercel 里直接运行。它们必须满足以下任一条件才能进入 `ready`：
+这些源不能在 Vercel 里直接运行。它们必须满足以下任一条件才能进入可播放优选：
 
 - bridge 内具备合法、可运行、可验证的 CatVod/spider 调用运行时；
 - 或者为具体源实现独立 adapter，能稳定返回搜索、详情、分集和播放地址；
 - 且播放地址不依赖本机网盘登录凭据。
 
-当前 LA bridge 对这类源返回 `unsupported`，不会伪装成空结果。
+当前 LA bridge 中：
+
+- `立播` 已有 HTTP adapter canary，搜索和详情可运行；
+- `立播` 当前抽样播放结果多为 UC/夸克/百度/迅雷等网盘地址，因此播放阶段会返回 `login_required`，不进入网站默认可播放源；
+- 其余未适配 CatVod/spider 源返回 `unsupported`，不会伪装成空结果。
 
 ### 需要网盘登录的源
 
@@ -113,6 +117,11 @@ vps2.cursorflow.top/api/tvbox/* -> 127.0.0.1:9979
 - 本地 Express `/api/tvbox/:action`
 - 前端 `OpenStreamSourceAdapter` 统一调用同源 `/api/tvbox/*`
 - `smoke:tvbox-proxy`
+- 播放页支持 `tvbox://` 占位 URL，在进入播放页后调用 bridge `play` 解析真实地址
+- LA bridge `立播` adapter：
+  - `search`：当前 live probe 可返回《庆余年 第二季》
+  - `detail`：当前 live probe 可返回标题和 1 个播放入口
+  - `play`：当前 live probe 返回 UC 网盘，状态为 `login_required`
 
 待完成：
 
@@ -120,7 +129,7 @@ vps2.cursorflow.top/api/tvbox/* -> 127.0.0.1:9979
   - `TVBOX_BRIDGE_URL=https://vps2.cursorflow.top`
   - `TVBOX_BRIDGE_TOKEN=<LA bridge .env 中的 token>`
   - `TVBOX_BRIDGE_TIMEOUT_MS=8000`
-- 至少实现一个非登录电视源 adapter 并通过搜索、详情、播放 smoke 后，再把对应 `tvbox:*` 源加入用户可选源列表。
+- 找到至少一个返回 m3u8/mp4、且不依赖网盘登录的电视源 adapter，再把对应 `tvbox:*` 源加入用户可选源列表。
 
 ## 下一步 adapter 准入标准
 

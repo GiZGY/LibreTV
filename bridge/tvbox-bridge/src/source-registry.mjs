@@ -18,20 +18,27 @@ const SOURCE_KEYS = [
 ];
 
 function sourceStatusFor(key) {
-  if (LOGIN_REQUIRED_KEYS.has(key)) return 'login_required';
-  return 'unsupported';
+  if (LOGIN_REQUIRED_KEYS.has(key)) return STATUS.LOGIN_REQUIRED;
+  if (hasAdapter(key)) return STATUS.READY;
+  return STATUS.UNSUPPORTED;
 }
 
 export function listSources() {
-  return SOURCE_KEYS.map((key) => ({
-    key,
-    type: 3,
-    fastSearch: FAST_SEARCH_KEYS.has(key),
-    status: sourceStatusFor(key),
-    reason: LOGIN_REQUIRED_KEYS.has(key)
+  return SOURCE_KEYS.map((key) => {
+    const adapter = getAdapter(key);
+    return {
+      key,
+      type: 3,
+      fastSearch: FAST_SEARCH_KEYS.has(key),
+      status: sourceStatusFor(key),
+      adapter: !!adapter,
+      reason: LOGIN_REQUIRED_KEYS.has(key)
       ? '需要本机网盘凭据或首帧验证，bridge 不读取也不转移凭据'
-      : '电视源依赖 CatVod spider 运行时，当前 bridge 未启用可执行适配器'
-  }));
+        : adapter
+          ? '已启用 HTTP adapter；播放阶段若返回网盘地址会降级为 login_required'
+          : '电视源依赖 CatVod spider 运行时，当前 bridge 未启用可执行适配器'
+    };
+  });
 }
 
 export function getSource(key) {
@@ -50,3 +57,5 @@ export function summarizeSources() {
     fastSearch: sources.filter((source) => source.fastSearch).length
   };
 }
+import { getAdapter, hasAdapter } from './adapter-registry.mjs';
+import { STATUS } from './status.mjs';

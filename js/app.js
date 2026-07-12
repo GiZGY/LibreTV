@@ -1126,7 +1126,18 @@ async function showDetails(id, vod_name, sourceCode) {
             apiParams = '&source=' + sourceCode;
         }
 
-        const data = await fetchVideoDetailWithCache(id, apiParams);
+        const isBridgeSource = window.OpenStreamSourceAdapter?.isBridgeSource?.(sourceCode);
+        const bridgeDetail = isBridgeSource
+            ? await window.OpenStreamSourceAdapter.detail(sourceCode, id)
+            : null;
+        const data = isBridgeSource
+            ? {
+                episodes: (bridgeDetail?.episodes || []).map((episode) => (
+                    typeof episode === 'string' ? episode : episode?.url
+                )).filter(Boolean),
+                videoInfo: bridgeDetail?.data?.videoInfo || bridgeDetail?.videoInfo || {}
+            }
+            : await fetchVideoDetailWithCache(id, apiParams);
 
         const modal = document.getElementById('modal');
         const modalTitle = document.getElementById('modalTitle');

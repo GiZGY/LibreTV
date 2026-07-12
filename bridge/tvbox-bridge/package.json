@@ -6,7 +6,8 @@
   "description": "OpenStream TVBox source bridge for VPS runtime",
   "scripts": {
     "start": "node src/server.mjs",
-    "smoke": "node scripts/smoke.mjs"
+    "smoke": "node scripts/smoke.mjs",
+    "smoke:libvio": "node scripts/smoke-libvio-fixture.mjs"
   },
   "dependencies": {
     "express": "^5.1.0"

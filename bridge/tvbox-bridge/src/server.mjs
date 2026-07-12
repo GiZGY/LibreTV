@@ -2,6 +2,7 @@ import express from 'express';
 import { STATUS, statusResponse } from './status.mjs';
 import { getSource, listSources, summarizeSources } from './source-registry.mjs';
 import { isAuthorized } from './auth.mjs';
+import { getAdapter } from './adapter-registry.mjs';
 
 const config = {
   port: Number.parseInt(process.env.PORT || '9979', 10),
@@ -30,7 +31,8 @@ app.get('/api/tvbox/health', (_req, res) => {
     capabilities: {
       catvodSpider: false,
       credentialImport: false,
-      cmsAdapter: false
+      cmsAdapter: false,
+      httpAdapter: true
     }
   });
 });
@@ -63,33 +65,79 @@ function unsupportedBySource(source) {
   return statusResponse(STATUS.UNSUPPORTED, source.reason, { sourceKey: source.key, list: [] });
 }
 
-app.get('/api/tvbox/search', (req, res) => {
+function sendAdapterError(res, error) {
+  const isTimeout = error?.name === 'AbortError';
+  res.status(200).json(statusResponse(
+    isTimeout ? STATUS.TIMEOUT : STATUS.ERROR,
+    isTimeout ? 'TVBox adapter timed out' : 'TVBox adapter failed',
+    { error: error?.message || String(error), list: [] }
+  ));
+}
+
+app.get('/api/tvbox/search', async (req, res) => {
   const source = resolveSource(req, res);
   if (!source) return;
+  const adapter = getAdapter(source.key);
+  if (adapter) {
+    try {
+      return res.json(await adapter.search(req.query.wd || req.query.keyword || ''));
+    } catch (error) {
+      return sendAdapterError(res, error);
+    }
+  }
   res.status(source.status === STATUS.LOGIN_REQUIRED ? 200 : 501).json(unsupportedBySource(source));
 });
 
-app.get('/api/tvbox/detail', (req, res) => {
+app.get('/api/tvbox/detail', async (req, res) => {
   const source = resolveSource(req, res);
   if (!source) return;
+  const adapter = getAdapter(source.key);
+  if (adapter) {
+    try {
+      return res.json(await adapter.detail(req.query.id || ''));
+    } catch (error) {
+      return sendAdapterError(res, error);
+    }
+  }
   res.status(source.status === STATUS.LOGIN_REQUIRED ? 200 : 501).json({
     ...unsupportedBySource(source),
     episodes: []
   });
 });
 
-app.get('/api/tvbox/episodes', (req, res) => {
+app.get('/api/tvbox/episodes', async (req, res) => {
   const source = resolveSource(req, res);
   if (!source) return;
+  const adapter = getAdapter(source.key);
+  if (adapter) {
+    try {
+      const detail = await adapter.detail(req.query.id || '');
+      return res.json({
+        status: detail.status,
+        sourceKey: source.key,
+        episodes: detail.episodes || []
+      });
+    } catch (error) {
+      return sendAdapterError(res, error);
+    }
+  }
   res.status(source.status === STATUS.LOGIN_REQUIRED ? 200 : 501).json({
     ...unsupportedBySource(source),
     episodes: []
   });
 });
 
-app.get('/api/tvbox/play', (req, res) => {
+app.get('/api/tvbox/play', async (req, res) => {
   const source = resolveSource(req, res);
   if (!source) return;
+  const adapter = getAdapter(source.key);
+  if (adapter) {
+    try {
+      return res.json(await adapter.play(req.query.id || '', req.query.flag || '', req.query.episode || 0));
+    } catch (error) {
+      return sendAdapterError(res, error);
+    }
+  }
   res.status(source.status === STATUS.LOGIN_REQUIRED ? 200 : 501).json({
     ...unsupportedBySource(source),
     url: ''

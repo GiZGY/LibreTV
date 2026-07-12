@@ -114,13 +114,14 @@ document.addEventListener('passwordVerified', () => {
 });
 
 // 初始化页面内容
-function initializePageContent() {
+async function initializePageContent() {
 
     // 解析URL参数
     const urlParams = new URLSearchParams(window.location.search);
     let videoUrl = urlParams.get('url');
     const title = urlParams.get('title');
     const sourceCode = urlParams.get('source');
+    const videoId = urlParams.get('id');
     let index = parseInt(urlParams.get('index') || '0');
     const episodesList = urlParams.get('episodes'); // 从URL获取集数信息
     const savedPosition = parseInt(urlParams.get('position') || '0'); // 获取保存的播放位置
@@ -157,6 +158,31 @@ function initializePageContent() {
                 showError('历史记录链接无效，请返回首页重新访问');
             }
         } catch (e) {
+        }
+    }
+
+    if (sourceCode && window.OpenStreamSourceAdapter?.isBridgeSource?.(sourceCode)) {
+        const shouldResolveBridgeUrl = !videoUrl || String(videoUrl).startsWith('tvbox://');
+        if (shouldResolveBridgeUrl) {
+            try {
+                const resolved = await window.OpenStreamSourceAdapter.play(sourceCode, videoId, '', index);
+                if (resolved.status === window.OpenStreamSourceAdapter.STATUS.READY && resolved.url) {
+                    videoUrl = resolved.url;
+                    const nextUrl = new URL(window.location.href);
+                    nextUrl.searchParams.set('url', videoUrl);
+                    window.history.replaceState({}, '', nextUrl);
+                } else if (resolved.status === window.OpenStreamSourceAdapter.STATUS.LOGIN_REQUIRED) {
+                    showError('当前电视源返回网盘地址，需要登录后才能播放，请切换其他资源');
+                    return;
+                } else {
+                    showError(`当前电视源暂不可播放：${resolved.status || 'unknown'}`);
+                    return;
+                }
+            } catch (error) {
+                console.error('电视源播放解析失败:', error);
+                showError('电视源播放解析失败，请切换其他资源');
+                return;
+            }
         }
     }
 
