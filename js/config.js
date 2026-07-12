@@ -211,6 +211,11 @@ const API_SITES = {
         name: '荐片源',
         bridge: true,
     },
+    'tvbox:瓜子': {
+        api: 'tvbox://瓜子',
+        name: '瓜子源',
+        bridge: true,
+    },
     testSource: {
         api: 'https://www.example.com/api.php/provide/vod',
         name: '空内容测试源',

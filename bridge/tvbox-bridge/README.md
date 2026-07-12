@@ -8,6 +8,7 @@
 - 使用统一状态：`ready`、`timeout`、`unsupported`、`login_required`、`no_result`、`error`。
 - 明确标记 8 个需要登录/本机凭据验证的网盘源。
 - `立播` 已接入 HTTP adapter，可跑通搜索和详情；播放阶段若返回 UC/夸克/百度/迅雷等网盘地址，会明确返回 `login_required`。
+- `荐片`、`瓜子` 已接入 HTTP adapter，当前 smoke 可跑通搜索、详情和 m3u8 播放地址解析。
 - 对当前无法在 Node/VPS 内直接执行的 CatVod spider 源返回 `unsupported`，不伪装为无结果。
 
 ## 运行
@@ -16,6 +17,8 @@
 npm install
 npm run smoke
 npm run smoke:libvio
+npm run smoke:jianpian
+npm run smoke:guazi
 ```
 
 Docker：
