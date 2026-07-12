@@ -29,25 +29,6 @@
         }
     }
 
-    function getBridgeConfig() {
-        const env = window.__ENV__ || {};
-        const fromEnv = {
-            url: env.TVBOX_BRIDGE_URL || '',
-            token: env.TVBOX_BRIDGE_TOKEN || ''
-        };
-        if (fromEnv.url) return fromEnv;
-
-        try {
-            const parsed = JSON.parse(localStorage.getItem('tvboxBridgeConfig') || '{}');
-            return {
-                url: parsed.url || '',
-                token: parsed.token || ''
-            };
-        } catch (_) {
-            return { url: '', token: '' };
-        }
-    }
-
     function isBridgeSource(sourceKey) {
         return /^(tvbox|bridge):/.test(String(sourceKey || ''));
     }
@@ -56,39 +37,15 @@
         return String(sourceKey || '').replace(/^(tvbox|bridge):/, '');
     }
 
-    function isUnsafeBridgeUrl(rawUrl) {
-        try {
-            const url = new URL(rawUrl);
-            if (!['https:', 'http:'].includes(url.protocol)) return true;
-            const host = url.hostname;
-            return host === 'localhost' ||
-                host === '127.0.0.1' ||
-                host === '0.0.0.0' ||
-                host === '::1' ||
-                host.startsWith('10.') ||
-                host.startsWith('192.168.') ||
-                /^172\.(1[6-9]|2\d|3[0-1])\./.test(host);
-        } catch (_) {
-            return true;
-        }
-    }
-
-    async function fetchBridge(path, params) {
-        const config = getBridgeConfig();
-        if (!config.url || isUnsafeBridgeUrl(config.url)) {
-            return { status: STATUS.UNSUPPORTED };
-        }
-
-        const url = new URL(path, config.url.replace(/\/+$/, '') + '/');
+    async function fetchTvboxProxy(action, params) {
+        const url = new URL(`/api/tvbox/${action}`, window.location.origin);
         Object.entries(params || {}).forEach(([key, value]) => {
             if (value !== undefined && value !== null && value !== '') {
                 url.searchParams.set(key, value);
             }
         });
 
-        const response = await fetch(url.toString(), {
-            headers: config.token ? { Authorization: `Bearer ${config.token}` } : {}
-        });
+        const response = await fetch(url.toString());
         if (!response.ok) {
             return { status: response.status === 401 || response.status === 403 ? STATUS.UNSUPPORTED : STATUS.ERROR };
         }
@@ -137,7 +94,7 @@
         }
 
         if (isBridgeSource(sourceKey)) {
-            const data = await fetchBridge('api/tvbox/search', {
+            const data = await fetchTvboxProxy('search', {
                 sourceKey: normalizeBridgeSourceKey(sourceKey),
                 wd: keyword
             });
@@ -162,7 +119,7 @@
         }
 
         if (isBridgeSource(sourceKey)) {
-            const data = await fetchBridge('api/tvbox/detail', {
+            const data = await fetchTvboxProxy('detail', {
                 sourceKey: normalizeBridgeSourceKey(sourceKey),
                 id: videoId
             });
@@ -197,7 +154,7 @@
 
     async function play(sourceKey, videoId, flag, episodeIndex = 0) {
         if (isBridgeSource(sourceKey)) {
-            const data = await fetchBridge('api/tvbox/play', {
+            const data = await fetchTvboxProxy('play', {
                 sourceKey: normalizeBridgeSourceKey(sourceKey),
                 id: videoId,
                 flag,

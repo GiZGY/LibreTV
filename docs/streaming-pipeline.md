@@ -71,7 +71,7 @@ player.html
 
 ## 电视源接入原则
 
-电视端源不直接塞进前端。后续如接入 LA VPS bridge，应作为 Remote Source Adapter 接入同一套状态契约。
+电视端源不直接塞进前端。接入 LA VPS bridge 时，浏览器只请求本站同源接口 `/api/tvbox/*`，由 OpenStream 服务端/Vercel Function 转发到 bridge。
 
 不接入需要登录网盘或凭据的源，包括但不限于夸克、UC、阿里云盘、115、Ypan、Bpan、ZPan。
 
@@ -88,37 +88,41 @@ error
 
 不能把未执行、超时、不支持伪装成无结果。
 
-前端读取 bridge 配置的优先级：
+Bridge 配置只存在服务端环境变量：
 
 ```text
-window.__ENV__.TVBOX_BRIDGE_URL
-localStorage.tvboxBridgeConfig.url
+TVBOX_BRIDGE_URL
+TVBOX_BRIDGE_TOKEN
+TVBOX_BRIDGE_TIMEOUT_MS
 ```
 
-`TVBOX_BRIDGE_TOKEN` 只能作为 bridge 的客户端访问令牌，不应当放真实网盘凭据、cookie 或服务端 secret。
+`TVBOX_BRIDGE_TOKEN` 不会注入 HTML，也不能写入前端 localStorage。它只用于 OpenStream 服务端到 LA bridge 的 Authorization 头。
 
-部署环境变量注入路径：
+同源代理实现路径：
 
 ```text
-Express: server.mjs
-Vercel: middleware.js
-Cloudflare Pages: functions/_middleware.js
-Netlify: netlify/edge-functions/inject-env.js
+本地 Express: server.mjs -> server/tvbox-bridge-proxy.mjs
+Vercel: api/tvbox/[action].mjs -> server/tvbox-bridge-proxy.mjs
 ```
+
+代理会拒绝内网 bridge 地址，避免通过公网实例转发到 `127.0.0.1`、`192.168.x.x`、`10.x`、`172.16-31.x` 等地址。
 
 ## 验证
 
 ```bash
 npm run smoke:streaming
 npm run smoke:player-fallback
+npm run smoke:tvbox-proxy
 node --check js/source-adapter.js
 node --check js/player.js
 npm run build:css
 
 PORT=8092 PASSWORD=opentest TVBOX_BRIDGE_URL=https://bridge.example.test npm start
-curl -fsS http://localhost:8092/ | rg 'TVBOX_BRIDGE_URL|bridge.example'
+curl -fsS 'http://localhost:8092/api/tvbox/health'
 ```
 
 `smoke:streaming` 会模拟快源、慢源和超时源，验证部分结果可先返回、重复影片可聚合、源健康状态可记录。
 
 `smoke:player-fallback` 会模拟当前线路失败，验证备用线路选择、集数继承和播放进度继承。
+
+`smoke:tvbox-proxy` 会验证 bridge 未配置、内网地址拦截、服务端 token 转发和超时状态。

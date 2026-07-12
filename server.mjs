@@ -6,6 +6,7 @@ import { fileURLToPath } from 'url';
 import fs from 'fs';
 import crypto from 'crypto';
 import dotenv from 'dotenv';
+import { proxyTvboxBridgeRequest, writeBridgeJsonResponse } from './server/tvbox-bridge-proxy.mjs';
 
 dotenv.config();
 
@@ -63,15 +64,6 @@ async function renderPage(filePath, password) {
   } else {
     content = content.replace(/{{PASSWORD}}/g, '');
   }
-  content = content
-    .replace(
-      'window.__ENV__.TVBOX_BRIDGE_URL = "{{TVBOX_BRIDGE_URL}}";',
-      `window.__ENV__.TVBOX_BRIDGE_URL = ${JSON.stringify(process.env.TVBOX_BRIDGE_URL || '')};`
-    )
-    .replace(
-      'window.__ENV__.TVBOX_BRIDGE_TOKEN = "{{TVBOX_BRIDGE_TOKEN}}";',
-      `window.__ENV__.TVBOX_BRIDGE_TOKEN = ${JSON.stringify(process.env.TVBOX_BRIDGE_TOKEN || '')};`
-    );
   return content;
 }
 
@@ -107,6 +99,16 @@ app.get('/s=:keyword', async (req, res) => {
     console.error('搜索页面渲染错误:', error);
     res.status(500).send('读取静态页面失败');
   }
+});
+
+app.get('/api/tvbox/:action', async (req, res) => {
+  const result = await proxyTvboxBridgeRequest({
+    action: req.params.action,
+    query: req.query,
+    env: process.env,
+    fetchImpl: globalThis.fetch
+  });
+  writeBridgeJsonResponse(res, result);
 });
 
 function isValidUrl(urlString) {

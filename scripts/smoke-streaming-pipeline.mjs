@@ -13,6 +13,7 @@ const context = {
   setTimeout,
   clearTimeout,
   performance,
+  URL,
   URLSearchParams,
   localStorage: {
     getItem(key) {
@@ -27,6 +28,17 @@ const context = {
   }
 };
 context.window = context;
+context.location = { origin: 'http://localhost:8080' };
+context.fetch = async (url) => {
+  if (String(url).startsWith('http://localhost:8080/api/tvbox/')) {
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({ status: 'unsupported', list: [] })
+    };
+  }
+  throw new Error(`unexpected fetch: ${url}`);
+};
 vm.createContext(context);
 
 function runFile(relativePath) {

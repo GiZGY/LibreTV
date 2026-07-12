@@ -32,18 +32,10 @@ export default async function middleware(request) {
   }
   
   // 替换密码占位符
-  let modifiedHtml = originalHtml.replace(
+  const modifiedHtml = originalHtml.replace(
     'window.__ENV__.PASSWORD = "{{PASSWORD}}";',
     `window.__ENV__.PASSWORD = "${passwordHash}"; // SHA-256 hash`
-  )
-    .replace(
-      'window.__ENV__.TVBOX_BRIDGE_URL = "{{TVBOX_BRIDGE_URL}}";',
-      `window.__ENV__.TVBOX_BRIDGE_URL = ${JSON.stringify(process.env.TVBOX_BRIDGE_URL || '')};`
-    )
-    .replace(
-      'window.__ENV__.TVBOX_BRIDGE_TOKEN = "{{TVBOX_BRIDGE_TOKEN}}";',
-      `window.__ENV__.TVBOX_BRIDGE_TOKEN = ${JSON.stringify(process.env.TVBOX_BRIDGE_TOKEN || '')};`
-    );
+  );
 
   // 修复Response构造
   return new Response(modifiedHtml, {

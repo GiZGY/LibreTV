@@ -11,7 +11,9 @@
     "start": "node server.mjs",
     "build:css": "tailwindcss -c tailwind.config.cjs -i css/tailwind.input.css -o css/tailwind.generated.css --minify",
     "smoke:streaming": "node scripts/smoke-streaming-pipeline.mjs",
-    "smoke:player-fallback": "node scripts/smoke-player-fallback.mjs"
+    "smoke:player-fallback": "node scripts/smoke-player-fallback.mjs",
+    "smoke:tvbox-proxy": "node scripts/smoke-tvbox-proxy.mjs",
+    "smoke:all": "npm run smoke:streaming && npm run smoke:player-fallback && npm run smoke:tvbox-proxy"
   },
   "dependencies": {
     "axios": "^1.9.0",
