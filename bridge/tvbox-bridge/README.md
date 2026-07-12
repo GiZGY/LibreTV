@@ -26,6 +26,8 @@ cp .env.example .env
 COMPOSE_PROJECT_NAME=openstream-tvbox-bridge docker compose up -d --build
 ```
 
+Compose 使用 host network，并让服务只绑定 `127.0.0.1:9979`。这样可以复用 VPS 宿主机出口网络，避免部分视频源 CDN 在 Docker bridge NAT 出口下超时，同时仍只允许 Caddy/Nginx 从本机反代到公网域名。
+
 ## 与网站对接
 
 OpenStream 网站只配置服务端环境变量：

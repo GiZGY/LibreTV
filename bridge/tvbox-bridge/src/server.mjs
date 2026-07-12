@@ -6,6 +6,7 @@ import { getAdapter } from './adapter-registry.mjs';
 
 const config = {
   port: Number.parseInt(process.env.PORT || '9979', 10),
+  host: process.env.HOST || '0.0.0.0',
   token: process.env.TVBOX_BRIDGE_TOKEN || '',
   version: process.env.BRIDGE_VERSION || '0.1.0'
 };
@@ -148,6 +149,6 @@ app.use((_req, res) => {
   res.status(404).json(statusResponse(STATUS.UNSUPPORTED, 'Unknown bridge endpoint'));
 });
 
-app.listen(config.port, () => {
-  console.log(`openstream-tvbox-bridge listening on ${config.port}`);
+app.listen(config.port, config.host, () => {
+  console.log(`openstream-tvbox-bridge listening on ${config.host}:${config.port}`);
 });

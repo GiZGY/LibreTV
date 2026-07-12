@@ -103,6 +103,8 @@ COMPOSE_PROJECT_NAME=openstream-tvbox-bridge docker compose up -d --build
 127.0.0.1:9979
 ```
 
+容器使用 host network，但服务进程只绑定 `127.0.0.1`。这个选择是为了解决部分视频源 CDN 在 Docker bridge NAT 出口下连接超时的问题；公网仍只能通过 Caddy 的 `/api/tvbox/*` 入口访问。
+
 Caddy 只反代：
 
 ```text

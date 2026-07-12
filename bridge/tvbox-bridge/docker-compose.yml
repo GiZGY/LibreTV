@@ -7,12 +7,12 @@ services:
     image: openstream-tvbox-bridge:latest
     container_name: openstream-tvbox-bridge
     restart: unless-stopped
+    network_mode: host
     environment:
+      HOST: "127.0.0.1"
       PORT: "9979"
       TVBOX_BRIDGE_TOKEN: ${TVBOX_BRIDGE_TOKEN:?TVBOX_BRIDGE_TOKEN is required}
       BRIDGE_VERSION: ${BRIDGE_VERSION:-0.1.0}
-    ports:
-      - "127.0.0.1:9979:9979"
     labels:
       openstream.project: tvbox-bridge
     healthcheck:
