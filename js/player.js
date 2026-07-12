@@ -114,13 +114,14 @@ document.addEventListener('passwordVerified', () => {
 });
 
 // 初始化页面内容
-function initializePageContent() {
+async function initializePageContent() {
 
     // 解析URL参数
     const urlParams = new URLSearchParams(window.location.search);
     let videoUrl = urlParams.get('url');
     const title = urlParams.get('title');
     const sourceCode = urlParams.get('source');
+    const videoId = urlParams.get('id');
     let index = parseInt(urlParams.get('index') || '0');
     const episodesList = urlParams.get('episodes'); // 从URL获取集数信息
     const savedPosition = parseInt(urlParams.get('position') || '0'); // 获取保存的播放位置
@@ -157,6 +158,31 @@ function initializePageContent() {
                 showError('历史记录链接无效，请返回首页重新访问');
             }
         } catch (e) {
+        }
+    }
+
+    if (sourceCode && window.OpenStreamSourceAdapter?.isBridgeSource?.(sourceCode)) {
+        const shouldResolveBridgeUrl = !videoUrl || String(videoUrl).startsWith('tvbox://');
+        if (shouldResolveBridgeUrl) {
+            try {
+                const resolved = await window.OpenStreamSourceAdapter.play(sourceCode, videoId, '', index);
+                if (resolved.status === window.OpenStreamSourceAdapter.STATUS.READY && resolved.url) {
+                    videoUrl = resolved.url;
+                    const nextUrl = new URL(window.location.href);
+                    nextUrl.searchParams.set('url', videoUrl);
+                    window.history.replaceState({}, '', nextUrl);
+                } else if (resolved.status === window.OpenStreamSourceAdapter.STATUS.LOGIN_REQUIRED) {
+                    showError('当前电视源返回网盘地址，需要登录后才能播放，请切换其他资源');
+                    return;
+                } else {
+                    showError(`当前电视源暂不可播放：${resolved.status || 'unknown'}`);
+                    return;
+                }
+            } catch (error) {
+                console.error('电视源播放解析失败:', error);
+                showError('电视源播放解析失败，请切换其他资源');
+                return;
+            }
         }
     }
 
@@ -463,6 +489,7 @@ function initPlayer(videoUrl) {
     if (!videoUrl) {
         return
     }
+    const playbackStartedAt = performance.now();
 
     // 销毁旧实例
     if (art) {
@@ -696,10 +723,12 @@ function initPlayer(videoUrl) {
                 let playbackStarted = false;
                 // 跟踪视频是否出现bufferAppendError
                 let bufferAppendErrorCount = 0;
+                let fatalErrorRecorded = false;
 
                 // 监听视频播放事件
                 video.addEventListener('playing', function () {
                     playbackStarted = true;
+                    window.OpenStreamPlaybackHealth?.recordPlaybackReady(videoUrl, playbackStartedAt);
                     document.getElementById('player-loading').style.display = 'none';
                     document.getElementById('error').style.display = 'none';
                 });
@@ -734,7 +763,7 @@ function initPlayer(videoUrl) {
                     });
                 });
 
-                hls.on(Hls.Events.ERROR, function (event, data) {
+                hls.on(Hls.Events.ERROR, async function (event, data) {
                     // 增加错误计数
                     errorCount++;
 
@@ -766,7 +795,14 @@ function initPlayer(videoUrl) {
                                 // 仅在多次恢复尝试后显示错误
                                 if (errorCount > 3 && !errorDisplayed) {
                                     errorDisplayed = true;
-                                    showError('视频加载失败，可能是格式不兼容或源不可用');
+                                    if (!fatalErrorRecorded) {
+                                        fatalErrorRecorded = true;
+                                        window.OpenStreamPlaybackHealth?.recordPlaybackFailure(data.details || data.type || 'hls_fatal');
+                                    }
+                                    const switched = await tryAutoSwitchOnPlaybackFailure(data.details || data.type || 'hls_fatal');
+                                    if (!switched) {
+                                        showError('视频加载失败，可能是格式不兼容或源不可用');
+                                    }
                                 }
                                 break;
                         }
@@ -895,7 +931,7 @@ function initPlayer(videoUrl) {
     })
 
     // 错误处理
-    art.on('video:error', function (error) {
+    art.on('video:error', async function (error) {
         // 如果正在切换视频，忽略错误
         if (window.isSwitchingVideo) {
             return;
@@ -907,7 +943,11 @@ function initPlayer(videoUrl) {
             if (el) el.style.display = 'none';
         });
 
-        showError('视频播放失败: ' + (error.message || '未知错误'));
+        window.OpenStreamPlaybackHealth?.recordPlaybackFailure(error?.message || 'video_error');
+        const switched = await tryAutoSwitchOnPlaybackFailure(error?.message || 'video_error');
+        if (!switched) {
+            showError('视频播放失败: ' + (error.message || '未知错误'));
+        }
     });
 
     // 添加移动端长按临时倍速播放功能
@@ -934,6 +974,7 @@ function initPlayer(videoUrl) {
 
     // 添加双击全屏支持
     art.on('video:playing', () => {
+        window.OpenStreamPlaybackHealth?.recordPlaybackReady(currentVideoUrl || videoUrl, playbackStartedAt);
         // 绑定双击事件到视频容器
         if (art.video) {
             art.video.addEventListener('dblclick', () => {
@@ -959,6 +1000,16 @@ function initPlayer(videoUrl) {
             `;
         }
     }, 10000);
+}
+
+async function tryAutoSwitchOnPlaybackFailure(reason) {
+    if (typeof window.autoSwitchToBestResource !== 'function') return false;
+    try {
+        return await window.autoSwitchToBestResource(reason);
+    } catch (error) {
+        console.warn('自动换线失败:', error);
+        return false;
+    }
 }
 
 // 自定义M3U8 Loader用于过滤广告

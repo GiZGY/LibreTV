@@ -32,7 +32,7 @@ export default async function middleware(request) {
   }
   
   // 替换密码占位符
-  let modifiedHtml = originalHtml.replace(
+  const modifiedHtml = originalHtml.replace(
     'window.__ENV__.PASSWORD = "{{PASSWORD}}";',
     `window.__ENV__.PASSWORD = "${passwordHash}"; // SHA-256 hash`
   );
