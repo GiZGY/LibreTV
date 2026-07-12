@@ -26,8 +26,8 @@ const detailJson = {
     description: '测试简介',
     thumbnail: '/upload/video/poster.jpg',
     top_category: { name: '电视剧' },
-    actors: ['张若昀'],
-    directors: ['孙皓'],
+    actors: [{ id: 1, name: '张若昀' }, { id: 2, name: '李沁' }],
+    directors: [{ id: 3, name: '孙皓' }],
     source_list_source: [
       {
         name: 'VIP线路',
@@ -52,7 +52,9 @@ const fakeFetch = async (url) => {
   return { ok: false, status: 404, json: async () => ({}) };
 };
 
-assert.equal(internals.normalizeImageUrl('/a.jpg'), 'https://img.jianpian.com/a.jpg');
+assert.equal(internals.normalizeImageUrl('/a.jpg'), '');
+assert.equal(internals.normalizeImageUrl('https://img.example.com/a.jpg'), 'https://img.example.com/a.jpg');
+assert.equal(internals.normalizePeople([{ name: '张若昀' }, { name: '李沁' }]), '张若昀,李沁');
 assert.equal(internals.isPlayableUrl('https://mv.example.com/a/index.m3u8'), true);
 assert.equal(internals.isPlayableUrl('https://pan.quark.cn/s/abc'), false);
 assert.equal(internals.flattenPlayableEpisodes(detailJson.data).length, 2);
@@ -65,6 +67,9 @@ const detailResult = await detail('54437', { fetchImpl: fakeFetch });
 assert.equal(detailResult.status, 'ready');
 assert.equal(detailResult.episodes.length, 2);
 assert.equal(detailResult.episodes[0].url.startsWith('tvbox://play?'), true);
+assert.equal(detailResult.videoInfo.actor, '张若昀,李沁');
+assert.equal(detailResult.videoInfo.director, '孙皓');
+assert.equal(detailResult.videoInfo.cover, '');
 
 const playResult = await play('54437', '', 1, { fetchImpl: fakeFetch });
 assert.equal(playResult.status, 'ready');

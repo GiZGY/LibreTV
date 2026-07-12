@@ -109,7 +109,7 @@ const SITE_CONFIG = {
     url: 'https://libretv.is-an.org',
     description: '免费在线视频搜索与观看平台',
     logo: 'image/openstream-logo.svg?v=20260212g',
-    version: '1.0.3'
+    version: '1.1.1'
 };
 
 // API站点配置
@@ -209,6 +209,11 @@ const API_SITES = {
     'tvbox:荐片': {
         api: 'tvbox://荐片',
         name: '荐片源',
+        bridge: true,
+    },
+    'tvbox:瓜子': {
+        api: 'tvbox://瓜子',
+        name: '瓜子源',
         bridge: true,
     },
     testSource: {

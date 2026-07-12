@@ -1,6 +1,20 @@
 let activeSearchRunId = 0;
 const detailResponseCache = new Map();
 const DETAIL_CACHE_TTL = 15 * 60 * 1000;
+const POSTER_PLACEHOLDER_URL = 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(`
+<svg xmlns="http://www.w3.org/2000/svg" width="300" height="450" viewBox="0 0 300 450">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#202020"/>
+      <stop offset="1" stop-color="#0a0a0a"/>
+    </linearGradient>
+  </defs>
+  <rect width="300" height="450" rx="24" fill="url(#g)"/>
+  <rect x="28" y="34" width="244" height="382" rx="18" fill="none" stroke="#ff7a1a" stroke-opacity=".45" stroke-width="3"/>
+  <text x="150" y="214" text-anchor="middle" fill="#ffffff" font-family="Arial, sans-serif" font-size="30" font-weight="800">OPEN</text>
+  <text x="150" y="252" text-anchor="middle" fill="#ff7a1a" font-family="Arial, sans-serif" font-size="30" font-weight="800">STREAM</text>
+  <text x="150" y="292" text-anchor="middle" fill="#9ca3af" font-family="Arial, sans-serif" font-size="18">暂无封面</text>
+</svg>`);
 
 function escapeHtml(value) {
     return String(value || '')
@@ -41,7 +55,7 @@ function buildSearchResultCards(results) {
         const sourceCode = escapeHtml(item.source_code || '');
         const apiUrlAttr = item.api_url ? `data-api-url="${escapeHtml(item.api_url)}"` : '';
         const hasCover = item.vod_pic && item.vod_pic.startsWith('http');
-        const safePic = escapeHtml(item.vod_pic || '');
+        const safePic = escapeHtml(hasCover ? item.vod_pic : POSTER_PLACEHOLDER_URL);
         const safeType = escapeHtml(item.type_name || '');
         const safeYear = escapeHtml(item.vod_year || '');
         const safeRemarks = escapeHtml(item.vod_remarks || '暂无介绍');
@@ -50,23 +64,22 @@ function buildSearchResultCards(results) {
             <div class="card-hover bg-[#111] rounded-lg overflow-hidden cursor-pointer transition-all hover:scale-[1.02] h-full shadow-sm hover:shadow-md"
                  onclick="showDetails('${safeId}','${safeName}','${sourceCode}')" ${apiUrlAttr}>
                 <div class="flex h-full">
-                    ${hasCover ? `
                     <div class="relative flex-shrink-0 search-card-img-container">
                         <img src="${safePic}" alt="${safeName}"
                              class="h-full w-full object-cover transition-transform hover:scale-110"
-                             onerror="this.onerror=null; this.src='https://via.placeholder.com/300x450?text=无封面'; this.classList.add('object-contain');"
+                             onerror="this.onerror=null; this.src='${POSTER_PLACEHOLDER_URL}'; this.classList.add('object-contain');"
                              loading="lazy">
                         <div class="absolute inset-0 bg-gradient-to-r from-black/30 to-transparent"></div>
-                    </div>` : ''}
+                    </div>
 
                     <div class="p-2 flex flex-col flex-grow">
                         <div class="flex-grow">
-                            <h3 class="font-semibold mb-2 break-words line-clamp-2 ${hasCover ? '' : 'text-center'}" title="${safeName}">${safeName}</h3>
-                            <div class="flex flex-wrap ${hasCover ? '' : 'justify-center'} gap-1 mb-2">
+                            <h3 class="font-semibold mb-2 break-words line-clamp-2" title="${safeName}">${safeName}</h3>
+                            <div class="flex flex-wrap gap-1 mb-2">
                                 ${safeType ? `<span class="text-xs py-0.5 px-1.5 rounded bg-opacity-20 bg-blue-500 text-blue-300">${safeType}</span>` : ''}
                                 ${safeYear ? `<span class="text-xs py-0.5 px-1.5 rounded bg-opacity-20 bg-purple-500 text-purple-300">${safeYear}</span>` : ''}
                             </div>
-                            <p class="text-gray-400 line-clamp-2 overflow-hidden ${hasCover ? '' : 'text-center'} mb-2">${safeRemarks}</p>
+                            <p class="text-gray-400 line-clamp-2 overflow-hidden mb-2">${safeRemarks}</p>
                         </div>
 
                         <div class="flex justify-between items-center mt-1 pt-1 border-t border-gray-800">

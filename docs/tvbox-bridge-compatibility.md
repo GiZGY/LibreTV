@@ -39,6 +39,7 @@ Browser -> OpenStream /api/tvbox/* -> LA bridge -> TVBox adapter
 - `立播` 已有 HTTP adapter canary，搜索和详情可运行；
 - `立播` 当前抽样播放结果多为 UC/夸克/百度/迅雷等网盘地址，因此播放阶段会返回 `login_required`，不进入网站默认可播放源；
 - `荐片` 已有 HTTP adapter，走电视端本地 JS 规则同款公开 API，当前 live smoke 可搜索、详情并返回 m3u8；
+- `瓜子` 已有 HTTP adapter，走公开站点同源加密 API，当前 live smoke 可搜索、详情并返回 m3u8；
 - 其余未适配 CatVod/spider 源返回 `unsupported`，不会伪装成空结果。
 
 ### 需要网盘登录的源
@@ -129,7 +130,11 @@ vps2.cursorflow.top/api/tvbox/* -> 127.0.0.1:9979
   - `search`：当前 live smoke 搜索《庆余年》返回 20 条结果
   - `detail`：当前 live smoke 返回 46 个分集入口
   - `play`：当前 live smoke 返回 m3u8，状态为 `ready`
-- 前端已内置 `tvbox:荐片`，并且质量检测能通过同源 bridge 测搜索、详情和播放解析
+- LA bridge `瓜子` adapter：
+  - `search`：当前 live smoke 搜索《庆余年》返回 20 条结果
+  - `detail`：当前 live smoke 返回 36 个分集入口
+  - `play`：当前 live smoke 返回 m3u8，状态为 `ready`
+- 前端已内置 `tvbox:荐片`、`tvbox:瓜子`，并且质量检测能通过同源 bridge 测搜索、详情和播放解析
 
 待完成：
 
@@ -137,7 +142,26 @@ vps2.cursorflow.top/api/tvbox/* -> 127.0.0.1:9979
   - `TVBOX_BRIDGE_URL=https://vps2.cursorflow.top`
   - `TVBOX_BRIDGE_TOKEN=<LA bridge .env 中的 token>`
   - `TVBOX_BRIDGE_TIMEOUT_MS=8000`
-- PR 合并后触发 Vercel 生产部署，并验证 `tvbox:荐片` 在生产站搜索、详情、播放解析链路正常。
+- PR 合并后触发 Vercel 生产部署，并验证 `tvbox:荐片`、`tvbox:瓜子` 在生产站搜索、详情、播放解析链路正常。
+
+## 本轮新增源调查结论
+
+已接入：
+
+```text
+瓜子：公开站点 API 可在 Node bridge 中复现；搜索、详情、分集和 m3u8 播放地址完整可用。
+```
+
+暂不接入：
+
+```text
+比特：公开搜索页可访问，但播放页依赖站内 WASM/前端运行时解析，当前未证明可稳定产出直连 m3u8，不进入默认源。
+新6V：偏 BT/磁力/下载链路，不符合“打开即播”的默认产品目标。
+奥特：普通首页可访问，但搜索入口触发系统安全验证，bridge 无法稳定复现。
+厂长、文采、糯米：当前公开站点探测遇到挑战页、跳转或 TLS 异常，需要独立适配和更长稳定性验证。
+光影、奶酪、视界、播客、剧圈、咕咕等 csp_*Guard 源：仍依赖 CatVod/spider 运行时或加密规则，未证明可直接 HTTP 适配。
+UC、YpanSo、BpanSo、玩偶、seed、MDrive、ZPan、抠搜：登录/网盘凭据相关，继续标记 login_required。
+```
 
 ## 下一步 adapter 准入标准
 
