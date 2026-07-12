@@ -7,7 +7,8 @@
   "scripts": {
     "start": "node src/server.mjs",
     "smoke": "node scripts/smoke.mjs",
-    "smoke:libvio": "node scripts/smoke-libvio-fixture.mjs"
+    "smoke:libvio": "node scripts/smoke-libvio-fixture.mjs",
+    "smoke:jianpian": "node scripts/smoke-jianpian-fixture.mjs"
   },
   "dependencies": {
     "express": "^5.1.0"

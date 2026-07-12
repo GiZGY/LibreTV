@@ -1923,6 +1923,56 @@ async function measureApiQuality(apiId, opts) {
     };
 
     try {
+        if (window.OpenStreamSourceAdapter?.isBridgeSource?.(apiId)) {
+            const searchStart = performance.now();
+            const searchResult = await withTimeout(
+                window.OpenStreamSourceAdapter.search(apiId, '庆余年', {}, { maxPages: 1 }),
+                12000,
+                '电视源搜索超时'
+            );
+            quality.searchMs = Math.round(performance.now() - searchStart);
+            const bridgeList = Array.isArray(searchResult?.list) ? searchResult.list : [];
+            quality.searchOk = searchResult?.status === window.OpenStreamSourceAdapter.STATUS.READY && bridgeList.length > 0;
+
+            const vodId = bridgeList[0]?.vod_id;
+            if (!vodId) {
+                quality.error = quality.searchOk ? '无搜索结果' : (searchResult?.message || searchResult?.status || '搜索失败');
+                quality.score = computeQualityScore(quality);
+                return { apiId, quality };
+            }
+
+            const detailStart = performance.now();
+            const detailResult = await withTimeout(
+                window.OpenStreamSourceAdapter.detail(apiId, vodId),
+                15000,
+                '电视源详情超时'
+            );
+            quality.detailMs = Math.round(performance.now() - detailStart);
+            const episodes = Array.isArray(detailResult?.episodes) ? detailResult.episodes : [];
+            quality.episodesCount = episodes.length;
+            quality.detailOk = detailResult?.status === window.OpenStreamSourceAdapter.STATUS.READY && episodes.length > 0;
+
+            if (!quality.detailOk) {
+                quality.error = detailResult?.message || detailResult?.status || '详情失败';
+                quality.score = computeQualityScore(quality);
+                return { apiId, quality };
+            }
+
+            if (options.playTest) {
+                const playStart = performance.now();
+                const playResult = await withTimeout(
+                    window.OpenStreamSourceAdapter.play(apiId, vodId, '', 0),
+                    15000,
+                    '电视源播放解析超时'
+                );
+                quality.playTtfbMs = Math.round(performance.now() - playStart);
+                quality.playOk = playResult?.status === window.OpenStreamSourceAdapter.STATUS.READY && !!playResult?.url;
+            }
+
+            quality.score = computeQualityScore(quality);
+            return { apiId, quality };
+        }
+
         // 1) 搜索（走现有 /api/search 拦截逻辑，更贴近真实）
         const searchUrl = `/api/search?wd=1&source=${encodeURIComponent(apiId)}`;
         const { json: searchJson, ms: searchMs } = await safeFetchJson(searchUrl, 12000);

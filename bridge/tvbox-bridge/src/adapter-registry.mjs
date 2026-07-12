@@ -1,7 +1,9 @@
 import { libvioAdapter } from './adapters/libvio.mjs';
+import { jianpianAdapter } from './adapters/jianpian.mjs';
 
 const adapters = new Map([
-  [libvioAdapter.key, libvioAdapter]
+  [libvioAdapter.key, libvioAdapter],
+  [jianpianAdapter.key, jianpianAdapter]
 ]);
 
 export function getAdapter(sourceKey) {

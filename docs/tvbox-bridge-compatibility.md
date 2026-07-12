@@ -38,6 +38,7 @@ Browser -> OpenStream /api/tvbox/* -> LA bridge -> TVBox adapter
 
 - `立播` 已有 HTTP adapter canary，搜索和详情可运行；
 - `立播` 当前抽样播放结果多为 UC/夸克/百度/迅雷等网盘地址，因此播放阶段会返回 `login_required`，不进入网站默认可播放源；
+- `荐片` 已有 HTTP adapter，走电视端本地 JS 规则同款公开 API，当前 live smoke 可搜索、详情并返回 m3u8；
 - 其余未适配 CatVod/spider 源返回 `unsupported`，不会伪装成空结果。
 
 ### 需要网盘登录的源
@@ -122,6 +123,11 @@ vps2.cursorflow.top/api/tvbox/* -> 127.0.0.1:9979
   - `search`：当前 live probe 可返回《庆余年 第二季》
   - `detail`：当前 live probe 可返回标题和 1 个播放入口
   - `play`：当前 live probe 返回 UC 网盘，状态为 `login_required`
+- LA bridge `荐片` adapter：
+  - `search`：当前 live smoke 搜索《庆余年》返回 20 条结果
+  - `detail`：当前 live smoke 返回 46 个分集入口
+  - `play`：当前 live smoke 返回 m3u8，状态为 `ready`
+- 前端已内置 `tvbox:荐片`，并且质量检测能通过同源 bridge 测搜索、详情和播放解析
 
 待完成：
 
@@ -129,7 +135,7 @@ vps2.cursorflow.top/api/tvbox/* -> 127.0.0.1:9979
   - `TVBOX_BRIDGE_URL=https://vps2.cursorflow.top`
   - `TVBOX_BRIDGE_TOKEN=<LA bridge .env 中的 token>`
   - `TVBOX_BRIDGE_TIMEOUT_MS=8000`
-- 找到至少一个返回 m3u8/mp4、且不依赖网盘登录的电视源 adapter，再把对应 `tvbox:*` 源加入用户可选源列表。
+- PR 合并后触发 Vercel 生产部署，并验证 `tvbox:荐片` 在生产站搜索、详情、播放解析链路正常。
 
 ## 下一步 adapter 准入标准
 
