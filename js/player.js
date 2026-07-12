@@ -737,7 +737,7 @@ function initPlayer(videoUrl) {
                     });
                 });
 
-                hls.on(Hls.Events.ERROR, function (event, data) {
+                hls.on(Hls.Events.ERROR, async function (event, data) {
                     // 增加错误计数
                     errorCount++;
 
@@ -773,7 +773,10 @@ function initPlayer(videoUrl) {
                                         fatalErrorRecorded = true;
                                         window.OpenStreamPlaybackHealth?.recordPlaybackFailure(data.details || data.type || 'hls_fatal');
                                     }
-                                    showError('视频加载失败，可能是格式不兼容或源不可用');
+                                    const switched = await tryAutoSwitchOnPlaybackFailure(data.details || data.type || 'hls_fatal');
+                                    if (!switched) {
+                                        showError('视频加载失败，可能是格式不兼容或源不可用');
+                                    }
                                 }
                                 break;
                         }
@@ -902,7 +905,7 @@ function initPlayer(videoUrl) {
     })
 
     // 错误处理
-    art.on('video:error', function (error) {
+    art.on('video:error', async function (error) {
         // 如果正在切换视频，忽略错误
         if (window.isSwitchingVideo) {
             return;
@@ -915,7 +918,10 @@ function initPlayer(videoUrl) {
         });
 
         window.OpenStreamPlaybackHealth?.recordPlaybackFailure(error?.message || 'video_error');
-        showError('视频播放失败: ' + (error.message || '未知错误'));
+        const switched = await tryAutoSwitchOnPlaybackFailure(error?.message || 'video_error');
+        if (!switched) {
+            showError('视频播放失败: ' + (error.message || '未知错误'));
+        }
     });
 
     // 添加移动端长按临时倍速播放功能
@@ -968,6 +974,16 @@ function initPlayer(videoUrl) {
             `;
         }
     }, 10000);
+}
+
+async function tryAutoSwitchOnPlaybackFailure(reason) {
+    if (typeof window.autoSwitchToBestResource !== 'function') return false;
+    try {
+        return await window.autoSwitchToBestResource(reason);
+    } catch (error) {
+        console.warn('自动换线失败:', error);
+        return false;
+    }
 }
 
 // 自定义M3U8 Loader用于过滤广告

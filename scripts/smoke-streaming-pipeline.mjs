@@ -54,6 +54,7 @@ vm.runInContext(`
   }
 `, context);
 
+runFile('js/source-adapter.js');
 runFile('js/streaming-search.js');
 
 const updates = [];

@@ -76,13 +76,15 @@
         const startedAt = now();
         const status = window.OpenStreamSourceHealth?.SOURCE_STATUS || {};
         try {
-            const results = await withTimeout(
-                searchByAPIAndKeyWord(source.sourceKey, context.query, context.filters, { maxPages: pageBudget }),
+            const adapterResult = await withTimeout(
+                window.OpenStreamSourceAdapter?.search
+                    ? window.OpenStreamSourceAdapter.search(source.sourceKey, context.query, context.filters, { maxPages: pageBudget })
+                    : Promise.resolve({ status: status.READY, list: [] }).then(() => searchByAPIAndKeyWord(source.sourceKey, context.query, context.filters, { maxPages: pageBudget })).then((list) => ({ status: status.READY, list })),
                 timeoutMs
             );
             const ms = Math.round(now() - startedAt);
-            const list = Array.isArray(results) ? results : [];
-            const nextStatus = list.length > 0 ? status.READY : status.NO_RESULT;
+            const list = Array.isArray(adapterResult?.list) ? adapterResult.list : [];
+            const nextStatus = adapterResult?.status || (list.length > 0 ? status.READY : status.NO_RESULT);
             window.OpenStreamSourceHealth?.recordSourceEvent(source.sourceKey, { status: nextStatus, ms });
             return { source, status: nextStatus, ms, results: list };
         } catch (error) {

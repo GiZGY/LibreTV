@@ -16,12 +16,14 @@ OpenStream 的旧搜索流程会等待一批数据源完成后再刷新结果。
 ```text
 index.html
   -> js/source-health.js
+  -> js/source-adapter.js
   -> js/result-aggregator.js
   -> js/streaming-search.js
   -> js/app.js search()
 
 player.html
   -> js/source-health.js
+  -> js/source-adapter.js
   -> js/playback-health.js
   -> js/player.js
 ```
@@ -34,6 +36,12 @@ player.html
 - 生成 S/A/B/C 分层搜索计划。
 - 记录 `ready / timeout / no_result / error / dead / login_required / unsupported`。
 - 排除明显登录网盘类来源，不进入实时搜索计划。
+
+`source-adapter.js`
+
+- 提供统一 `search / detail / episodes / play / health` 契约。
+- CMS 与自定义 CMS 源先接入这层，后续 Remote bridge 也接入这层。
+- 播放地址会排除 UC、夸克、阿里云盘、115 等登录网盘链接。
 
 `result-aggregator.js`
 
@@ -53,6 +61,12 @@ player.html
 - 播放开始后给当前源记录一次成功。
 - 播放器 fatal/error 时给当前源记录一次失败。
 - 不记录播放地址、凭据或用户私有信息。
+
+`player-resource-switch.js`
+
+- 手动切换资源时按源健康排序候选。
+- 候选详情和播放地址经 `source-adapter` 验证。
+- 播放失败时会尝试自动换到同名影片的备用可播放线路，并保留当前集数与播放进度。
 
 ## 电视源接入原则
 
@@ -77,6 +91,7 @@ error
 
 ```bash
 npm run smoke:streaming
+node --check js/source-adapter.js
 node --check js/player.js
 npm run build:css
 ```
