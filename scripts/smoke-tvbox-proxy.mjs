@@ -60,6 +60,24 @@ if (forwardedAuth !== 'Bearer server-secret') {
   throw new Error('bridge token was not sent as server-side Authorization header');
 }
 
+let rootForwardedUrl = '';
+await proxyTvboxBridgeRequest({
+  action: 'health',
+  env: { TVBOX_BRIDGE_URL: 'https://bridge.example.test' },
+  fetchImpl: async (url) => {
+    rootForwardedUrl = url;
+    return {
+      status: 200,
+      ok: true,
+      headers: { get: () => 'application/json' },
+      json: async () => ({ status: 'ready' })
+    };
+  }
+});
+if (rootForwardedUrl !== 'https://bridge.example.test/api/tvbox/health') {
+  throw new Error(`root bridge url should not contain a double slash: ${rootForwardedUrl}`);
+}
+
 const timedOut = await proxyTvboxBridgeRequest({
   action: 'detail',
   query: { sourceKey: '厂长', id: 'abc' },
@@ -87,5 +105,6 @@ console.log(JSON.stringify({
   unsupported: unsupported.body.status,
   privateUrl: blockedPrivate.body.status,
   forwardedUrl,
+  rootForwardedUrl,
   timeout: timedOut.body.status
 }, null, 2));

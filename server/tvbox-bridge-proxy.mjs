@@ -60,6 +60,11 @@ function appendQueryParams(targetUrl, query = {}) {
   });
 }
 
+function buildBridgeActionUrl(bridgeBaseUrl, action) {
+  const base = bridgeBaseUrl.toString().replace(/\/+$/, '');
+  return new URL(`${base}/api/tvbox/${action}`);
+}
+
 function createStatusResponse(status, message, extra = {}) {
   return {
     httpStatus: status === STATUS.UNSUPPORTED ? 501 : 200,
@@ -86,7 +91,7 @@ export async function proxyTvboxBridgeRequest({ action, query = {}, env = proces
     return createStatusResponse(STATUS.ERROR, 'Fetch runtime is unavailable');
   }
 
-  const targetUrl = new URL(`${bridgeBaseUrl.toString()}/api/tvbox/${normalizedAction}`);
+  const targetUrl = buildBridgeActionUrl(bridgeBaseUrl, normalizedAction);
   appendQueryParams(targetUrl, query);
 
   const controller = new AbortController();
