@@ -52,8 +52,12 @@ const fakeFetch = async (url) => {
   return { ok: false, status: 404, json: async () => ({}) };
 };
 
-assert.equal(internals.normalizeImageUrl('/a.jpg'), '');
+assert.equal(internals.normalizeImageUrl('/a.jpg'), 'https://img.jianpian.com/a.jpg');
 assert.equal(internals.normalizeImageUrl('https://img.example.com/a.jpg'), 'https://img.example.com/a.jpg');
+assert.equal(internals.normalizeImageUrl('http://img.example.com/a.jpg'), 'https://img.example.com/a.jpg');
+assert.equal(internals.normalizeImageUrl('http://127.0.0.1/a.jpg'), '');
+assert.equal(internals.normalizeImageUrl('http://[::ffff:7f00:1]/a.jpg'), '');
+assert.equal(internals.normalizeImageUrl('file:///tmp/a.jpg'), '');
 assert.equal(internals.normalizePeople([{ name: '张若昀' }, { name: '李沁' }]), '张若昀,李沁');
 assert.equal(internals.isPlayableUrl('https://mv.example.com/a/index.m3u8'), true);
 assert.equal(internals.isPlayableUrl('https://pan.quark.cn/s/abc'), false);
@@ -69,7 +73,7 @@ assert.equal(detailResult.episodes.length, 2);
 assert.equal(detailResult.episodes[0].url.startsWith('tvbox://play?'), true);
 assert.equal(detailResult.videoInfo.actor, '张若昀,李沁');
 assert.equal(detailResult.videoInfo.director, '孙皓');
-assert.equal(detailResult.videoInfo.cover, '');
+assert.equal(detailResult.videoInfo.cover, 'https://img.jianpian.com/upload/video/poster.jpg');
 
 const playResult = await play('54437', '', 1, { fetchImpl: fakeFetch });
 assert.equal(playResult.status, 'ready');

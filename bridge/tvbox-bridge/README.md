@@ -31,6 +31,14 @@ COMPOSE_PROJECT_NAME=openstream-tvbox-bridge docker compose up -d --build
 
 Compose 使用 host network，并让服务只绑定 `127.0.0.1:9979`。这样可以复用 VPS 宿主机出口网络，避免部分视频源 CDN 在 Docker bridge NAT 出口下超时，同时仍只允许 Caddy/Nginx 从本机反代到公网域名。
 
+生产模式缺少 `TVBOX_BRIDGE_TOKEN` 时服务会直接拒绝启动。仅本地开发可显式使用无 token 模式：
+
+```bash
+NODE_ENV=development BRIDGE_ALLOW_INSECURE_DEV=true npm start
+```
+
+不要在公网监听地址上使用无 token 开发模式。
+
 ## 与网站对接
 
 OpenStream 网站只配置服务端环境变量：
@@ -39,9 +47,15 @@ OpenStream 网站只配置服务端环境变量：
 TVBOX_BRIDGE_URL=https://your-bridge.example
 TVBOX_BRIDGE_TOKEN=your-server-side-token
 TVBOX_BRIDGE_TIMEOUT_MS=8000
+TVBOX_BRIDGE_MAX_INFLIGHT=48
+TVBOX_BRIDGE_MAX_RESPONSE_BYTES=2097152
 ```
 
 浏览器不会看到 bridge URL 或 token。
+
+bridge 容器自身默认限制为 12 个并发 adapter 请求和 64 个排队请求，可通过
+`BRIDGE_MAX_CONCURRENCY`、`BRIDGE_MAX_QUEUE` 调整。响应体解析上限为 2 MiB，
+超过上限会明确失败，不会无限占用内存。
 
 ## 不做的事
 

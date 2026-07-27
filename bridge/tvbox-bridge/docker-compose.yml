@@ -13,6 +13,9 @@ services:
       PORT: "9979"
       TVBOX_BRIDGE_TOKEN: ${TVBOX_BRIDGE_TOKEN:?TVBOX_BRIDGE_TOKEN is required}
       BRIDGE_VERSION: ${BRIDGE_VERSION:-0.1.1}
+      BRIDGE_CACHE_MAX_ENTRIES: ${BRIDGE_CACHE_MAX_ENTRIES:-240}
+      BRIDGE_MAX_CONCURRENCY: ${BRIDGE_MAX_CONCURRENCY:-12}
+      BRIDGE_MAX_QUEUE: ${BRIDGE_MAX_QUEUE:-64}
     labels:
       openstream.project: tvbox-bridge
     healthcheck:

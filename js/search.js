@@ -125,28 +125,116 @@ function buildSearchApiUrl(apiBaseUrl, query, filters, page) {
     return `${apiBaseUrl}?${params.toString()}`;
 }
 
-async function fetchApiListByUrl(url) {
+function createLinkedAbortController(externalSignal, timeoutMs = 15000) {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 15000);
+    const abortFromParent = () => controller.abort(externalSignal?.reason);
+    if (externalSignal?.aborted) {
+        abortFromParent();
+    } else {
+        externalSignal?.addEventListener('abort', abortFromParent, { once: true });
+    }
+    const timeoutId = setTimeout(() => {
+        const error = new Error(`数据源请求超时 (${timeoutMs}ms)`);
+        error.name = 'TimeoutError';
+        controller.abort(error);
+    }, timeoutMs);
+
+    return {
+        signal: controller.signal,
+        cleanup() {
+            clearTimeout(timeoutId);
+            externalSignal?.removeEventListener('abort', abortFromParent);
+        }
+    };
+}
+
+function createSearchAbortError(reason) {
+    const error = new Error(
+        reason instanceof Error ? reason.message : 'Search aborted',
+        reason instanceof Error ? { cause: reason } : undefined
+    );
+    error.name = reason?.name === 'TimeoutError' ? 'TimeoutError' : 'AbortError';
+    return error;
+}
+
+class SourceSearchError extends Error {
+    constructor(message, options = {}) {
+        super(message, options.cause ? { cause: options.cause } : undefined);
+        this.name = 'SourceSearchError';
+        this.status = options.status || 0;
+    }
+}
+
+const SEARCH_PAGE_CACHE_TTL = 2 * 60 * 1000;
+const SEARCH_PAGE_CACHE_LIMIT = 240;
+const searchPageCache = new Map();
+
+function readSearchPageCache(url) {
+    const cached = searchPageCache.get(url);
+    if (!cached) return null;
+    if (cached.expiresAt <= Date.now()) {
+        searchPageCache.delete(url);
+        return null;
+    }
+    searchPageCache.delete(url);
+    searchPageCache.set(url, cached);
+    return cached.data;
+}
+
+function writeSearchPageCache(url, data) {
+    searchPageCache.set(url, {
+        data,
+        expiresAt: Date.now() + SEARCH_PAGE_CACHE_TTL
+    });
+    while (searchPageCache.size > SEARCH_PAGE_CACHE_LIMIT) {
+        searchPageCache.delete(searchPageCache.keys().next().value);
+    }
+    return data;
+}
+
+async function fetchApiListByUrl(url, externalSignal) {
+    if (externalSignal?.aborted) throw createSearchAbortError(externalSignal.reason);
+    const cached = readSearchPageCache(url);
+    if (cached) return cached;
+    const requestAbort = createLinkedAbortController(externalSignal);
 
     try {
         const proxiedUrl = await window.ProxyAuth?.addAuthToProxyUrl
             ? await window.ProxyAuth.addAuthToProxyUrl(PROXY_URL + encodeURIComponent(url))
             : PROXY_URL + encodeURIComponent(url);
 
-        const response = await fetch(proxiedUrl, {
-            headers: API_CONFIG.search.headers,
-            signal: controller.signal
-        });
+        let response;
+        try {
+            response = await fetch(proxiedUrl, {
+                headers: API_CONFIG.search.headers,
+                signal: requestAbort.signal
+            });
+        } catch (error) {
+            if (requestAbort.signal.aborted) {
+                throw createSearchAbortError(requestAbort.signal.reason || error);
+            }
+            throw new SourceSearchError('数据源网络请求失败', { cause: error });
+        }
 
-        if (!response.ok) return null;
+        if (!response.ok) {
+            throw new SourceSearchError(`数据源请求失败 (${response.status})`, {
+                status: response.status
+            });
+        }
 
-        const data = await response.json();
-        if (!data || !Array.isArray(data.list)) return null;
+        let data;
+        try {
+            data = await response.json();
+        } catch (error) {
+            throw new SourceSearchError('数据源返回了无效 JSON', { cause: error });
+        }
+        if (!data || !Array.isArray(data.list)) {
+            throw new SourceSearchError('数据源返回格式无效');
+        }
 
-        return data;
+        return writeSearchPageCache(url, data);
     } finally {
-        clearTimeout(timeoutId);
+        requestAbort.cleanup();
     }
 }
 
@@ -188,7 +276,7 @@ async function runSearchQueue(items, concurrency, worker) {
     return results;
 }
 
-async function fetchPagedResults(apiBaseUrl, apiId, apiName, query, filters, startPage, endPage) {
+async function fetchPagedResults(apiBaseUrl, apiId, apiName, query, filters, startPage, endPage, signal) {
     const pages = [];
     for (let page = startPage; page <= endPage; page++) {
         pages.push(page);
@@ -198,14 +286,16 @@ async function fetchPagedResults(apiBaseUrl, apiId, apiName, query, filters, sta
         pages,
         API_CONFIG.search.pageConcurrency || 2,
         async (page) => {
+            if (signal?.aborted) throw createSearchAbortError(signal.reason);
             try {
                 const pageUrl = buildSearchApiUrl(apiBaseUrl, query, filters, page);
-                const pageData = await fetchApiListByUrl(pageUrl);
+                const pageData = await fetchApiListByUrl(pageUrl, signal);
                 if (!pageData || !Array.isArray(pageData.list) || pageData.list.length === 0) {
                     return [];
                 }
                 return mapApiResults(pageData.list, apiId, apiName);
             } catch (error) {
+                if (error?.name === 'AbortError') throw error;
                 console.warn(`API ${apiId} 第${page}页搜索失败:`, error);
                 return [];
             }
@@ -217,6 +307,9 @@ async function fetchPagedResults(apiBaseUrl, apiId, apiName, query, filters, sta
 
 async function searchByAPIAndKeyWord(apiId, query, filters, options = {}) {
     try {
+        if (options.signal?.aborted) {
+            throw createSearchAbortError(options.signal.reason);
+        }
         // 360 资源当前疑似不支持关键词搜索：无论 wd 是什么都会返回同一批“短剧”列表
         // 为避免污染搜索结果，直接忽略它（用户仍可在设置里取消勾选）。
         if (apiId === 'zy360') {
@@ -235,12 +328,12 @@ async function searchByAPIAndKeyWord(apiId, query, filters, options = {}) {
         if (apiId.startsWith('custom_')) {
             const customIndex = apiId.replace('custom_', '');
             const customApi = getCustomApiInfo(customIndex);
-            if (!customApi) return [];
+            if (!customApi) throw new SourceSearchError('自定义数据源不存在');
 
             apiName = customApi.name;
             apiBaseUrl = customApi.url;
         } else {
-            if (!API_SITES[apiId]) return [];
+            if (!API_SITES[apiId]) throw new SourceSearchError('数据源不存在');
             apiName = API_SITES[apiId].name;
             apiBaseUrl = API_SITES[apiId].api;
         }
@@ -251,12 +344,18 @@ async function searchByAPIAndKeyWord(apiId, query, filters, options = {}) {
         const requestFilters = shouldUseFilterSearch ? normalizedFilters : getDefaultSearchFilters();
 
         let firstUrl = buildSearchApiUrl(apiBaseUrl, query, requestFilters, 1);
-        let firstPageData = await fetchApiListByUrl(firstUrl);
+        let firstPageData = null;
+        try {
+            firstPageData = await fetchApiListByUrl(firstUrl, options.signal);
+        } catch (error) {
+            // 部分 CMS 会因不支持 class/year 参数直接报错；筛选态可退回基础列表。
+            if (!shouldUseFilterSearch || error?.name === 'AbortError') throw error;
+        }
 
         // 兜底：部分采集站对 class/year 参数支持差，筛选请求空结果时回退到基础列表再本地过滤。
         if ((!firstPageData || !Array.isArray(firstPageData.list) || firstPageData.list.length === 0) && shouldUseFilterSearch) {
             firstUrl = buildSearchApiUrl(apiBaseUrl, query, getDefaultSearchFilters(), 1);
-            firstPageData = await fetchApiListByUrl(firstUrl);
+            firstPageData = await fetchApiListByUrl(firstUrl, options.signal);
         }
 
         if (!firstPageData || !Array.isArray(firstPageData.list) || firstPageData.list.length === 0) {
@@ -280,7 +379,8 @@ async function searchByAPIAndKeyWord(apiId, query, filters, options = {}) {
                     query,
                     requestFilters,
                     2,
-                    pagesToFetch + 1
+                    pagesToFetch + 1,
+                    options.signal
                 );
                 if (paged.length > 0) allResults.push(...paged);
             }
@@ -305,7 +405,8 @@ async function searchByAPIAndKeyWord(apiId, query, filters, options = {}) {
                     '',
                     requestFilters,
                     2,
-                    noKeywordPages
+                    noKeywordPages,
+                    options.signal
                 );
                 if (filteredPaged.length > 0) allResults.push(...filteredPaged);
             }
@@ -318,7 +419,8 @@ async function searchByAPIAndKeyWord(apiId, query, filters, options = {}) {
                 '',
                 getDefaultSearchFilters(),
                 1,
-                noKeywordPages
+                noKeywordPages,
+                options.signal
             );
             if (basePaged.length > 0) allResults.push(...basePaged);
         }
@@ -326,8 +428,9 @@ async function searchByAPIAndKeyWord(apiId, query, filters, options = {}) {
         allResults = dedupeResults(allResults);
         return applySearchFiltersToResults(allResults, normalizedFilters);
     } catch (error) {
+        if (error?.name === 'AbortError') throw error;
         console.warn(`API ${apiId} 搜索失败:`, error);
-        return [];
+        throw error;
     }
 }
 

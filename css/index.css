@@ -306,8 +306,12 @@
 }
 
 .douban-mode-button.is-active {
-    background: #f97316;
+    background: #c2410c;
     color: #fff;
+}
+
+[data-douban-initial="disabled"] #doubanArea {
+    display: none;
 }
 
 .is-hidden {
@@ -404,8 +408,8 @@
 }
 
 .douban-filter-chip.is-active {
-    background: #f97316;
-    border-color: #f97316;
+    background: #c2410c;
+    border-color: #c2410c;
     color: #fff;
 }
 
@@ -461,6 +465,57 @@
 .search-results-grid {
     display: grid;
     gap: 1rem;
+}
+
+.search-result-card {
+    content-visibility: auto;
+    contain: layout paint style;
+}
+
+.search-result-card {
+    contain-intrinsic-size: 0 180px;
+}
+
+.douban-card {
+    contain: layout paint style;
+}
+
+.douban-skeleton-card {
+    overflow: hidden;
+    min-width: 0;
+    border-radius: 0.5rem;
+    background: #111;
+}
+
+.douban-skeleton-card > div {
+    aspect-ratio: 2 / 3;
+    background:
+        linear-gradient(100deg, transparent 30%, rgba(255, 255, 255, 0.06) 50%, transparent 70%),
+        #181818;
+    background-size: 220% 100%;
+    animation: douban-skeleton-shimmer 1.4s ease-in-out infinite;
+}
+
+.douban-skeleton-card > span {
+    display: block;
+    height: 52px;
+    margin: 0;
+    background: #111;
+}
+
+#douban-tags-wrap {
+    min-height: 42px;
+}
+
+@keyframes douban-skeleton-shimmer {
+    from { background-position: 100% 0; }
+    to { background-position: -100% 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .douban-skeleton-card > div {
+        animation: none;
+    }
 }
 
 @media (max-width: 640px) {

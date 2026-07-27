@@ -1,29 +1,46 @@
 <!DOCTYPE html>
-<html lang="zh">
+<html lang="zh-CN" data-douban-initial="enabled">
 
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="referrer" content="same-origin">
     <title>OpenStream - 免费在线视频搜索与观看平台</title>
     <meta name="description" content="OpenStream是一个免费的在线视频搜索平台，无广告、安全，提供来自多个视频源的内容搜索与观看服务，无需注册即可使用。">
     <meta name="keywords" content="在线视频,免费视频,视频搜索,电影,电视剧,OpenStream">
     <meta name="author" content="OpenStream Team">
+    <script>
+        (() => {
+            try {
+                const initialized = localStorage.getItem('hasInitializedDefaults');
+                const enabled = initialized ? localStorage.getItem('doubanEnabled') === 'true' : true;
+                document.documentElement.dataset.doubanInitial = enabled ? 'enabled' : 'disabled';
+            } catch (_) {}
+            const authStatusPromise = fetch('/api/auth/status', {
+                credentials: 'same-origin',
+                cache: 'no-store',
+                headers: { Accept: 'application/json' }
+            });
+            authStatusPromise.catch(() => {});
+            window.__openStreamAuthStatusPromise = authStatusPromise;
+        })();
+    </script>
 
     <!-- Favicon -->
-    <link rel="icon" href="image/openstream-logo.svg?v=20260212g">
-    <link rel="apple-touch-icon" href="image/openstream-logo.svg?v=20260212g">
+    <link rel="icon" href="image/openstream-logo.svg?v=0f26b3dc53f8">
+    <link rel="apple-touch-icon" href="image/openstream-logo.svg?v=0f26b3dc53f8">
     <link rel="manifest" href="manifest.json">
-    <link rel="stylesheet" href="css/tailwind.generated.css">
-    <link rel="stylesheet" href="css/styles.css">
-    <link rel="stylesheet" href="css/index.css">
+    <link rel="preload" href="image/openstream-logo.svg?v=0f26b3dc53f8" as="image" type="image/svg+xml" fetchpriority="high">
+    <link rel="stylesheet" href="compiled/index.min.css?v=da13c0b24716">
+    <script src="compiled/index.min.js?v=c14ff3e73240" defer></script>
 </head>
 
-<body class="page-bg text-white">
+<body class="page-bg text-white" data-quality-runtime-src="compiled/quality-runtime.min.js?v=768100719090">
     <!-- 将历史记录按钮移到左上角，并缩小尺寸 -->
     <div class="fixed top-4 left-4 z-10">
-        <button onclick="toggleHistory(event)"
+        <button id="historyToggleButton" onclick="toggleHistory(event)"
             class="bg-[#222] hover:bg-[#333] border border-[#333] hover:border-white rounded-lg px-3 py-1.5 transition-colors"
-            aria-label="观看历史">
+            aria-label="观看历史" aria-controls="historyPanel" aria-expanded="false">
             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                     d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
@@ -33,9 +50,9 @@
 
     <!-- 设置按钮保留在右上角，并缩小尺寸 -->
     <div class="fixed top-4 right-4 z-10">
-        <button onclick="toggleSettings(event)"
+        <button id="settingsToggleButton" onclick="toggleSettings(event)"
             class="bg-[#222] hover:bg-[#333] border border-[#333] hover:border-white rounded-lg px-3 py-1.5 transition-colors"
-            aria-label="打开设置">
+            aria-label="打开设置" aria-controls="settingsPanel" aria-expanded="false">
             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                     d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z">
@@ -49,9 +66,9 @@
     <!-- 历史记录面板 - 标题居中 -->
     <div id="historyPanel"
         class="history-panel fixed left-0 top-0 h-full bg-[#111] border-r border-[#333] p-6 z-40 transform -translate-x-full transition-transform duration-300"
-        aria-label="观看历史" aria-hidden="true">
+        aria-label="观看历史" aria-hidden="true" inert>
         <div class="flex justify-between items-center mb-6">
-            <button onclick="toggleHistory()" class="close-btn">
+            <button onclick="toggleHistory()" class="close-btn" aria-label="关闭观看历史">
                 <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12">
                     </path>
@@ -75,10 +92,10 @@
     <!-- 设置面板 -->
     <div id="settingsPanel"
         class="settings-panel fixed right-0 top-0 h-full w-80 bg-[#111] border-l border-[#333] p-6 z-40 overflow-y-auto"
-        aria-label="设置面板" aria-hidden="true">
+        aria-label="设置面板" aria-hidden="true" inert>
         <div class="flex justify-between items-center mb-6">
             <h3 class="text-xl font-bold gradient-text">设置</h3>
-            <button onclick="toggleSettings()" class="close-btn">
+            <button onclick="toggleSettings()" class="close-btn" aria-label="关闭设置">
                 <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12">
                     </path>
@@ -250,7 +267,8 @@
             <header class="text-center mb-2">
                 <div class="flex justify-center items-center mb-4">
                     <a href="#" onclick="resetToHome(); return false;" class="flex items-center">
-                        <img src="image/openstream-logo.svg?v=20260212g" alt="OPENSTREAM" class="brand-logo brand-logo--hero">
+                        <img src="image/openstream-logo.svg?v=0f26b3dc53f8" alt="OPENSTREAM"
+                            class="brand-logo brand-logo--hero" width="620" height="88" fetchpriority="high">
                     </a>
                 </div>
                 <p class="text-gray-400 mb-8">自由观影，畅享精彩</p>
@@ -288,14 +306,15 @@
                     </div>
 
                     <!-- 添加最近搜索记录部分 -->
-                    <div id="recentSearches" class="mt-4 flex flex-wrap gap-2" aria-label="最近搜索记录">
+                    <div id="recentSearches" class="mt-4 flex flex-wrap gap-2" role="region"
+                        aria-label="最近搜索记录">
                         <!-- 这里会动态插入最近的搜索记录 -->
                     </div>
                 </div>
             </div>
 
             <!-- 豆瓣热门推荐区域: 默认隐藏，现在位于搜索区域下方，调整宽度 -->
-            <div id="doubanArea" class="w-full my-8 hidden">
+            <div id="doubanArea" class="w-full my-8">
                 <div class="mx-auto max-w-screen-xl px-2">
                     <!-- 改进标题和标签区域布局 -->
                     <div class="mb-4">
@@ -306,7 +325,7 @@
                                 <!-- 大类筛选 -->
                                 <div class="flex items-center bg-[#222] rounded-full p-1" id="douban-category-switches">
                                     <button id="douban-cat-movie"
-                                        class="px-3 py-1 text-sm rounded-full bg-orange-500 text-white">电影</button>
+                                        class="px-3 py-1 text-sm rounded-full bg-orange-700 text-white">电影</button>
                                     <button id="douban-cat-tv"
                                         class="px-3 py-1 text-sm rounded-full text-gray-300 hover:text-white">电视剧</button>
                                     <button id="douban-cat-anime"
@@ -321,7 +340,7 @@
                             </div>
                             <div id="douban-recommend-actions">
                                 <button id="douban-refresh"
-                                    class="text-sm px-3 py-1 bg-orange-500 hover:bg-orange-600 text-white rounded-lg flex items-center gap-1">
+                                    class="text-sm px-3 py-1 bg-orange-700 hover:bg-orange-800 text-white rounded-lg flex items-center gap-1">
                                     <span>换一批</span>
                                     <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24"
                                         stroke="currentColor">
@@ -359,6 +378,22 @@
                     <!-- 推荐内容 -->
                     <div id="douban-results"
                         class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-3">
+                        <div class="douban-skeleton-card" aria-hidden="true"><div></div><span></span></div>
+                        <div class="douban-skeleton-card" aria-hidden="true"><div></div><span></span></div>
+                        <div class="douban-skeleton-card" aria-hidden="true"><div></div><span></span></div>
+                        <div class="douban-skeleton-card" aria-hidden="true"><div></div><span></span></div>
+                        <div class="douban-skeleton-card" aria-hidden="true"><div></div><span></span></div>
+                        <div class="douban-skeleton-card" aria-hidden="true"><div></div><span></span></div>
+                        <div class="douban-skeleton-card" aria-hidden="true"><div></div><span></span></div>
+                        <div class="douban-skeleton-card" aria-hidden="true"><div></div><span></span></div>
+                        <div class="douban-skeleton-card" aria-hidden="true"><div></div><span></span></div>
+                        <div class="douban-skeleton-card" aria-hidden="true"><div></div><span></span></div>
+                        <div class="douban-skeleton-card" aria-hidden="true"><div></div><span></span></div>
+                        <div class="douban-skeleton-card" aria-hidden="true"><div></div><span></span></div>
+                        <div class="douban-skeleton-card" aria-hidden="true"><div></div><span></span></div>
+                        <div class="douban-skeleton-card" aria-hidden="true"><div></div><span></span></div>
+                        <div class="douban-skeleton-card" aria-hidden="true"><div></div><span></span></div>
+                        <div class="douban-skeleton-card" aria-hidden="true"><div></div><span></span></div>
                     </div>
                     <div id="douban-filter-pagination" class="is-hidden">
                         <div id="douban-pagination" class="douban-pagination hidden">
@@ -393,7 +428,8 @@
             <div class="flex flex-col md:flex-row justify-between items-center">
                 <div class="mb-4 md:mb-0">
                     <div class="flex items-center justify-center md:justify-start">
-                        <img src="image/openstream-logo.svg?v=20260212g" alt="OPENSTREAM" class="brand-logo brand-logo--footer">
+                        <img src="image/openstream-logo.svg?v=0f26b3dc53f8" alt="OPENSTREAM"
+                            class="brand-logo brand-logo--footer" width="620" height="88" loading="lazy">
                     </div>
                     <p class="text-gray-500 text-sm mt-2 text-center md:text-left">© 2025 OpenStream - 自由观影，畅享精彩</p>
                 </div>
@@ -505,50 +541,16 @@
         "@context": "https://schema.org",
         "@type": "WebSite",
         "name": "OpenStream",
-        "url": "https://libretv.is-an.org/",
+        "url": "https://tv.cursorflow.top/",
         "description": "免费在线视频搜索与观看平台",
         "potentialAction": {
             "@type": "SearchAction",
-            "target": "https://libretv.is-an.org/?s={search_term_string}",
+            "target": "https://tv.cursorflow.top/s={search_term_string}",
             "query-input": "required name=search_term_string"
         }
     }
     </script>
 
-    <!-- 引入纯 JS sha256（HTTP 下依然可用） -->
-    <script src="libs/sha256.min.js"></script>
-    <script>
-        // 保存原始 js‑sha256 实现，避免被 password.js 覆盖
-        window._jsSha256 = window.sha256;
-    </script>
-    <script src="js/config.js?v=20260713-tvbox"></script>
-    <!-- 环境变量注入脚本：必须在依赖 window.__ENV__ 的脚本之前执行 -->
-    <script>
-        window.__ENV__ = window.__ENV__ || {};
-        // 注入服务器端环境变量 (将由服务器端替换)
-        window.__ENV__.PASSWORD = "{{PASSWORD}}";
-    </script>
-
-    <script src="js/proxy-auth.js"></script>
-    <script src="js/customer_site.js"></script>
-    <script src="js/ui.js"></script>
-    <script src="js/api.js?v=tvbox-20260712-4"></script>
-    <script src="js/douban.js"></script>
-    <script src="js/password.js"></script>
-    <script src="js/search.js"></script>
-    <script src="js/source-health.js?v=tvbox-20260712-4"></script>
-    <script src="js/source-adapter.js?v=20260713-tvbox"></script>
-    <script src="js/result-aggregator.js?v=tvbox-20260712-4"></script>
-    <script src="js/streaming-search.js?v=tvbox-20260712-4"></script>
-    <script src="js/search-ui.js?v=20260713-tvbox"></script>
-    <script src="js/app.js?v=tvbox-20260712-4"></script>
-
-    <!-- PWA 注册 -->
-    <!-- 版本检测脚本 -->
-    <script src="js/version-check.js"></script>
-
-    <!-- 添加弹窗和URL搜索参数处理脚本 -->
-    <script src="js/index-page.js"></script>
 </body>
 
 </html>

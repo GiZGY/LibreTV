@@ -1,6 +1,19 @@
 // 全局变量
-let selectedAPIs = JSON.parse(localStorage.getItem('selectedAPIs') || '["tyyszy","dyttzy", "bfzy", "ruyi"]'); // 默认选中资源
-let customAPIs = JSON.parse(localStorage.getItem('customAPIs') || '[]'); // 存储自定义API列表
+function readStoredArray(key, fallback = []) {
+    try {
+        const parsed = JSON.parse(localStorage.getItem(key) || JSON.stringify(fallback));
+        return Array.isArray(parsed) ? parsed : [...fallback];
+    } catch (_) {
+        return [...fallback];
+    }
+}
+
+let selectedAPIs = readStoredArray(
+    'selectedAPIs',
+    ['jisu', 'bfzy', 'baidu', 'hwba', 'qiqi', 'mozhua']
+).filter(item => typeof item === 'string'); // 默认选中资源
+let customAPIs = readStoredArray('customAPIs')
+    .filter(item => item && typeof item === 'object' && !Array.isArray(item)); // 存储自定义API列表
 
 // 添加当前播放的集数索引
 let currentEpisodeIndex = 0;
@@ -8,6 +21,10 @@ let currentEpisodeIndex = 0;
 let currentEpisodes = [];
 // 添加当前视频的标题
 let currentVideoTitle = '';
+let currentDetailSourceCode = '';
+let currentDetailVideoId = '';
+let activeDetailRequestSeq = 0;
+let activeDetailAbortController = null;
 // 全局变量用于倒序状态
 let episodesReversed = false;
 // 存储API延迟数据（从localStorage加载缓存）
@@ -16,6 +33,15 @@ let latencyTestTime = null; // 测速时间戳
 // 存储API质量检测数据（从localStorage加载缓存）
 let apiQualities = {};
 let qualityTestTime = null; // 质量检测时间戳
+
+function escapeAppHtml(value) {
+    return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
 let hideZombieApis = localStorage.getItem('hideZombieApis') !== 'false'; // 默认隐藏僵尸源
 let searchFilters = loadSearchFilters();
 
@@ -191,43 +217,195 @@ window.buildSearchPath = buildSearchPath;
 
 function isPasswordReadyForApiCalls() {
     try {
-        // 兼容两套实现：ensurePasswordProtection / isPasswordProtected + isPasswordVerified
-        if (window.isPasswordProtected && window.isPasswordVerified) {
-            if (window.isPasswordProtected() && !window.isPasswordVerified()) {
-                return false;
-            }
-        }
-        return true;
+        return window.isAuthSessionReady?.() === true &&
+            window.isPasswordVerified?.() === true;
     } catch (_) {
         // 保守：不确定就不要自动跑，避免把所有源打成 0 分
         return false;
     }
 }
 
-function scheduleInitialQualityTest() {
-    const runWhenReady = () => {
-        if (typeof testAllApiQuality !== 'function') return;
-        if (isPasswordReadyForApiCalls()) {
-            testAllApiQuality({ silent: true });
+const PASSIVE_QUALITY_SAMPLE_KEY = 'openstreamPassiveQualitySamples';
+const PASSIVE_QUALITY_STALE_MS = 24 * 60 * 60 * 1000;
+const PASSIVE_QUALITY_DAILY_LIMIT = 2;
+let passiveQualityTimer = 0;
+let passiveQualityIdleHandle = 0;
+let passiveQualityController = null;
+let qualityRuntimePromise = null;
+
+function ensureQualityRuntime() {
+    if (window.OpenStreamQualitySelection && window.OpenStreamPlaybackQuality) {
+        return Promise.resolve();
+    }
+    if (qualityRuntimePromise) return qualityRuntimePromise;
+
+    qualityRuntimePromise = new Promise((resolve, reject) => {
+        const src = document.body?.dataset?.qualityRuntimeSrc;
+        if (!src) {
+            reject(new Error('质量检测模块地址缺失'));
             return;
         }
-        const handler = () => {
-            document.removeEventListener('passwordVerified', handler);
-            setTimeout(() => testAllApiQuality({ silent: true }), 3000);
+        const script = document.createElement('script');
+        script.src = src;
+        script.async = true;
+        script.onload = () => {
+            if (window.OpenStreamQualitySelection && window.OpenStreamPlaybackQuality) {
+                resolve();
+            } else {
+                reject(new Error('质量检测模块初始化失败'));
+            }
         };
-        document.addEventListener('passwordVerified', handler, { once: true });
-    };
-
-    const schedule = () => {
-        if ('requestIdleCallback' in window) {
-            requestIdleCallback(runWhenReady, { timeout: 15000 });
-        } else {
-            setTimeout(runWhenReady, 10000);
-        }
-    };
-
-    setTimeout(schedule, 5000);
+        script.onerror = () => reject(new Error('质量检测模块加载失败'));
+        document.head.appendChild(script);
+    }).catch((error) => {
+        qualityRuntimePromise = null;
+        throw error;
+    });
+    return qualityRuntimePromise;
 }
+
+function readPassiveQualitySamples() {
+    const day = new Date().toISOString().slice(0, 10);
+    try {
+        const value = JSON.parse(localStorage.getItem(PASSIVE_QUALITY_SAMPLE_KEY) || 'null');
+        if (value?.day === day && Array.isArray(value.sources)) return value;
+    } catch (_) {}
+    return { day, sources: [] };
+}
+
+function writePassiveQualitySamples(value) {
+    try {
+        localStorage.setItem(PASSIVE_QUALITY_SAMPLE_KEY, JSON.stringify(value));
+    } catch (_) {}
+}
+
+function canRunPassiveQualitySample() {
+    const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+    if (document.hidden || !isPasswordReadyForApiCalls()) return false;
+    if (window.isOpenStreamSearchActive?.()) return false;
+    if (connection?.saveData || ['slow-2g', '2g'].includes(connection?.effectiveType)) return false;
+    return true;
+}
+
+function getNextPassiveQualitySource(sampleState) {
+    const candidates = (Array.isArray(selectedAPIs) ? selectedAPIs : [])
+        .filter((apiId) => API_SITES[apiId] && !apiId.startsWith('custom_'))
+        .filter((apiId) => !sampleState.sources.includes(apiId))
+        .map((apiId) => ({
+            apiId,
+            testedAt: Number(apiQualities?.[apiId]?.testedAt || 0)
+        }))
+        .filter((item) => Date.now() - item.testedAt >= PASSIVE_QUALITY_STALE_MS)
+        .sort((a, b) => a.testedAt - b.testedAt);
+    return candidates[0]?.apiId || '';
+}
+
+function getQualityHealthStatus(quality) {
+    if (!quality) return null;
+    if (quality.playOk && quality.segmentOk) return 'ready';
+    const stageStatuses = [
+        quality.playStatus,
+        quality.detailStatus,
+        quality.searchStatus
+    ];
+    for (const status of ['timeout', 'unsupported', 'login_required']) {
+        if (stageStatuses.includes(status)) return status;
+    }
+    if (quality.playStatus === 'unplayable') return 'unplayable';
+    if (quality.playStatus === 'unknown') return null;
+    if (stageStatuses.includes('error')) return 'error';
+    if (quality.playStatus === 'no_result' || quality.detailStatus === 'no_result') return 'no_result';
+    if (quality.searchStatus === 'timeout') return 'timeout';
+    if (quality.searchStatus === 'unsupported') return 'unsupported';
+    if (quality.searchStatus === 'login_required') return 'login_required';
+    if (quality.searchStatus === 'no_result') return 'no_result';
+    if (quality.playTested || quality.error) return 'error';
+    return null;
+}
+
+async function runPassiveQualitySample() {
+    passiveQualityTimer = 0;
+    passiveQualityIdleHandle = 0;
+    if (!canRunPassiveQualitySample()) {
+        schedulePassiveQualitySampling(60_000);
+        return;
+    }
+
+    const sampleState = readPassiveQualitySamples();
+    if (sampleState.sources.length >= PASSIVE_QUALITY_DAILY_LIMIT) return;
+    const apiId = getNextPassiveQualitySource(sampleState);
+    if (!apiId) return;
+
+    passiveQualityController?.abort();
+    passiveQualityController = new AbortController();
+    try {
+        await ensureQualityRuntime();
+        const result = await measureApiQuality(apiId, {
+            playTest: true,
+            signal: passiveQualityController.signal,
+            bypassCache: true
+        });
+        if (passiveQualityController.signal.aborted || !result?.quality) return;
+
+        const quality = { ...result.quality, testedAt: Date.now(), passive: true };
+        apiQualities[apiId] = quality;
+        if (typeof quality.searchMs === 'number') apiLatencies[apiId] = quality.searchMs;
+        qualityTestTime = quality.testedAt;
+        latencyTestTime = quality.testedAt;
+        saveQualityCache();
+        saveLatencyCache();
+        window.OpenStreamSourceHealth?.refreshStoredMetrics?.();
+        const healthStatus = getQualityHealthStatus(quality);
+        if (healthStatus) {
+            window.OpenStreamSourceHealth?.recordSourceEvent?.(apiId, {
+                status: healthStatus,
+                ms: quality.playTtfbMs ?? quality.detailMs ?? quality.searchMs,
+                verifiedPlayable: healthStatus === 'ready'
+            });
+        }
+
+        sampleState.sources.push(apiId);
+        writePassiveQualitySamples(sampleState);
+        initAPICheckboxes();
+        updateLatencyTimeDisplay();
+    } catch (error) {
+        if (error?.name !== 'AbortError') {
+            console.warn(`后台质量抽样失败 (${apiId}):`, error);
+        }
+    } finally {
+        passiveQualityController = null;
+        if (readPassiveQualitySamples().sources.length < PASSIVE_QUALITY_DAILY_LIMIT) {
+            schedulePassiveQualitySampling(120_000);
+        }
+    }
+}
+
+function cancelPassiveQualitySampling(options = {}) {
+    if (passiveQualityTimer) clearTimeout(passiveQualityTimer);
+    if (passiveQualityIdleHandle && 'cancelIdleCallback' in window) {
+        cancelIdleCallback(passiveQualityIdleHandle);
+    }
+    passiveQualityTimer = 0;
+    passiveQualityIdleHandle = 0;
+    passiveQualityController?.abort();
+    passiveQualityController = null;
+    if (options.reschedule) schedulePassiveQualitySampling(30_000);
+}
+
+function schedulePassiveQualitySampling(delayMs = 20_000) {
+    if (passiveQualityTimer || passiveQualityIdleHandle || passiveQualityController) return;
+    passiveQualityTimer = setTimeout(() => {
+        passiveQualityTimer = 0;
+        if ('requestIdleCallback' in window) {
+            passiveQualityIdleHandle = requestIdleCallback(runPassiveQualitySample, { timeout: 30_000 });
+        } else {
+            passiveQualityTimer = setTimeout(runPassiveQualitySample, 5_000);
+        }
+    }, delayMs);
+}
+
+window.cancelPassiveQualitySampling = cancelPassiveQualitySampling;
+window.schedulePassiveQualitySampling = schedulePassiveQualitySampling;
 
 // 从localStorage加载延迟缓存
 function loadLatencyCache() {
@@ -298,7 +476,7 @@ document.addEventListener('DOMContentLoaded', function () {
     // 设置默认API选择（如果是第一次加载）
     if (!localStorage.getItem('hasInitializedDefaults')) {
         // 默认选中资源
-        selectedAPIs = ["tyyszy", "bfzy", "dyttzy", "ruyi"];
+        selectedAPIs = ["jisu", "bfzy", "baidu", "hwba", "qiqi", "mozhua"];
         localStorage.setItem('selectedAPIs', JSON.stringify(selectedAPIs));
 
         // 默认选中过滤开关
@@ -311,11 +489,11 @@ document.addEventListener('DOMContentLoaded', function () {
         // 标记已初始化默认值
         localStorage.setItem('hasInitializedDefaults', 'true');
 
-        scheduleInitialQualityTest();
-    } else if (!latencyTestTime && !qualityTestTime) {
-        // 没有检测缓存时也延后到空闲期，避免首屏与搜索抢网络。
-        scheduleInitialQualityTest();
     }
+
+    // 质量状态在日常搜索/播放中持续学习；这里只在空闲期低频抽样，
+    // 避免首次访问对所有源发起全量检测。
+    schedulePassiveQualitySampling();
 
     // 更新检测时间显示
     updateLatencyTimeDisplay();
@@ -609,7 +787,9 @@ function renderCustomAPIsList() {
         const textColorClass = api.isAdult ? 'text-pink-400' : 'text-white';
         const adultTag = api.isAdult ? '<span class="text-xs text-pink-400 mr-1">(18+)</span>' : '';
         // 新增 detail 地址显示
-        const detailLine = api.detail ? `<div class="text-xs text-gray-400 truncate">detail: ${api.detail}</div>` : '';
+        const detailLine = api.detail
+            ? `<div class="text-xs text-gray-400 truncate">detail: ${escapeAppHtml(api.detail)}</div>`
+            : '';
 
         const latency = apiLatencies['custom_' + index];
         let latencyHtml = '';
@@ -640,11 +820,11 @@ function renderCustomAPIsList() {
                 <div class="flex-1 min-w-0">
                     <div class="flex items-center justify-between">
                         <div class="text-xs font-medium ${textColorClass} truncate">
-                            ${adultTag}${api.name}
+                            ${adultTag}${escapeAppHtml(api.name)}
                         </div>
                         ${latencyHtml}
                     </div>
-                    <div class="text-xs text-gray-500 truncate">${api.url}</div>
+                    <div class="text-xs text-gray-500 truncate">${escapeAppHtml(api.url)}</div>
                     ${detailLine}
                 </div>
             </div>
@@ -919,22 +1099,6 @@ function removeCustomApi(index) {
     showToast('已移除自定义API: ' + apiName, 'info');
 }
 
-function toggleSettings(e) {
-    const settingsPanel = document.getElementById('settingsPanel');
-    if (!settingsPanel) return;
-
-    if (settingsPanel.classList.contains('show')) {
-        settingsPanel.classList.remove('show');
-    } else {
-        settingsPanel.classList.add('show');
-    }
-
-    if (e) {
-        e.preventDefault();
-        e.stopPropagation();
-    }
-}
-
 // 设置事件监听器
 function setupEventListeners() {
     // 回车搜索
@@ -948,22 +1112,22 @@ function setupEventListeners() {
     document.addEventListener('click', function (e) {
         // 关闭设置面板
         const settingsPanel = document.querySelector('#settingsPanel.show');
-        const settingsButton = document.querySelector('#settingsPanel .close-btn');
+        const settingsButton = document.getElementById('settingsToggleButton');
 
         if (settingsPanel && settingsButton &&
             !settingsPanel.contains(e.target) &&
             !settingsButton.contains(e.target)) {
-            settingsPanel.classList.remove('show');
+            window.setDrawerOpenState?.('settingsPanel', 'settingsToggleButton', false);
         }
 
         // 关闭历史记录面板
         const historyPanel = document.querySelector('#historyPanel.show');
-        const historyButton = document.querySelector('#historyPanel .close-btn');
+        const historyButton = document.getElementById('historyToggleButton');
 
         if (historyPanel && historyButton &&
             !historyPanel.contains(e.target) &&
             !historyButton.contains(e.target)) {
-            historyPanel.classList.remove('show');
+            window.setDrawerOpenState?.('historyPanel', 'historyToggleButton', false);
         }
     });
 
@@ -999,6 +1163,7 @@ function setupEventListeners() {
 
 // 重置搜索区域
 function resetSearchArea() {
+    window.cancelActiveSearch?.();
     // 清理搜索结果
     document.getElementById('results').innerHTML = '';
     document.getElementById('searchInput').value = '';
@@ -1089,17 +1254,23 @@ document.addEventListener('DOMContentLoaded', hookInput);
 
 // 显示详情 - 修改为支持自定义API
 async function showDetails(id, vod_name, sourceCode) {
-    // 密码保护校验
-    if (window.isPasswordProtected && window.isPasswordVerified) {
-        if (window.isPasswordProtected() && !window.isPasswordVerified()) {
-            showPasswordModal && showPasswordModal();
-            return;
-        }
+    if (!isPasswordReadyForApiCalls()) {
+        window.showPasswordModal?.();
+        return;
     }
     if (!id) {
         showToast('视频ID无效', 'error');
         return;
     }
+
+    activeDetailAbortController?.abort();
+    const requestSeq = ++activeDetailRequestSeq;
+    const requestController = new AbortController();
+    activeDetailAbortController = requestController;
+    const isCurrentRequest = () => (
+        requestSeq === activeDetailRequestSeq &&
+        !requestController.signal.aborted
+    );
 
     showLoading();
     try {
@@ -1112,7 +1283,6 @@ async function showDetails(id, vod_name, sourceCode) {
             const customApi = getCustomApiInfo(customIndex);
             if (!customApi) {
                 showToast('自定义API配置无效', 'error');
-                hideLoading();
                 return;
             }
             // 传递 detail 字段
@@ -1128,35 +1298,49 @@ async function showDetails(id, vod_name, sourceCode) {
 
         const isBridgeSource = window.OpenStreamSourceAdapter?.isBridgeSource?.(sourceCode);
         const bridgeDetail = isBridgeSource
-            ? await window.OpenStreamSourceAdapter.detail(sourceCode, id)
+            ? await window.OpenStreamSourceAdapter.detail(sourceCode, id, {
+                signal: requestController.signal
+            })
             : null;
         const data = isBridgeSource
             ? {
-                episodes: (bridgeDetail?.episodes || []).map((episode) => (
-                    typeof episode === 'string' ? episode : episode?.url
-                )).filter(Boolean),
+                episodes: (bridgeDetail?.episodes || []).filter(Boolean),
                 videoInfo: bridgeDetail?.data?.videoInfo || bridgeDetail?.videoInfo || {}
             }
-            : await fetchVideoDetailWithCache(id, apiParams);
+            : await fetchVideoDetailWithCache(id, apiParams, {
+                signal: requestController.signal
+            });
+
+        if (!isCurrentRequest()) return;
 
         const modal = document.getElementById('modal');
         const modalTitle = document.getElementById('modalTitle');
         const modalContent = document.getElementById('modalContent');
 
-        // 显示来源信息
-        const sourceName = data.videoInfo && data.videoInfo.source_name ?
-            ` <span class="text-sm font-normal text-gray-400">(${data.videoInfo.source_name})</span>` : '';
+        modalTitle.replaceChildren();
+        const titleText = document.createElement('span');
+        titleText.className = 'break-words';
+        titleText.textContent = vod_name || '未知视频';
+        modalTitle.appendChild(titleText);
+        if (data.videoInfo?.source_name) {
+            const sourceText = document.createElement('span');
+            sourceText.className = 'text-sm font-normal text-gray-400';
+            sourceText.textContent = ` (${data.videoInfo.source_name})`;
+            modalTitle.appendChild(sourceText);
+        }
 
-        // 不对标题进行截断处理，允许完整显示
-        modalTitle.innerHTML = `<span class="break-words">${vod_name || '未知视频'}</span>${sourceName}`;
         currentVideoTitle = vod_name || '未知视频';
+        currentDetailSourceCode = sourceCode;
+        currentDetailVideoId = id;
 
         if (data.episodes && data.episodes.length > 0) {
             // 构建详情信息HTML
             let detailInfoHtml = '';
             if (data.videoInfo) {
                 // Prepare description text, strip HTML and trim whitespace
-                const descriptionText = data.videoInfo.desc ? data.videoInfo.desc.replace(/<[^>]+>/g, '').trim() : '';
+                const descriptionText = data.videoInfo.desc
+                    ? escapeAppHtml(String(data.videoInfo.desc).replace(/<[^>]+>/g, '').trim())
+                    : '';
 
                 // Check if there's any actual grid content
                 const hasGridContent = data.videoInfo.type || data.videoInfo.year || data.videoInfo.area || data.videoInfo.director || data.videoInfo.actor || data.videoInfo.remarks;
@@ -1166,12 +1350,12 @@ async function showDetails(id, vod_name, sourceCode) {
                 <div class="modal-detail-info">
                     ${hasGridContent ? `
                     <div class="detail-grid">
-                        ${data.videoInfo.type ? `<div class="detail-item"><span class="detail-label">类型:</span> <span class="detail-value">${data.videoInfo.type}</span></div>` : ''}
-                        ${data.videoInfo.year ? `<div class="detail-item"><span class="detail-label">年份:</span> <span class="detail-value">${data.videoInfo.year}</span></div>` : ''}
-                        ${data.videoInfo.area ? `<div class="detail-item"><span class="detail-label">地区:</span> <span class="detail-value">${data.videoInfo.area}</span></div>` : ''}
-                        ${data.videoInfo.director ? `<div class="detail-item"><span class="detail-label">导演:</span> <span class="detail-value">${data.videoInfo.director}</span></div>` : ''}
-                        ${data.videoInfo.actor ? `<div class="detail-item"><span class="detail-label">主演:</span> <span class="detail-value">${data.videoInfo.actor}</span></div>` : ''}
-                        ${data.videoInfo.remarks ? `<div class="detail-item"><span class="detail-label">备注:</span> <span class="detail-value">${data.videoInfo.remarks}</span></div>` : ''}
+                        ${data.videoInfo.type ? `<div class="detail-item"><span class="detail-label">类型:</span> <span class="detail-value">${escapeAppHtml(data.videoInfo.type)}</span></div>` : ''}
+                        ${data.videoInfo.year ? `<div class="detail-item"><span class="detail-label">年份:</span> <span class="detail-value">${escapeAppHtml(data.videoInfo.year)}</span></div>` : ''}
+                        ${data.videoInfo.area ? `<div class="detail-item"><span class="detail-label">地区:</span> <span class="detail-value">${escapeAppHtml(data.videoInfo.area)}</span></div>` : ''}
+                        ${data.videoInfo.director ? `<div class="detail-item"><span class="detail-label">导演:</span> <span class="detail-value">${escapeAppHtml(data.videoInfo.director)}</span></div>` : ''}
+                        ${data.videoInfo.actor ? `<div class="detail-item"><span class="detail-label">主演:</span> <span class="detail-value">${escapeAppHtml(data.videoInfo.actor)}</span></div>` : ''}
+                        ${data.videoInfo.remarks ? `<div class="detail-item"><span class="detail-label">备注:</span> <span class="detail-value">${escapeAppHtml(data.videoInfo.remarks)}</span></div>` : ''}
                     </div>` : ''}
                     ${descriptionText ? `
                     <div class="detail-desc">
@@ -1190,7 +1374,7 @@ async function showDetails(id, vod_name, sourceCode) {
                 ${detailInfoHtml}
                 <div class="flex flex-wrap items-center justify-between mb-4 gap-2">
                     <div class="flex items-center gap-2">
-                        <button onclick="toggleEpisodeOrder('${sourceCode}', '${id}')" 
+                        <button id="toggleEpisodeOrderBtn"
                                 class="px-3 py-1.5 bg-[#333] hover:bg-[#444] border border-[#444] rounded text-sm transition-colors flex items-center gap-1">
                             <svg class="w-4 h-4 transform ${episodesReversed ? 'rotate-180' : ''}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 14l-7 7m0 0l-7-7m7 7V3"></path>
@@ -1199,7 +1383,7 @@ async function showDetails(id, vod_name, sourceCode) {
                         </button>
                         <span class="text-gray-400 text-sm">共 ${data.episodes.length} 集</span>
                     </div>
-                    <button onclick="copyLinks()" class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm transition-colors">
+                    <button id="copyEpisodeLinksBtn" class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm transition-colors">
                         复制链接
                     </button>
                 </div>
@@ -1207,6 +1391,7 @@ async function showDetails(id, vod_name, sourceCode) {
                     ${renderEpisodes(vod_name, sourceCode, id)}
                 </div>
             `;
+            bindDetailModalControls();
         } else {
             modalContent.innerHTML = `
                 <div class="text-center py-8">
@@ -1218,28 +1403,56 @@ async function showDetails(id, vod_name, sourceCode) {
 
         modal.classList.remove('hidden');
     } catch (error) {
+        if (requestController.signal.aborted || error?.name === 'AbortError') return;
         console.error('获取详情错误:', error);
         showToast('获取详情失败，请稍后重试', 'error');
     } finally {
-        hideLoading();
+        if (requestSeq === activeDetailRequestSeq) {
+            activeDetailAbortController = null;
+            hideLoading();
+        }
     }
 }
 
+function cancelActiveDetailRequest() {
+    activeDetailRequestSeq += 1;
+    activeDetailAbortController?.abort();
+    activeDetailAbortController = null;
+    hideLoading();
+}
+
+window.cancelActiveDetailRequest = cancelActiveDetailRequest;
+
 // 更新播放视频函数，修改为使用/watch路径而不是直接打开player.html
-function playVideo(url, vod_name, sourceCode, episodeIndex = 0, vodId = '') {
-    // 密码保护校验
-    if (window.isPasswordProtected && window.isPasswordVerified) {
-        if (window.isPasswordProtected() && !window.isPasswordVerified()) {
-            showPasswordModal && showPasswordModal();
+async function playVideo(url, vod_name, sourceCode, episodeIndex = 0, vodId = '') {
+    if (!isPasswordReadyForApiCalls()) {
+        window.showPasswordModal?.();
+        return;
+    }
+
+    let playableUrl = '';
+    try {
+        const resolved = await window.OpenStreamPlayerEpisodes.resolveEpisode(
+            url,
+            episodeIndex,
+            { sourceKey: sourceCode, videoId: vodId }
+        );
+        if (resolved.status !== 'ready' || !resolved.url) {
+            showToast(`当前剧集暂不可播放：${resolved.status || 'unknown'}`, 'error');
             return;
         }
+        playableUrl = resolved.url;
+    } catch (error) {
+        console.error('播放地址解析失败:', error);
+        showToast('播放地址解析失败，请尝试其他资源', 'error');
+        return;
     }
 
     // 获取当前路径作为返回页面
     let currentPath = window.location.href;
 
     // 构建播放页面URL，使用watch.html作为中间跳转页
-    let watchUrl = `watch.html?id=${vodId || ''}&source=${sourceCode || ''}&url=${encodeURIComponent(url)}&index=${episodeIndex}&title=${encodeURIComponent(vod_name || '')}`;
+    let watchUrl = `watch.html?id=${encodeURIComponent(vodId || '')}&source=${encodeURIComponent(sourceCode || '')}&url=${encodeURIComponent(playableUrl)}&index=${episodeIndex}&title=${encodeURIComponent(vod_name || '')}`;
 
     // 添加返回URL参数
     if (currentPath.includes('index.html') || currentPath.endsWith('/')) {
@@ -1337,7 +1550,7 @@ function renderEpisodes(vodName, sourceCode, vodId) {
         // 根据倒序状态计算真实的剧集索引
         const realIndex = episodesReversed ? currentEpisodes.length - 1 - index : index;
         return `
-            <button id="episode-${realIndex}" onclick="playVideo('${episode}','${vodName.replace(/"/g, '&quot;')}', '${sourceCode}', ${realIndex}, '${vodId}')" 
+            <button id="episode-${realIndex}" data-detail-episode-index="${realIndex}"
                     class="px-4 py-2 bg-[#222] hover:bg-[#333] border border-[#333] rounded-lg transition-colors text-center episode-btn">
                 ${realIndex + 1}
             </button>
@@ -1345,10 +1558,33 @@ function renderEpisodes(vodName, sourceCode, vodId) {
     }).join('');
 }
 
+function bindDetailModalControls() {
+    document.getElementById('toggleEpisodeOrderBtn')?.addEventListener('click', () => {
+        toggleEpisodeOrder(currentDetailSourceCode, currentDetailVideoId);
+    });
+    document.getElementById('copyEpisodeLinksBtn')?.addEventListener('click', copyLinks);
+    document.getElementById('episodesGrid')?.addEventListener('click', (event) => {
+        const button = event.target.closest?.('[data-detail-episode-index]');
+        if (!button) return;
+        const index = Number.parseInt(button.dataset.detailEpisodeIndex || '', 10);
+        if (!Number.isInteger(index) || !currentEpisodes[index]) return;
+        playVideo(
+            currentEpisodes[index],
+            currentVideoTitle,
+            currentDetailSourceCode,
+            index,
+            currentDetailVideoId
+        );
+    });
+}
+
 // 复制视频链接到剪贴板
 function copyLinks() {
     const episodes = episodesReversed ? [...currentEpisodes].reverse() : currentEpisodes;
-    const linkList = episodes.join('\r\n');
+    const linkList = episodes
+        .map((episode) => typeof episode === 'string' ? episode : episode?.url)
+        .filter(Boolean)
+        .join('\r\n');
     navigator.clipboard.writeText(linkList).then(() => {
         showToast('播放链接已复制', 'success');
     }).catch(err => {
@@ -1366,13 +1602,152 @@ function toggleEpisodeOrder(sourceCode, vodId) {
     }
 
     // 更新按钮文本和箭头方向
-    const toggleBtn = document.querySelector(`button[onclick="toggleEpisodeOrder('${sourceCode}', '${vodId}')"]`);
+    const toggleBtn = document.getElementById('toggleEpisodeOrderBtn');
     if (toggleBtn) {
         toggleBtn.querySelector('span').textContent = episodesReversed ? '正序排列' : '倒序排列';
         const arrowIcon = toggleBtn.querySelector('svg');
         if (arrowIcon) {
             arrowIcon.style.transform = episodesReversed ? 'rotate(180deg)' : 'rotate(0deg)';
         }
+    }
+}
+
+function getPortableConfigKeys() {
+    return new Set([
+        'selectedAPIs',
+        'customAPIs',
+        'yellowFilterEnabled',
+        'adFilteringEnabled',
+        'doubanEnabled',
+        'hasInitializedDefaults',
+        SEARCH_FILTERS_CONFIG.storageKey,
+        'viewingHistory',
+        SEARCH_HISTORY_KEY
+    ]);
+}
+
+function parseImportedJsonValue(key, value) {
+    try {
+        return JSON.parse(value);
+    } catch (_) {
+        throw `配置项 ${key} 不是有效的 JSON`;
+    }
+}
+
+function isHttpUrl(value) {
+    try {
+        return ['http:', 'https:'].includes(new URL(String(value || '')).protocol);
+    } catch (_) {
+        return false;
+    }
+}
+
+function validatePortableConfigValue(key, value) {
+    const booleanKeys = new Set([
+        'yellowFilterEnabled',
+        'adFilteringEnabled',
+        'doubanEnabled',
+        'hasInitializedDefaults'
+    ]);
+    if (booleanKeys.has(key)) {
+        if (!['true', 'false'].includes(value)) throw `配置项 ${key} 必须是布尔值`;
+        return;
+    }
+
+    const parsed = parseImportedJsonValue(key, value);
+    if (key === 'selectedAPIs') {
+        if (
+            !Array.isArray(parsed) ||
+            parsed.length > 200 ||
+            parsed.some(item => typeof item !== 'string' || item.length > 100)
+        ) {
+            throw 'selectedAPIs 格式不正确';
+        }
+        return;
+    }
+
+    if (key === 'customAPIs') {
+        const invalid = !Array.isArray(parsed) || parsed.length > 100 || parsed.some(item => (
+            !item ||
+            typeof item !== 'object' ||
+            Array.isArray(item) ||
+            typeof item.name !== 'string' ||
+            !item.name.trim() ||
+            item.name.length > 100 ||
+            typeof item.url !== 'string' ||
+            item.url.length > 2048 ||
+            !isHttpUrl(item.url) ||
+            (item.detail !== undefined && (
+                typeof item.detail !== 'string' ||
+                item.detail.length > 2048
+            )) ||
+            (item.isAdult !== undefined && typeof item.isAdult !== 'boolean')
+        ));
+        if (invalid) throw 'customAPIs 格式不正确';
+        return;
+    }
+
+    if (key === SEARCH_FILTERS_CONFIG.storageKey) {
+        const validTypes = new Set(SEARCH_FILTERS_CONFIG.types.map(item => item.value));
+        if (
+            !parsed ||
+            typeof parsed !== 'object' ||
+            Array.isArray(parsed) ||
+            !validTypes.has(parsed.type || 'all') ||
+            !(/^$|^\d{4}$/).test(String(parsed.year || '')) ||
+            typeof (parsed.genre || '') !== 'string' ||
+            String(parsed.genre || '').length > 32
+        ) {
+            throw 'searchFilters 格式不正确';
+        }
+        return;
+    }
+
+    if (key === 'viewingHistory' || key === SEARCH_HISTORY_KEY) {
+        if (!Array.isArray(parsed) || parsed.length > 200) {
+            throw `配置项 ${key} 格式不正确`;
+        }
+    }
+}
+
+function applyImportedConfigData(data) {
+    if (!data || typeof data !== 'object' || Array.isArray(data)) {
+        throw '配置数据格式不正确';
+    }
+
+    const allowedKeys = getPortableConfigKeys();
+    const stagedEntries = [];
+    for (const [key, value] of Object.entries(data)) {
+        if (!allowedKeys.has(key)) continue;
+        if (typeof value !== 'string' || value.length > 1024 * 1024) {
+            throw `配置项 ${key} 格式不正确`;
+        }
+        validatePortableConfigValue(key, value);
+        stagedEntries.push([key, value]);
+    }
+
+    if (stagedEntries.length === 0) {
+        throw '配置文件中没有可导入的设置';
+    }
+
+    const previousValues = new Map(
+        stagedEntries.map(([key]) => [key, localStorage.getItem(key)])
+    );
+    try {
+        stagedEntries.forEach(([key, value]) => localStorage.setItem(key, value));
+    } catch (error) {
+        stagedEntries.forEach(([key]) => {
+            try {
+                localStorage.removeItem(key);
+            } catch (_) {}
+        });
+        previousValues.forEach((value, key) => {
+            if (value === null) return;
+            try {
+                localStorage.setItem(key, value);
+            } catch (_) {}
+        });
+        throw error;
     }
 }
 
@@ -1462,10 +1837,7 @@ async function importConfigFromUrl() {
             const dataHash = await sha256(JSON.stringify(config.data));
             if (dataHash !== config.hash) throw '配置文件哈希值不匹配';
 
-            // 导入配置
-            for (let item in config.data) {
-                localStorage.setItem(item, config.data[item]);
-            }
+            applyImportedConfigData(config.data);
 
             showToast('配置文件导入成功，3 秒后自动刷新本页面。', 'success');
             setTimeout(() => {
@@ -1514,10 +1886,7 @@ async function importConfig() {
             const dataHash = await sha256(JSON.stringify(config.data));
             if (dataHash !== config.hash) throw '配置文件哈希值不匹配';
 
-            // 导入配置
-            for (let item in config.data) {
-                localStorage.setItem(item, config.data[item]);
-            }
+            applyImportedConfigData(config.data);
 
             showToast('配置文件导入成功，3 秒后自动刷新本页面。', 'success');
             setTimeout(() => {
@@ -1536,15 +1905,7 @@ async function exportConfig() {
     const config = {};
     const items = {};
 
-    const settingsToExport = [
-        'selectedAPIs',
-        'customAPIs',
-        'yellowFilterEnabled',
-        'adFilteringEnabled',
-        'doubanEnabled',
-        'hasInitializedDefaults',
-        SEARCH_FILTERS_CONFIG.storageKey
-    ];
+    const settingsToExport = getPortableConfigKeys();
 
     // 导出设置项
     settingsToExport.forEach(key => {
@@ -1553,17 +1914,6 @@ async function exportConfig() {
             items[key] = value;
         }
     });
-
-    // 导出历史记录
-    const viewingHistory = localStorage.getItem('viewingHistory');
-    if (viewingHistory) {
-        items['viewingHistory'] = viewingHistory;
-    }
-
-    const searchHistory = localStorage.getItem(SEARCH_HISTORY_KEY);
-    if (searchHistory) {
-        items[SEARCH_HISTORY_KEY] = searchHistory;
-    }
 
     const times = Date.now().toString();
     config['name'] = 'OpenStream-Settings';  // 配置文件名，用于校验
@@ -1745,90 +2095,88 @@ async function testAllApiQuality(options = {}) {
     btn.innerHTML = `<svg class="w-3 h-3 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg> 检测中...`;
 
     try {
+        await ensureQualityRuntime();
         if (!silent) showToast('正在对所有数据源进行质量检测（先测搜索/详情，再抽样测播放），请稍候...', 'info');
 
         const builtinApis = Object.keys(API_SITES);
-        // 两阶段：先全量测搜索+详情（快），再只对候选源测播放（慢）
+        // 两阶段：先全量测搜索+详情，再只对候选源测播放。
+        // 动态并发池不会让一个慢源阻塞下一整批任务。
         const baseConcurrency = 10;
         const playConcurrency = 5;
-        const baseResults = [];
+        const baseResults = await window.OpenStreamQualitySelection.mapWithConcurrency(builtinApis, {
+            concurrency: baseConcurrency,
+            worker: (id) => measureApiQuality(id, {
+                playTest: false,
+                searchTimeoutMs: 7_000,
+                detailTimeoutMs: 9_000
+            })
+        });
 
-        for (let i = 0; i < builtinApis.length; i += baseConcurrency) {
-            const batch = builtinApis.slice(i, i + baseConcurrency);
-            const batchResults = await Promise.all(batch.map((id) => measureApiQuality(id, { playTest: false })));
-            baseResults.push(...batchResults);
-        }
-
-        // 候选：有集数的源里，按详情耗时优先挑前 N 个做播放检测
+        // 候选：有集数的源里按详情耗时排序，分批验证直到拿到 5 个可播放源。
         const candidates = baseResults
             .filter(r => r.quality?.detailOk && (r.quality.episodesCount || 0) > 0)
             .sort((a, b) => {
                 const am = typeof a.quality.detailMs === 'number' ? a.quality.detailMs : 1e9;
                 const bm = typeof b.quality.detailMs === 'number' ? b.quality.detailMs : 1e9;
                 return am - bm;
-            })
-            .slice(0, 10); // Top 10 才测播放链路，显著提速
+            });
 
-        const playResults = [];
-        for (let i = 0; i < candidates.length; i += playConcurrency) {
-            const batch = candidates.slice(i, i + playConcurrency);
-            const batchResults = await Promise.all(batch.map((r) => measureApiQuality(r.apiId, { playTest: true })));
-            playResults.push(...batchResults);
-        }
+        const playResults = await window.OpenStreamQualitySelection.testCandidatesUntilLimit(candidates, {
+            batchSize: playConcurrency,
+            limit: 5,
+            test: (result) => measureApiQuality(result.apiId, {
+                playTest: true,
+                seed: result
+            })
+        });
 
         // 合并：以 baseResults 为底，候选用 playResults 覆盖
         const playMap = new Map(playResults.map(r => [r.apiId, r]));
         const results = baseResults.map(r => playMap.get(r.apiId) || r);
 
+        const testedAt = Date.now();
         results.forEach(res => {
-            apiQualities[res.apiId] = res.quality;
+            apiQualities[res.apiId] = { ...res.quality, testedAt, passive: false };
             // 兼容旧逻辑：把搜索耗时也存到 apiLatencies，便于没有质量分时展示
             if (typeof res.quality?.searchMs === 'number') {
                 apiLatencies[res.apiId] = res.quality.searchMs;
             }
+            const healthStatus = getQualityHealthStatus(res.quality);
+            if (healthStatus) {
+                window.OpenStreamSourceHealth?.recordSourceEvent?.(res.apiId, {
+                    status: healthStatus,
+                    ms: res.quality.playTtfbMs ?? res.quality.detailMs ?? res.quality.searchMs,
+                    verifiedPlayable: healthStatus === 'ready'
+                });
+            }
         });
 
-        qualityTestTime = Date.now();
+        qualityTestTime = testedAt;
         // 保留旧字段，避免只读依赖 latencyTestTime 的逻辑失效
         latencyTestTime = qualityTestTime;
 
         saveQualityCache();
         saveLatencyCache();
+        window.OpenStreamSourceHealth?.refreshStoredMetrics?.();
 
-        // 自动选择质量最高的前5个资源（优先挑“有集数且播放检测通过”的）
-        const sorted = results
-            .filter(r => r.quality && typeof r.quality.score === 'number')
-            .sort((a, b) => (b.quality.score || 0) - (a.quality.score || 0));
-
-        const preferred = [];
-        for (const r of sorted) {
-            if (preferred.length >= 5) break;
-            const q = r.quality;
-            const good =
-                q.searchOk &&
-                q.detailOk &&
-                (q.episodesCount || 0) > 0 &&
-                (q.playOk || false);
-            if (good) preferred.push(r.apiId);
-        }
-        if (preferred.length < 5) {
-            for (const r of sorted) {
-                if (preferred.length >= 5) break;
-                if (!preferred.includes(r.apiId)) preferred.push(r.apiId);
-            }
-        }
-
-        if (preferred.length > 0) {
-            selectedAPIs = preferred;
-            localStorage.setItem('selectedAPIs', JSON.stringify(selectedAPIs));
-        }
+        // 只自动选择真实通过播放首包验证的源，不用未验证候选补足数量。
+        const preferred = window.OpenStreamQualitySelection
+            .selectVerifiedPlayable(results, 5)
+            .map((result) => result.apiId);
+        selectedAPIs = preferred;
+        localStorage.setItem('selectedAPIs', JSON.stringify(selectedAPIs));
 
         initAPICheckboxes();
         renderCustomAPIsList();
         updateSelectedApiCount();
         updateLatencyTimeDisplay();
 
-        if (!silent) showToast(`检测完成！已自动选择质量最高的${selectedAPIs.length}个资源`, 'success');
+        if (!silent) {
+            const message = selectedAPIs.length > 0
+                ? `检测完成！已自动选择${selectedAPIs.length}个验证可播放的资源`
+                : '检测完成，但本次没有验证出可播放资源';
+            showToast(message, selectedAPIs.length > 0 ? 'success' : 'warning');
+        }
     } catch (error) {
         console.error('质量检测过程出错:', error);
         if (!silent) showToast('质量检测失败: ' + (error?.message || '未知错误'), 'error');
@@ -1838,47 +2186,88 @@ async function testAllApiQuality(options = {}) {
     }
 }
 
-function withTimeout(promise, ms, label) {
-    return Promise.race([
-        promise,
-        new Promise((_, reject) => setTimeout(() => reject(new Error(label || `超时(${ms}ms)`)), ms))
-    ]);
+function createAbortError(reason, fallbackMessage = '请求已取消') {
+    const error = reason instanceof Error ? reason : new Error(fallbackMessage);
+    error.name = 'AbortError';
+    return error;
 }
 
-async function safeFetchJson(url, timeoutMs) {
-    const t0 = performance.now();
-    const res = await withTimeout(fetch(url), timeoutMs, `请求超时(${timeoutMs}ms)`);
-    const json = await withTimeout(res.json(), Math.max(1000, timeoutMs), '解析超时');
-    const ms = Math.round(performance.now() - t0);
-    return { json, ms };
-}
-
-async function measureTtfb(url, timeoutMs) {
-    const t0 = performance.now();
+async function runWithAbortableTimeout(factory, timeoutMs, label, externalSignal) {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    const abortFromParent = () => controller.abort(externalSignal?.reason);
+    if (externalSignal?.aborted) {
+        throw createAbortError(externalSignal.reason);
+    }
+    externalSignal?.addEventListener('abort', abortFromParent, { once: true });
+    const timeoutId = setTimeout(() => controller.abort(new Error(label || `超时(${timeoutMs}ms)`)), timeoutMs);
     try {
-        const res = await fetch(url, {
-            method: 'GET',
-            cache: 'no-store',
-            mode: 'cors',
-            signal: controller.signal
-        });
-        if (!res.ok) {
-            return { ok: false, ms: Math.round(performance.now() - t0), status: res.status };
+        return await factory(controller.signal);
+    } catch (error) {
+        if (externalSignal?.aborted) throw createAbortError(externalSignal.reason);
+        if (controller.signal.aborted) {
+            const timeoutError = new Error(label || `超时(${timeoutMs}ms)`);
+            timeoutError.name = 'TimeoutError';
+            throw timeoutError;
         }
-        if (!res.body || !res.body.getReader) {
-            return { ok: true, ms: Math.round(performance.now() - t0), status: res.status, note: 'no-stream' };
-        }
-        const reader = res.body.getReader();
-        await reader.read(); // 读取第一个chunk即可，近似 TTFB
-        try { reader.cancel(); } catch (_) {}
-        return { ok: true, ms: Math.round(performance.now() - t0), status: res.status };
-    } catch (e) {
-        const ms = Math.round(performance.now() - t0);
-        return { ok: false, ms, error: e?.name === 'AbortError' ? '超时' : (e?.message || '失败') };
+        throw error;
     } finally {
         clearTimeout(timeoutId);
+        externalSignal?.removeEventListener('abort', abortFromParent);
+    }
+}
+
+async function measureTtfb(url, timeoutMs, externalSignal) {
+    const t0 = performance.now();
+    try {
+        return await runWithAbortableTimeout(async (signal) => {
+            const res = await fetch(url, {
+                method: 'GET',
+                cache: 'no-store',
+                mode: 'cors',
+                signal
+            });
+            if (!res.ok) {
+                return { ok: false, ms: Math.round(performance.now() - t0), status: res.status };
+            }
+            if (!res.body || !res.body.getReader) {
+                return { ok: true, ms: Math.round(performance.now() - t0), status: res.status, note: 'no-stream' };
+            }
+            const reader = res.body.getReader();
+            await reader.read();
+            try { await reader.cancel(); } catch (_) {}
+            return { ok: true, ms: Math.round(performance.now() - t0), status: res.status };
+        }, timeoutMs, `播放首包超时(${timeoutMs}ms)`, externalSignal);
+    } catch (e) {
+        if (externalSignal?.aborted) throw createAbortError(externalSignal.reason);
+        const ms = Math.round(performance.now() - t0);
+        return { ok: false, ms, error: e?.name === 'TimeoutError' ? '超时' : (e?.message || '失败') };
+    }
+}
+
+async function probePlaybackQuality(url, timeoutMs, externalSignal) {
+    const startedAt = performance.now();
+    try {
+        return await runWithAbortableTimeout(async (signal) => {
+            const probe = window.OpenStreamPlaybackQuality?.probePlayback;
+            if (typeof probe !== 'function') {
+                const fallback = await measureTtfb(url, timeoutMs, signal);
+                return {
+                    ...fallback,
+                    playOk: !!fallback.ok,
+                    segmentOk: false
+                };
+            }
+            return probe(url, { signal });
+        }, timeoutMs, `播放链路检测超时(${timeoutMs}ms)`, externalSignal);
+    } catch (error) {
+        if (externalSignal?.aborted) throw createAbortError(externalSignal.reason);
+        return {
+            ok: false,
+            playOk: false,
+            segmentOk: false,
+            ms: Math.round(performance.now() - startedAt),
+            error: error?.name === 'TimeoutError' ? '超时' : (error?.message || '失败')
+        };
     }
 }
 
@@ -1888,8 +2277,8 @@ function computeQualityScore(q) {
     if (q.detailOk) score += 20;
     if ((q.episodesCount || 0) > 0) score += 10;
     if ((q.episodesCount || 0) >= 10) score += 5;
-    if (q.playOk) score += 30;
-    if (q.segmentOk) score += 15;
+    if (q.playOk) score += 15;
+    if (q.segmentOk) score += 30;
 
     // 延迟惩罚（轻惩罚，避免“延迟高但播放好”被误杀）
     const penalty = (ms, w) => {
@@ -1913,109 +2302,143 @@ async function measureApiQuality(apiId, opts) {
         searchOk: false,
         detailOk: false,
         playOk: false,
-        segmentOk: false, // 目前不强依赖，必要时再打开
+        segmentOk: false,
         searchMs: null,
         detailMs: null,
         playTtfbMs: null,
         segmentTtfbMs: null,
+        searchStatus: null,
+        detailStatus: null,
+        playStatus: null,
+        playTested: false,
         episodesCount: 0,
         error: null
     };
 
+    let currentPhase = 'setup';
     try {
-        if (window.OpenStreamSourceAdapter?.isBridgeSource?.(apiId)) {
+        const adapter = window.OpenStreamSourceAdapter;
+        if (!adapter?.search || !adapter?.detail) {
+            throw new Error('统一源适配器未就绪');
+        }
+
+        const sharedOptions = {
+            signal: options.signal,
+            bypassCache: options.bypassCache !== false
+        };
+        let vodId = options.seed?.sample?.vodId || '';
+        let episodes = Array.isArray(options.seed?.sample?.episodes)
+            ? options.seed.sample.episodes
+            : [];
+
+        if (vodId && episodes.length > 0 && options.seed?.quality) {
+            Object.assign(quality, options.seed.quality, {
+                playOk: false,
+                segmentOk: false,
+                playTtfbMs: null,
+                playStatus: null,
+                playTested: false,
+                error: null
+            });
+        } else {
+            currentPhase = 'search';
             const searchStart = performance.now();
-            const searchResult = await withTimeout(
-                window.OpenStreamSourceAdapter.search(apiId, '庆余年', {}, { maxPages: 1 }),
-                12000,
-                '电视源搜索超时'
+            const searchResult = await runWithAbortableTimeout(
+                (signal) => adapter.search(apiId, '庆余年', {}, { ...sharedOptions, maxPages: 1, signal }),
+                options.searchTimeoutMs || 12_000,
+                '资源搜索超时',
+                options.signal
             );
             quality.searchMs = Math.round(performance.now() - searchStart);
-            const bridgeList = Array.isArray(searchResult?.list) ? searchResult.list : [];
-            quality.searchOk = searchResult?.status === window.OpenStreamSourceAdapter.STATUS.READY && bridgeList.length > 0;
+            quality.searchStatus = searchResult?.status || null;
+            const effectiveList = Array.isArray(searchResult?.list) ? searchResult.list : [];
+            quality.searchOk = searchResult?.status === adapter.STATUS.READY && effectiveList.length > 0;
+            vodId = effectiveList[0]?.vod_id || '';
 
-            const vodId = bridgeList[0]?.vod_id;
             if (!vodId) {
-                quality.error = quality.searchOk ? '无搜索结果' : (searchResult?.message || searchResult?.status || '搜索失败');
+                quality.error = searchResult?.message || searchResult?.status || '无搜索结果';
                 quality.score = computeQualityScore(quality);
                 return { apiId, quality };
             }
 
+            currentPhase = 'detail';
             const detailStart = performance.now();
-            const detailResult = await withTimeout(
-                window.OpenStreamSourceAdapter.detail(apiId, vodId),
-                15000,
-                '电视源详情超时'
+            const detailResult = await runWithAbortableTimeout(
+                (signal) => adapter.detail(apiId, vodId, { ...sharedOptions, signal }),
+                options.detailTimeoutMs || 15_000,
+                '资源详情超时',
+                options.signal
             );
             quality.detailMs = Math.round(performance.now() - detailStart);
-            const episodes = Array.isArray(detailResult?.episodes) ? detailResult.episodes : [];
+            quality.detailStatus = detailResult?.status || null;
+            episodes = Array.isArray(detailResult?.episodes) ? detailResult.episodes : [];
             quality.episodesCount = episodes.length;
-            quality.detailOk = detailResult?.status === window.OpenStreamSourceAdapter.STATUS.READY && episodes.length > 0;
+            quality.detailOk = detailResult?.status === adapter.STATUS.READY && episodes.length > 0;
 
             if (!quality.detailOk) {
                 quality.error = detailResult?.message || detailResult?.status || '详情失败';
                 quality.score = computeQualityScore(quality);
                 return { apiId, quality };
             }
+        }
 
-            if (options.playTest) {
+        if (options.playTest) {
+            currentPhase = 'play';
+            quality.playTested = true;
+            let playUrl = episodes[0]?.url || episodes[0];
+            quality.playStatus = playUrl ? 'ready' : 'unsupported';
+            if (adapter.isBridgeSource?.(apiId)) {
                 const playStart = performance.now();
-                const playResult = await withTimeout(
-                    window.OpenStreamSourceAdapter.play(apiId, vodId, '', 0),
-                    15000,
-                    '电视源播放解析超时'
+                const playResult = await runWithAbortableTimeout(
+                    (signal) => adapter.play(apiId, vodId, episodes[0]?.flag || '', 0, { ...sharedOptions, signal }),
+                    options.playResolveTimeoutMs || 15_000,
+                    '播放地址解析超时',
+                    options.signal
                 );
                 quality.playTtfbMs = Math.round(performance.now() - playStart);
-                quality.playOk = playResult?.status === window.OpenStreamSourceAdapter.STATUS.READY && !!playResult?.url;
+                quality.playStatus = playResult?.status || 'error';
+                playUrl = playResult?.url || '';
             }
 
-            quality.score = computeQualityScore(quality);
-            return { apiId, quality };
-        }
-
-        // 1) 搜索（走现有 /api/search 拦截逻辑，更贴近真实）
-        const searchUrl = `/api/search?wd=1&source=${encodeURIComponent(apiId)}`;
-        const { json: searchJson, ms: searchMs } = await safeFetchJson(searchUrl, 12000);
-        quality.searchMs = searchMs;
-        const effectiveList = Array.isArray(searchJson?.list) ? searchJson.list : [];
-        quality.searchOk = searchJson && searchJson.code === 200 && Array.isArray(effectiveList);
-
-        let vodId = null;
-        if (effectiveList.length > 0) {
-            vodId = effectiveList[0]?.vod_id;
-        }
-
-        if (!vodId) {
-            quality.error = quality.searchOk ? '无搜索结果' : (searchJson?.msg || '搜索失败');
-            quality.score = computeQualityScore(quality);
-            return { apiId, quality };
-        }
-
-        // 2) 详情（拿到集数 + 首集链接）
-        const detailUrl = `/api/detail?id=${encodeURIComponent(String(vodId))}&source=${encodeURIComponent(apiId)}`;
-        const { json: detailJson, ms: detailMs } = await safeFetchJson(detailUrl, 15000);
-        quality.detailMs = detailMs;
-        const episodes = Array.isArray(detailJson?.episodes) ? detailJson.episodes : [];
-        quality.episodesCount = episodes.length;
-        quality.detailOk = detailJson && detailJson.code === 200 && Array.isArray(episodes);
-
-        if (!quality.detailOk || episodes.length === 0 || !episodes[0]) {
-            quality.error = !quality.detailOk ? (detailJson?.msg || '详情失败') : '无播放地址';
-            quality.score = computeQualityScore(quality);
-            return { apiId, quality };
-        }
-
-        const playUrl = episodes[0];
-        // 3) 播放链接可达性（慢）：只对候选源执行，避免全量过慢
-        if (options.playTest) {
-            const playTtfb = await measureTtfb(playUrl, 6000);
-            quality.playOk = !!playTtfb.ok;
-            quality.playTtfbMs = playTtfb.ms;
+            if (playUrl) {
+                playUrl = window.OpenStreamPlayerEpisodes?.normalizePlaybackUrl?.(playUrl, apiId) || playUrl;
+                const proxiedPlayUrl = await window.ProxyAuth?.addAuthToProxyUrl
+                    ? await window.ProxyAuth.addAuthToProxyUrl(PROXY_URL + encodeURIComponent(playUrl))
+                    : PROXY_URL + encodeURIComponent(playUrl);
+                const playProbe = await probePlaybackQuality(
+                    proxiedPlayUrl,
+                    options.playProbeTimeoutMs || 8_000,
+                    options.signal
+                );
+                quality.playOk = !!playProbe.playOk;
+                quality.segmentOk = !!playProbe.segmentOk;
+                quality.playStatus = playProbe.ok
+                    ? 'ready'
+                    : (
+                        [408, 429, 502, 503, 504].includes(playProbe.status) ||
+                        /超时|timed out/i.test(String(playProbe.error || ''))
+                            ? 'timeout'
+                            : (playProbe.inconclusive ? 'unknown' : 'unplayable')
+                    );
+                quality.playTtfbMs = (quality.playTtfbMs || 0) + playProbe.ms;
+                if (!playProbe.ok) quality.error = playProbe.error || '播放链路检测失败';
+            } else if (!quality.error) {
+                quality.error = quality.playStatus || '播放地址无效';
+            }
         }
 
         quality.score = computeQualityScore(quality);
-        return { apiId, quality };
+        return { apiId, quality, sample: { vodId, episodes } };
     } catch (e) {
+        if (options.signal?.aborted || e?.name === 'AbortError') throw createAbortError(options.signal?.reason || e);
+        const status = (
+            e?.name === 'TimeoutError' ||
+            [408, 429, 502, 503, 504].includes(Number(e?.status)) ||
+            /超时|timed out/i.test(String(e?.message || ''))
+        ) ? 'timeout' : 'error';
+        if (currentPhase === 'search') quality.searchStatus = status;
+        if (currentPhase === 'detail') quality.detailStatus = status;
+        if (currentPhase === 'play') quality.playStatus = status;
         quality.error = e?.message || '检测失败';
         quality.score = computeQualityScore(quality);
         return { apiId, quality };

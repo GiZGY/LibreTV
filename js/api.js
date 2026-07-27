@@ -1,5 +1,29 @@
 // 改进的API请求处理函数
-async function handleApiRequest(url) {
+function createApiAbortContext(externalSignal, timeoutMs = 10000) {
+    const controller = new AbortController();
+    const onAbort = () => controller.abort(externalSignal?.reason);
+    if (externalSignal?.aborted) {
+        onAbort();
+    } else {
+        externalSignal?.addEventListener('abort', onAbort, { once: true });
+    }
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    return {
+        signal: controller.signal,
+        cleanup() {
+            clearTimeout(timeoutId);
+            externalSignal?.removeEventListener('abort', onAbort);
+        }
+    };
+}
+
+function createApiAbortError(reason) {
+    const error = reason instanceof Error ? reason : new Error('请求已取消');
+    error.name = 'AbortError';
+    return error;
+}
+
+async function handleApiRequest(url, options = {}) {
     const customApi = url.searchParams.get('customApi') || '';
     const customDetail = url.searchParams.get('customDetail') || '';
     const source = url.searchParams.get('source') || 'heimuer';
@@ -25,8 +49,7 @@ async function handleApiRequest(url) {
                 : `${API_SITES[source].api}${API_CONFIG.search.path}${encodeURIComponent(searchQuery)}`;
 
             // 添加超时处理
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 10000);
+            const abortContext = createApiAbortContext(options.signal);
 
             try {
                 // 添加鉴权参数到代理URL
@@ -36,10 +59,8 @@ async function handleApiRequest(url) {
 
                 const response = await fetch(proxiedUrl, {
                     headers: API_CONFIG.search.headers,
-                    signal: controller.signal
+                    signal: abortContext.signal
                 });
-
-                clearTimeout(timeoutId);
 
                 if (!response.ok) {
                     throw new Error(`API请求失败: ${response.status}`);
@@ -76,9 +97,8 @@ async function handleApiRequest(url) {
                     code: 200,
                     list: data.list || [],
                 });
-            } catch (fetchError) {
-                clearTimeout(timeoutId);
-                throw fetchError;
+            } finally {
+                abortContext.cleanup();
             }
         }
 
@@ -107,16 +127,16 @@ async function handleApiRequest(url) {
 
             // 对于有detail参数的源，都使用特殊处理方式
             if (sourceCode !== 'custom' && API_SITES[sourceCode].detail) {
-                return await handleSpecialSourceDetail(id, sourceCode);
+                return await handleSpecialSourceDetail(id, sourceCode, options);
             }
 
             // 如果是自定义API，并且传递了detail参数，尝试特殊处理
             // 优先 customDetail
             if (sourceCode === 'custom' && customDetail) {
-                return await handleCustomApiSpecialDetail(id, customDetail);
+                return await handleCustomApiSpecialDetail(id, customDetail, options);
             }
             if (sourceCode === 'custom' && url.searchParams.get('useDetail') === 'true') {
-                return await handleCustomApiSpecialDetail(id, customApi);
+                return await handleCustomApiSpecialDetail(id, customApi, options);
             }
 
             const detailUrl = customApi
@@ -124,8 +144,7 @@ async function handleApiRequest(url) {
                 : `${API_SITES[sourceCode].api}${API_CONFIG.detail.path}${id}`;
 
             // 添加超时处理
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 10000);
+            const abortContext = createApiAbortContext(options.signal);
 
             try {
                 // 添加鉴权参数到代理URL
@@ -135,10 +154,8 @@ async function handleApiRequest(url) {
 
                 const response = await fetch(proxiedUrl, {
                     headers: API_CONFIG.detail.headers,
-                    signal: controller.signal
+                    signal: abortContext.signal
                 });
-
-                clearTimeout(timeoutId);
 
                 if (!response.ok) {
                     throw new Error(`详情请求失败: ${response.status}`);
@@ -201,14 +218,16 @@ async function handleApiRequest(url) {
                         source_code: sourceCode
                     }
                 });
-            } catch (fetchError) {
-                clearTimeout(timeoutId);
-                throw fetchError;
+            } finally {
+                abortContext.cleanup();
             }
         }
 
         throw new Error('未知的API路径');
     } catch (error) {
+        if (options.signal?.aborted) {
+            throw createApiAbortError(options.signal.reason);
+        }
         console.error('API处理错误:', error);
         return JSON.stringify({
             code: 400,
@@ -220,36 +239,34 @@ async function handleApiRequest(url) {
 }
 
 // 处理自定义API的特殊详情页
-async function handleCustomApiSpecialDetail(id, customApi) {
+async function handleCustomApiSpecialDetail(id, customApi, options = {}) {
     try {
         // 构建详情页URL
         const detailUrl = `${customApi}/index.php/vod/detail/id/${id}.html`;
 
         // 添加超时处理
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 10000);
+        const abortContext = createApiAbortContext(options.signal);
 
-        // 添加鉴权参数到代理URL
-        const proxiedUrl = await window.ProxyAuth?.addAuthToProxyUrl ?
-            await window.ProxyAuth.addAuthToProxyUrl(PROXY_URL + encodeURIComponent(detailUrl)) :
-            PROXY_URL + encodeURIComponent(detailUrl);
+        try {
+            // 添加鉴权参数到代理URL
+            const proxiedUrl = await window.ProxyAuth?.addAuthToProxyUrl ?
+                await window.ProxyAuth.addAuthToProxyUrl(PROXY_URL + encodeURIComponent(detailUrl)) :
+                PROXY_URL + encodeURIComponent(detailUrl);
 
-        // 获取详情页HTML
-        const response = await fetch(proxiedUrl, {
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-            },
-            signal: controller.signal
-        });
+            // 获取详情页HTML
+            const response = await fetch(proxiedUrl, {
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+                },
+                signal: abortContext.signal
+            });
 
-        clearTimeout(timeoutId);
+            if (!response.ok) {
+                throw new Error(`自定义API详情页请求失败: ${response.status}`);
+            }
 
-        if (!response.ok) {
-            throw new Error(`自定义API详情页请求失败: ${response.status}`);
-        }
-
-        // 获取HTML内容
-        const html = await response.text();
+            // 获取HTML内容
+            const html = await response.text();
 
         // 使用通用模式提取m3u8链接
         const generalPattern = /\$(https?:\/\/[^"'\s]+?\.m3u8)/g;
@@ -269,17 +286,20 @@ async function handleCustomApiSpecialDetail(id, customApi) {
         const descMatch = html.match(/<div[^>]*class=["']sketch["'][^>]*>([\s\S]*?)<\/div>/);
         const descText = descMatch ? descMatch[1].replace(/<[^>]+>/g, ' ').trim() : '';
 
-        return JSON.stringify({
-            code: 200,
-            episodes: matches,
-            detailUrl: detailUrl,
-            videoInfo: {
-                title: titleText,
-                desc: descText,
-                source_name: '自定义源',
-                source_code: 'custom'
-            }
-        });
+            return JSON.stringify({
+                code: 200,
+                episodes: matches,
+                detailUrl: detailUrl,
+                videoInfo: {
+                    title: titleText,
+                    desc: descText,
+                    source_name: '自定义源',
+                    source_code: 'custom'
+                }
+            });
+        } finally {
+            abortContext.cleanup();
+        }
     } catch (error) {
         console.error(`自定义API详情获取失败:`, error);
         throw error;
@@ -287,36 +307,34 @@ async function handleCustomApiSpecialDetail(id, customApi) {
 }
 
 // 通用特殊源详情处理函数
-async function handleSpecialSourceDetail(id, sourceCode) {
+async function handleSpecialSourceDetail(id, sourceCode, options = {}) {
     try {
         // 构建详情页URL（使用配置中的detail URL而不是api URL）
         const detailUrl = `${API_SITES[sourceCode].detail}/index.php/vod/detail/id/${id}.html`;
 
         // 添加超时处理
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 10000);
+        const abortContext = createApiAbortContext(options.signal);
 
-        // 添加鉴权参数到代理URL
-        const proxiedUrl = await window.ProxyAuth?.addAuthToProxyUrl ?
-            await window.ProxyAuth.addAuthToProxyUrl(PROXY_URL + encodeURIComponent(detailUrl)) :
-            PROXY_URL + encodeURIComponent(detailUrl);
+        try {
+            // 添加鉴权参数到代理URL
+            const proxiedUrl = await window.ProxyAuth?.addAuthToProxyUrl ?
+                await window.ProxyAuth.addAuthToProxyUrl(PROXY_URL + encodeURIComponent(detailUrl)) :
+                PROXY_URL + encodeURIComponent(detailUrl);
 
-        // 获取详情页HTML
-        const response = await fetch(proxiedUrl, {
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-            },
-            signal: controller.signal
-        });
+            // 获取详情页HTML
+            const response = await fetch(proxiedUrl, {
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+                },
+                signal: abortContext.signal
+            });
 
-        clearTimeout(timeoutId);
+            if (!response.ok) {
+                throw new Error(`详情页请求失败: ${response.status}`);
+            }
 
-        if (!response.ok) {
-            throw new Error(`详情页请求失败: ${response.status}`);
-        }
-
-        // 获取HTML内容
-        const html = await response.text();
+            // 获取HTML内容
+            const html = await response.text();
 
         // 根据不同源类型使用不同的正则表达式
         let matches = [];
@@ -348,238 +366,23 @@ async function handleSpecialSourceDetail(id, sourceCode) {
         const descMatch = html.match(/<div[^>]*class=["']sketch["'][^>]*>([\s\S]*?)<\/div>/);
         const descText = descMatch ? descMatch[1].replace(/<[^>]+>/g, ' ').trim() : '';
 
-        return JSON.stringify({
-            code: 200,
-            episodes: matches,
-            detailUrl: detailUrl,
-            videoInfo: {
-                title: titleText,
-                desc: descText,
-                source_name: API_SITES[sourceCode].name,
-                source_code: sourceCode
-            }
-        });
+            return JSON.stringify({
+                code: 200,
+                episodes: matches,
+                detailUrl: detailUrl,
+                videoInfo: {
+                    title: titleText,
+                    desc: descText,
+                    source_name: API_SITES[sourceCode].name,
+                    source_code: sourceCode
+                }
+            });
+        } finally {
+            abortContext.cleanup();
+        }
     } catch (error) {
         console.error(`${API_SITES[sourceCode].name}详情获取失败:`, error);
         throw error;
-    }
-}
-
-// 处理聚合搜索
-async function handleAggregatedSearch(searchQuery) {
-    // 获取可用的API源列表（排除aggregated和custom）
-    const availableSources = Object.keys(API_SITES).filter(key =>
-        key !== 'aggregated' && key !== 'custom'
-    );
-
-    if (availableSources.length === 0) {
-        throw new Error('没有可用的API源');
-    }
-
-    // 创建所有API源的搜索请求
-    const searchPromises = availableSources.map(async (source) => {
-        try {
-            const apiUrl = `${API_SITES[source].api}${API_CONFIG.search.path}${encodeURIComponent(searchQuery)}`;
-
-            // 使用Promise.race添加超时处理
-            const timeoutPromise = new Promise((_, reject) =>
-                setTimeout(() => reject(new Error(`${source}源搜索超时`)), 8000)
-            );
-
-            // 添加鉴权参数到代理URL
-            const proxiedUrl = await window.ProxyAuth?.addAuthToProxyUrl ?
-                await window.ProxyAuth.addAuthToProxyUrl(PROXY_URL + encodeURIComponent(apiUrl)) :
-                PROXY_URL + encodeURIComponent(apiUrl);
-
-            const fetchPromise = fetch(proxiedUrl, {
-                headers: API_CONFIG.search.headers
-            });
-
-            const response = await Promise.race([fetchPromise, timeoutPromise]);
-
-            if (!response.ok) {
-                throw new Error(`${source}源请求失败: ${response.status}`);
-            }
-
-            const data = await response.json();
-
-            if (!data || !Array.isArray(data.list)) {
-                throw new Error(`${source}源返回的数据格式无效`);
-            }
-
-            // 为搜索结果添加源信息
-            const results = data.list.map(item => ({
-                ...item,
-                source_name: API_SITES[source].name,
-                source_code: source
-            }));
-
-            return results;
-        } catch (error) {
-            console.warn(`${source}源搜索失败:`, error);
-            return []; // 返回空数组表示该源搜索失败
-        }
-    });
-
-    try {
-        // 并行执行所有搜索请求
-        const resultsArray = await Promise.all(searchPromises);
-
-        // 合并所有结果
-        let allResults = [];
-        resultsArray.forEach(results => {
-            if (Array.isArray(results) && results.length > 0) {
-                allResults = allResults.concat(results);
-            }
-        });
-
-        // 如果没有搜索结果，返回空结果
-        if (allResults.length === 0) {
-            return JSON.stringify({
-                code: 200,
-                list: [],
-                msg: '所有源均无搜索结果'
-            });
-        }
-
-        // 去重（根据vod_id和source_code组合）
-        const uniqueResults = [];
-        const seen = new Set();
-
-        allResults.forEach(item => {
-            const key = `${item.source_code}_${item.vod_id}`;
-            if (!seen.has(key)) {
-                seen.add(key);
-                uniqueResults.push(item);
-            }
-        });
-
-        // 按照视频名称和来源排序
-        uniqueResults.sort((a, b) => {
-            // 首先按照视频名称排序
-            const nameCompare = (a.vod_name || '').localeCompare(b.vod_name || '');
-            if (nameCompare !== 0) return nameCompare;
-
-            // 如果名称相同，则按照来源排序
-            return (a.source_name || '').localeCompare(b.source_name || '');
-        });
-
-        return JSON.stringify({
-            code: 200,
-            list: uniqueResults,
-        });
-    } catch (error) {
-        console.error('聚合搜索处理错误:', error);
-        return JSON.stringify({
-            code: 400,
-            msg: '聚合搜索处理失败: ' + error.message,
-            list: []
-        });
-    }
-}
-
-// 处理多个自定义API源的聚合搜索
-async function handleMultipleCustomSearch(searchQuery, customApiUrls) {
-    // 解析自定义API列表
-    const apiUrls = customApiUrls.split(CUSTOM_API_CONFIG.separator)
-        .map(url => url.trim())
-        .filter(url => url.length > 0 && /^https?:\/\//.test(url))
-        .slice(0, CUSTOM_API_CONFIG.maxSources);
-
-    if (apiUrls.length === 0) {
-        throw new Error('没有提供有效的自定义API地址');
-    }
-
-    // 为每个API创建搜索请求
-    const searchPromises = apiUrls.map(async (apiUrl, index) => {
-        try {
-            const fullUrl = `${apiUrl}${API_CONFIG.search.path}${encodeURIComponent(searchQuery)}`;
-
-            // 使用Promise.race添加超时处理
-            const timeoutPromise = new Promise((_, reject) =>
-                setTimeout(() => reject(new Error(`自定义API ${index + 1} 搜索超时`)), 8000)
-            );
-
-            // 添加鉴权参数到代理URL
-            const proxiedUrl = await window.ProxyAuth?.addAuthToProxyUrl ?
-                await window.ProxyAuth.addAuthToProxyUrl(PROXY_URL + encodeURIComponent(fullUrl)) :
-                PROXY_URL + encodeURIComponent(fullUrl);
-
-            const fetchPromise = fetch(proxiedUrl, {
-                headers: API_CONFIG.search.headers
-            });
-
-            const response = await Promise.race([fetchPromise, timeoutPromise]);
-
-            if (!response.ok) {
-                throw new Error(`自定义API ${index + 1} 请求失败: ${response.status}`);
-            }
-
-            const data = await response.json();
-
-            if (!data || !Array.isArray(data.list)) {
-                throw new Error(`自定义API ${index + 1} 返回的数据格式无效`);
-            }
-
-            // 为搜索结果添加源信息
-            const results = data.list.map(item => ({
-                ...item,
-                source_name: `${CUSTOM_API_CONFIG.namePrefix}${index + 1}`,
-                source_code: 'custom',
-                api_url: apiUrl // 保存API URL以便详情获取
-            }));
-
-            return results;
-        } catch (error) {
-            console.warn(`自定义API ${index + 1} 搜索失败:`, error);
-            return []; // 返回空数组表示该源搜索失败
-        }
-    });
-
-    try {
-        // 并行执行所有搜索请求
-        const resultsArray = await Promise.all(searchPromises);
-
-        // 合并所有结果
-        let allResults = [];
-        resultsArray.forEach(results => {
-            if (Array.isArray(results) && results.length > 0) {
-                allResults = allResults.concat(results);
-            }
-        });
-
-        // 如果没有搜索结果，返回空结果
-        if (allResults.length === 0) {
-            return JSON.stringify({
-                code: 200,
-                list: [],
-                msg: '所有自定义API源均无搜索结果'
-            });
-        }
-
-        // 去重（根据vod_id和api_url组合）
-        const uniqueResults = [];
-        const seen = new Set();
-
-        allResults.forEach(item => {
-            const key = `${item.api_url || ''}_${item.vod_id}`;
-            if (!seen.has(key)) {
-                seen.add(key);
-                uniqueResults.push(item);
-            }
-        });
-
-        return JSON.stringify({
-            code: 200,
-            list: uniqueResults,
-        });
-    } catch (error) {
-        console.error('自定义API聚合搜索处理错误:', error);
-        return JSON.stringify({
-            code: 400,
-            msg: '自定义API聚合搜索处理失败: ' + error.message,
-            list: []
-        });
     }
 }
 
@@ -589,23 +392,41 @@ async function handleMultipleCustomSearch(searchQuery, customApiUrls) {
     const handledApiPaths = new Set(['/api/search', '/api/detail']);
 
     window.fetch = async function (input, init) {
-        const requestUrl = typeof input === 'string' ? new URL(input, window.location.origin) : input.url;
+        const inputUrl = typeof input === 'string' || input instanceof URL
+            ? String(input)
+            : input?.url;
+        const requestUrl = new URL(inputUrl, window.location.origin);
+        const requestSignal = init?.signal || (
+            input instanceof Request ? input.signal : undefined
+        );
 
         if (handledApiPaths.has(requestUrl.pathname)) {
-            if (window.isPasswordProtected && window.isPasswordVerified) {
-                if (window.isPasswordProtected() && !window.isPasswordVerified()) {
-                    return;
-                }
+            const authReady = window.isAuthSessionReady?.() === true &&
+                window.isPasswordVerified?.() === true;
+            if (!authReady) {
+                window.showPasswordModal?.();
+                return new Response(JSON.stringify({
+                    code: 401,
+                    msg: 'Authentication required',
+                    list: []
+                }), {
+                    status: 401,
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
             }
             try {
-                const data = await handleApiRequest(requestUrl);
+                const data = await handleApiRequest(requestUrl, { signal: requestSignal });
                 return new Response(data, {
                     headers: {
-                        'Content-Type': 'application/json',
-                        'Access-Control-Allow-Origin': '*',
+                        'Content-Type': 'application/json'
                     },
                 });
             } catch (error) {
+                if (requestSignal?.aborted) {
+                    throw createApiAbortError(requestSignal.reason);
+                }
                 return new Response(JSON.stringify({
                     code: 500,
                     msg: '服务器内部错误',

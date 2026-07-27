@@ -1,0 +1,84 @@
+{
+  "generatedAt": "2026-07-27T07:33:26.765Z",
+  "bundles": {
+    "index": {
+      "js": {
+        "file": "compiled/index.min.js",
+        "hash": "c14ff3e73240",
+        "bytes": 243066
+      },
+      "css": {
+        "file": "compiled/index.min.css",
+        "hash": "da13c0b24716",
+        "bytes": 55418
+      }
+    },
+    "qualityRuntime": {
+      "js": {
+        "file": "compiled/quality-runtime.min.js",
+        "hash": "768100719090",
+        "bytes": 12328
+      }
+    },
+    "player": {
+      "js": {
+        "file": "compiled/player.min.js",
+        "hash": "6bcf1db04cf5",
+        "bytes": 134337
+      },
+      "css": {
+        "file": "compiled/player.min.css",
+        "hash": "30d11fe6d72e",
+        "bytes": 54227
+      }
+    },
+    "playerSwitch": {
+      "js": {
+        "file": "compiled/player-switch.min.js",
+        "hash": "12e32dfc8b81",
+        "bytes": 19232
+      }
+    },
+    "base": {
+      "css": {
+        "file": "compiled/base.min.css",
+        "hash": "5b1ede90ed4f",
+        "bytes": 47806
+      }
+    },
+    "watch": {
+      "js": {
+        "file": "compiled/watch.min.js",
+        "hash": "913dfa1624b5",
+        "bytes": 1450
+      },
+      "css": {
+        "file": "compiled/watch.min.css",
+        "hash": "6fbd6d2ac74c",
+        "bytes": 1490
+      }
+    }
+  },
+  "staticAssets": {
+    "logo": {
+      "file": "image/openstream-logo.svg",
+      "hash": "0f26b3dc53f8",
+      "bytes": 430
+    },
+    "nomedia": {
+      "file": "image/nomedia.png",
+      "hash": "551423ac211e",
+      "bytes": 16537
+    },
+    "hls": {
+      "file": "libs/hls.min.js",
+      "hash": "e65013dc3435",
+      "bytes": 524014
+    },
+    "artplayer": {
+      "file": "libs/artplayer.min.js",
+      "hash": "97ebad81485f",
+      "bytes": 158122
+    }
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "index": {
+    "maxStylesheets": 1,
+    "maxExternalScripts": 2,
+    "maxJsBytes": 245000,
+    "maxJsBrotliBytes": 60000,
+    "maxCssBytes": 70000,
+    "maxCssBrotliBytes": 15000
+  },
+  "player": {
+    "maxStylesheets": 1,
+    "maxExternalScripts": 4,
+    "maxJsBytes": 165000,
+    "maxJsBrotliBytes": 45000,
+    "maxCssBytes": 70000,
+    "maxCssBrotliBytes": 15000
+  },
+  "playerSwitch": {
+    "maxJsBytes": 22000,
+    "maxJsBrotliBytes": 6500
+  },
+  "qualityRuntime": {
+    "maxJsBytes": 15000,
+    "maxJsBrotliBytes": 5000
+  },
+  "watch": {
+    "maxStylesheets": 1,
+    "maxExternalScripts": 1,
+    "maxJsBytes": 5000,
+    "maxCssBytes": 5000
+  }
+}

@@ -3,6 +3,9 @@
   "type": "module",
   "version": "1.1.1",
   "private": true,
+  "engines": {
+    "node": "22.x"
+  },
   "description": "免费在线视频搜索与观看平台",
   "author": "bestZwei",
   "license": "Apache-2.0",
@@ -10,21 +13,47 @@
     "dev": "nodemon server.mjs",
     "start": "node server.mjs",
     "build:css": "tailwindcss -c tailwind.config.cjs -i css/tailwind.input.css -o css/tailwind.generated.css --minify",
+    "build:assets": "node scripts/build-static-assets.mjs",
+    "build": "npm run build:css && npm run build:assets",
     "smoke:streaming": "node scripts/smoke-streaming-pipeline.mjs",
+    "smoke:source-status": "node scripts/smoke-source-status.mjs",
+    "smoke:search-ui-security": "node scripts/smoke-search-ui-security.mjs",
+    "smoke:dynamic-ui-security": "node scripts/smoke-dynamic-ui-security.mjs",
     "smoke:player-fallback": "node scripts/smoke-player-fallback.mjs",
+    "smoke:player-tvbox": "node scripts/smoke-player-tvbox.mjs",
+    "smoke:player-loader": "node scripts/smoke-player-loader.mjs",
+    "smoke:player-lifecycle": "node scripts/smoke-player-listener-lifecycle.mjs",
+    "smoke:player-keyboard": "node scripts/smoke-player-keyboard-lifecycle.mjs",
+    "smoke:resource-switch": "node scripts/smoke-resource-switch-streaming.mjs",
+    "smoke:quality-selection": "node scripts/smoke-quality-selection.mjs",
+    "smoke:quality-runtime": "node scripts/smoke-quality-runtime-loader.mjs",
+    "smoke:playback-quality": "node scripts/smoke-playback-quality.mjs",
+    "smoke:auth": "node scripts/smoke-auth-session.mjs",
+    "smoke:server-static": "node scripts/smoke-server-static.mjs",
+    "smoke:proxy-handler": "node scripts/smoke-proxy-handler.mjs",
     "smoke:tvbox-proxy": "node scripts/smoke-tvbox-proxy.mjs",
     "smoke:fetch-interceptor": "node scripts/smoke-fetch-interceptor.mjs",
+    "smoke:config-import": "node scripts/smoke-config-import.mjs",
+    "smoke:workflows": "node scripts/smoke-workflow-security.mjs",
+    "smoke:static-performance": "node scripts/smoke-static-performance.mjs",
+    "smoke:watch": "node scripts/smoke-watch-redirect.mjs",
+    "smoke:bridge-performance": "node bridge/tvbox-bridge/scripts/smoke-performance.mjs",
+    "smoke:bridge-security": "node bridge/tvbox-bridge/scripts/smoke-server-security.mjs",
+    "smoke:bridge-fixtures": "node bridge/tvbox-bridge/scripts/smoke-libvio-fixture.mjs && node bridge/tvbox-bridge/scripts/smoke-jianpian-fixture.mjs && node bridge/tvbox-bridge/scripts/smoke-guazi-fixture.mjs",
     "smoke:production:tvbox": "node scripts/smoke-production-tvbox.mjs",
-    "smoke:all": "npm run smoke:streaming && npm run smoke:player-fallback && npm run smoke:tvbox-proxy && npm run smoke:fetch-interceptor"
+    "smoke:all": "npm run smoke:streaming && npm run smoke:source-status && npm run smoke:search-ui-security && npm run smoke:dynamic-ui-security && npm run smoke:player-fallback && npm run smoke:player-tvbox && npm run smoke:player-loader && npm run smoke:player-lifecycle && npm run smoke:player-keyboard && npm run smoke:resource-switch && npm run smoke:quality-selection && npm run smoke:quality-runtime && npm run smoke:playback-quality && npm run smoke:auth && npm run smoke:server-static && npm run smoke:tvbox-proxy && npm run smoke:proxy-handler && npm run smoke:fetch-interceptor && npm run smoke:config-import && npm run smoke:workflows && npm run smoke:watch && npm run smoke:bridge-performance && npm run smoke:bridge-security && npm run smoke:bridge-fixtures && npm run smoke:static-performance",
+    "quality": "npm run build && npm run smoke:all && npm audit --audit-level=high"
   },
   "dependencies": {
-    "axios": "^1.9.0",
+    "compression": "^1.8.1",
     "cors": "^2.8.5",
     "dotenv": "^16.5.0",
     "express": "^5.1.0",
-    "node-fetch": "^3.3.2"
+    "ipaddr.js": "^2.4.0",
+    "undici": "^6.28.0"
   },
   "devDependencies": {
+    "esbuild": "^0.25.12",
     "nodemon": "^3.1.10",
     "tailwindcss": "^3.4.17"
   }

@@ -3,15 +3,23 @@
   "version": "0.1.1",
   "type": "module",
   "private": true,
+  "engines": {
+    "node": "22.x"
+  },
   "description": "OpenStream TVBox source bridge for VPS runtime",
   "scripts": {
     "start": "node src/server.mjs",
     "smoke": "node scripts/smoke.mjs",
     "smoke:libvio": "node scripts/smoke-libvio-fixture.mjs",
     "smoke:jianpian": "node scripts/smoke-jianpian-fixture.mjs",
-    "smoke:guazi": "node scripts/smoke-guazi-fixture.mjs"
+    "smoke:guazi": "node scripts/smoke-guazi-fixture.mjs",
+    "smoke:performance": "node scripts/smoke-performance.mjs",
+    "smoke:server-security": "node scripts/smoke-server-security.mjs",
+    "smoke:ci": "npm run smoke:performance && npm run smoke:server-security && npm run smoke:libvio && npm run smoke:jianpian && npm run smoke:guazi"
   },
   "dependencies": {
-    "express": "^5.1.0"
+    "express": "^5.1.0",
+    "ipaddr.js": "^2.4.0",
+    "undici": "^6.28.0"
   }
 }

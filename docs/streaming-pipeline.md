@@ -34,7 +34,8 @@ player.html
 
 - 读取历史质量检测、延迟和本地健康快照。
 - 生成 S/A/B/C 分层搜索计划。
-- 记录 `ready / timeout / no_result / error / dead / login_required / unsupported`。
+- 记录 `ready / timeout / no_result / error / unstable / dead / login_required / unsupported / unplayable`。
+- 连续快速错误与连续超时都会进入冷却；确认不可播放只能由真实媒体验证解除。
 - 排除明显登录网盘类来源，不进入实时搜索计划。
 
 `source-adapter.js`
@@ -52,7 +53,7 @@ player.html
 
 `streaming-search.js`
 
-- 首轮按源分层并发，只抓第一页。
+- 首轮按健康优先级进入自适应并发池，只抓第一页；持续阻塞时有限增加对冲请求。
 - 对 S/A 源做有限后台补充。
 - 按总时限停止，不为慢源拖住用户。
 - 通过回调把部分结果持续交给页面渲染。
@@ -119,7 +120,7 @@ node --check js/source-adapter.js
 node --check js/player.js
 npm run build:css
 
-PORT=8092 PASSWORD=opentest TVBOX_BRIDGE_URL=https://bridge.example.test npm start
+PORT=8092 PASSWORD=openstream-local-test-password TVBOX_BRIDGE_URL=https://bridge.example.test npm start
 curl -fsS 'http://localhost:8092/api/tvbox/health'
 ```
 
