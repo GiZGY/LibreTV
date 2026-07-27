@@ -1,22 +1,3 @@
-// 添加动画样式
-(function() {
-    const style = document.createElement('style');
-    style.textContent = `
-        @keyframes pulse {
-            0%, 100% {
-                opacity: 1;
-            }
-            50% {
-                opacity: 0.6;
-            }
-        }
-        .animate-pulse {
-            animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-        }
-    `;
-    document.head.appendChild(style);
-})();
-
 // 获取版本信息
 async function fetchVersion(url, errorMessage, options = {}) {
     const response = await fetch(url, options);
@@ -28,6 +9,21 @@ async function fetchVersion(url, errorMessage, options = {}) {
 
 const VERSION_CHECK_CACHE_KEY = 'openstreamVersionCheckCache';
 const VERSION_CHECK_INTERVAL = 24 * 60 * 60 * 1000;
+const VERSION_CHECK_MIN_DELAY = 15 * 1000;
+const VERSION_FETCH_TIMEOUT = 2500;
+
+async function fetchVersionWithTimeout(url, errorMessage, options = {}) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), VERSION_FETCH_TIMEOUT);
+    try {
+        return await fetchVersion(url, errorMessage, {
+            ...options,
+            signal: controller.signal
+        });
+    } finally {
+        clearTimeout(timeoutId);
+    }
+}
 
 function readCachedVersionCheck() {
     try {
@@ -53,8 +49,8 @@ function writeCachedVersionCheck(result) {
 async function checkForUpdates() {
     try {
         // 获取当前版本
-        const currentVersion = await fetchVersion('/VERSION.txt', '获取当前版本失败', {
-            cache: 'no-store'
+        const currentVersion = await fetchVersionWithTimeout('/VERSION.txt', '获取当前版本失败', {
+            cache: 'no-cache'
         });
         
         // 获取最新版本
@@ -64,23 +60,16 @@ async function checkForUpdates() {
             PROXY: 'https://ghfast.top/raw.githubusercontent.com/GiZGY/LibreTV/main/VERSION.txt',
             DIRECT: 'https://raw.githubusercontent.com/GiZGY/LibreTV/main/VERSION.txt'
         };
-        const FETCH_TIMEOUT = 1500;
-        
         try {
-            // 尝试使用代理URL获取最新版本
-            const proxyPromise = fetchVersion(VERSION_URL.PROXY, '代理请求失败');
-            const timeoutPromise = new Promise((_, reject) =>
-                setTimeout(() => reject(new Error('代理请求超时')), FETCH_TIMEOUT)
-            );
-
-            latestVersion = await Promise.race([proxyPromise, timeoutPromise]);
-            console.log('通过代理服务器获取版本成功');
+            // 直接地址优先，避免把第三方 GitHub 加速服务放进页面关键依赖链。
+            latestVersion = await fetchVersionWithTimeout(VERSION_URL.DIRECT, '获取最新版本失败', {
+                cache: 'no-cache'
+            });
         } catch (error) {
-            console.log('代理请求失败，尝试直接请求:', error.message);
             try {
-                // 代理失败后尝试直接获取
-                latestVersion = await fetchVersion(VERSION_URL.DIRECT, '获取最新版本失败');
-                console.log('直接请求获取版本成功');
+                latestVersion = await fetchVersionWithTimeout(VERSION_URL.PROXY, '代理请求失败', {
+                    cache: 'no-cache'
+                });
             } catch (directError) {
                 // 对“最新版本获取失败”不再视为致命错误：
                 // 例如还没把 VERSION.txt 合并到 main，raw 可能是 404。
@@ -88,9 +77,6 @@ async function checkForUpdates() {
                 latestVersion = currentVersion;
             }
         }
-        
-        console.log('当前版本:', currentVersion);
-        console.log('最新版本:', latestVersion);
         
         // 清理版本字符串（移除可能的空格或换行符）
         const cleanCurrentVersion = currentVersion.trim();
@@ -227,8 +213,21 @@ function addVersionInfoToFooter() {
     });
 
     if (!cachedResult) {
-        const schedule = window.requestIdleCallback || ((callback) => setTimeout(callback, 3000));
-        schedule(runCheck, { timeout: 10000 });
+        setTimeout(() => {
+            const schedule = window.requestIdleCallback || ((callback) => setTimeout(callback, 1000));
+            schedule(() => {
+                if (document.hidden) {
+                    const runWhenVisible = () => {
+                        if (document.hidden) return;
+                        document.removeEventListener('visibilitychange', runWhenVisible);
+                        runCheck();
+                    };
+                    document.addEventListener('visibilitychange', runWhenVisible);
+                    return;
+                }
+                runCheck();
+            }, { timeout: 10000 });
+        }, VERSION_CHECK_MIN_DELAY);
     }
 }
 

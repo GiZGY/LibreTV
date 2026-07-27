@@ -33,7 +33,8 @@
 
         window.OpenStreamSourceHealth.recordSourceEvent(sourceKey, {
             status: getStatus('READY'),
-            ms
+            ms,
+            verifiedPlayable: true
         });
     }
 

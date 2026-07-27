@@ -4,6 +4,17 @@
     const STORAGE_KEY = 'openstreamSourceHealth';
     const SNAPSHOT_VERSION = 1;
     const MAX_HISTORY_AGE = 14 * 24 * 60 * 60 * 1000;
+    const STATUS_RETRY_DELAY = {
+        unsupported: 30 * 60 * 1000,
+        unplayable: 24 * 60 * 60 * 1000,
+        dead: 6 * 60 * 60 * 1000
+    };
+    const TERMINAL_STATUSES = new Set([
+        'login_required',
+        'unsupported',
+        'unplayable',
+        'dead'
+    ]);
 
     const DEFAULT_HEALTH = {
         version: SNAPSHOT_VERSION,
@@ -19,6 +30,7 @@
         DEAD: 'dead',
         LOGIN_REQUIRED: 'login_required',
         UNSUPPORTED: 'unsupported',
+        UNPLAYABLE: 'unplayable',
         NO_RESULT: 'no_result',
         ERROR: 'error'
     };
@@ -38,6 +50,7 @@
     let cachedQualityMap = null;
     let cachedLatencyMap = null;
     let cachedCustomApis = null;
+    let saveTimer = 0;
 
     function loadHealthState() {
         try {
@@ -54,11 +67,19 @@
         }
     }
 
-    function saveHealthState() {
+    function persistHealthState() {
         try {
             state.updatedAt = Date.now();
             localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
         } catch (_) {}
+    }
+
+    function saveHealthState() {
+        if (saveTimer) return;
+        saveTimer = setTimeout(() => {
+            saveTimer = 0;
+            persistHealthState();
+        }, 200);
     }
 
     function pruneOldEntries(snapshot) {
@@ -108,20 +129,6 @@
         return LOGIN_SOURCE_PATTERNS.some((pattern) => pattern.test(`${sourceKey} ${name}`));
     }
 
-    function isBridgeSource(sourceKey) {
-        return /^(tvbox|bridge):/.test(String(sourceKey || '')) || !!window.API_SITES?.[sourceKey]?.bridge;
-    }
-
-    function normalizeStoredStatus(sourceKey, status) {
-        if (
-            isBridgeSource(sourceKey) &&
-            [SOURCE_STATUS.UNSUPPORTED, SOURCE_STATUS.DEAD, SOURCE_STATUS.ERROR].includes(status)
-        ) {
-            return SOURCE_STATUS.READY;
-        }
-        return status || SOURCE_STATUS.READY;
-    }
-
     function getInitialMetrics(sourceKey) {
         const quality = getQualityMap()?.[sourceKey];
         const latency = getLatencyMap()?.[sourceKey];
@@ -129,11 +136,13 @@
 
         return {
             sourceKey,
-            status: normalizeStoredStatus(sourceKey, base.status),
+            status: base.status || SOURCE_STATUS.READY,
             success: Number(base.success || 0),
             failure: Number(base.failure || 0),
             timeout: Number(base.timeout || 0),
             noResult: Number(base.noResult || 0),
+            consecutiveFailure: Number(base.consecutiveFailure || 0),
+            consecutiveTimeout: Number(base.consecutiveTimeout || 0),
             avgMs: typeof base.avgMs === 'number' ? base.avgMs : null,
             lastMs: typeof base.lastMs === 'number' ? base.lastMs : null,
             qualityScore: typeof quality?.score === 'number' ? quality.score : null,
@@ -144,7 +153,12 @@
 
     function computeScore(metrics) {
         if (looksLikeLoginSource(metrics.sourceKey)) return -1000;
-        if ([SOURCE_STATUS.LOGIN_REQUIRED, SOURCE_STATUS.UNSUPPORTED, SOURCE_STATUS.DEAD].includes(metrics.status)) {
+        if ([
+            SOURCE_STATUS.LOGIN_REQUIRED,
+            SOURCE_STATUS.UNSUPPORTED,
+            SOURCE_STATUS.UNPLAYABLE,
+            SOURCE_STATUS.DEAD
+        ].includes(metrics.status)) {
             return -500;
         }
 
@@ -169,22 +183,39 @@
         return 'C';
     }
 
+    function isSuppressedStatusRetryDue(metrics) {
+        const delay = STATUS_RETRY_DELAY[metrics.status];
+        return !!delay && Date.now() - Number(metrics.updatedAt || 0) >= delay;
+    }
+
     function getSearchPlan(sourceKeys) {
         const sources = (Array.isArray(sourceKeys) ? sourceKeys : [])
             .filter(Boolean)
             .filter((sourceKey) => !looksLikeLoginSource(sourceKey))
             .map((sourceKey) => {
                 const metrics = getInitialMetrics(sourceKey);
+                const retryDue = isSuppressedStatusRetryDue(metrics);
                 return {
                     sourceKey,
                     name: getSourceDisplayName(sourceKey),
                     status: metrics.status,
                     score: computeScore(metrics),
-                    tier: getTier(metrics),
+                    tier: retryDue ? 'C' : getTier(metrics),
+                    retryDue,
                     metrics
                 };
             })
-            .filter((item) => ![SOURCE_STATUS.LOGIN_REQUIRED, SOURCE_STATUS.UNSUPPORTED, SOURCE_STATUS.DEAD].includes(item.status))
+            .filter((item) => (
+                item.status !== SOURCE_STATUS.LOGIN_REQUIRED &&
+                (
+                    ![
+                        SOURCE_STATUS.UNSUPPORTED,
+                        SOURCE_STATUS.UNPLAYABLE,
+                        SOURCE_STATUS.DEAD
+                    ].includes(item.status) ||
+                    item.retryDue
+                )
+            ))
             .sort((a, b) => b.score - a.score);
 
         const tierRank = { S: 0, A: 1, B: 2, C: 3 };
@@ -209,6 +240,8 @@
             failure: current.failure,
             timeout: current.timeout,
             noResult: current.noResult,
+            consecutiveFailure: current.consecutiveFailure,
+            consecutiveTimeout: current.consecutiveTimeout,
             avgMs: current.avgMs,
             lastMs: typeof event.ms === 'number' ? event.ms : current.lastMs,
             updatedAt: Date.now()
@@ -220,21 +253,73 @@
 
         if (event.status === SOURCE_STATUS.READY || event.status === SOURCE_STATUS.SLOW) {
             next.success += 1;
+            next.consecutiveFailure = 0;
+            next.consecutiveTimeout = 0;
         } else if (event.status === SOURCE_STATUS.TIMEOUT) {
             next.timeout += 1;
             next.failure += 1;
+            next.consecutiveFailure += 1;
+            next.consecutiveTimeout += 1;
         } else if (event.status === SOURCE_STATUS.NO_RESULT) {
             next.noResult += 1;
+            next.consecutiveFailure = 0;
+            next.consecutiveTimeout = 0;
         } else if (event.status) {
             next.failure += 1;
+            next.consecutiveFailure += 1;
+            next.consecutiveTimeout = 0;
         }
 
-        if (next.timeout >= 5 && next.success === 0) next.status = SOURCE_STATUS.DEAD;
-        if (next.failure >= 8 && next.success <= 1) next.status = SOURCE_STATUS.UNSTABLE;
+        // A normal search response does not prove that a previously broken
+        // playback chain works. Only a media probe or real playback can clear it.
+        if (
+            current.status === SOURCE_STATUS.UNPLAYABLE &&
+            !event.verifiedPlayable
+        ) {
+            next.status = SOURCE_STATUS.UNPLAYABLE;
+        } else if (
+            current.status === SOURCE_STATUS.UNSUPPORTED &&
+            ![SOURCE_STATUS.READY, SOURCE_STATUS.NO_RESULT].includes(event.status)
+        ) {
+            next.status = SOURCE_STATUS.UNSUPPORTED;
+        } else if (
+            current.status === SOURCE_STATUS.DEAD &&
+            ![SOURCE_STATUS.READY, SOURCE_STATUS.NO_RESULT].includes(event.status)
+        ) {
+            next.status = SOURCE_STATUS.DEAD;
+        } else if (
+            !TERMINAL_STATUSES.has(next.status) &&
+            next.consecutiveTimeout >= 5
+        ) {
+            next.status = SOURCE_STATUS.DEAD;
+        } else if (
+            !TERMINAL_STATUSES.has(next.status) &&
+            next.consecutiveFailure >= 8
+        ) {
+            next.status = SOURCE_STATUS.DEAD;
+        } else if (
+            !TERMINAL_STATUSES.has(next.status) &&
+            next.consecutiveFailure >= 3
+        ) {
+            next.status = SOURCE_STATUS.UNSTABLE;
+        }
 
         state.sources[sourceKey] = next;
         saveHealthState();
     }
+
+    function refreshStoredMetrics() {
+        cachedQualityMap = null;
+        cachedLatencyMap = null;
+        cachedCustomApis = null;
+    }
+
+    window.addEventListener?.('pagehide', () => {
+        if (!saveTimer) return;
+        clearTimeout(saveTimer);
+        saveTimer = 0;
+        persistHealthState();
+    });
 
     function getSourceStatus(sourceKey) {
         if (looksLikeLoginSource(sourceKey)) return SOURCE_STATUS.LOGIN_REQUIRED;
@@ -246,6 +331,7 @@
         getSearchPlan,
         getSourceStatus,
         recordSourceEvent,
+        refreshStoredMetrics,
         looksLikeLoginSource,
         _computeScore: computeScore,
         _storageKey: STORAGE_KEY

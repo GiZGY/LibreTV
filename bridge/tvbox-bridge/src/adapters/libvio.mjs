@@ -1,4 +1,5 @@
 import { STATUS, statusResponse } from '../status.mjs';
+import { fetchWithTimeout, readResponseText } from '../http.mjs';
 
 const BASE_URL = 'https://www.libvio.pw';
 const REQUEST_HEADERS = {
@@ -33,15 +34,21 @@ function stripTags(value = '') {
   return decodeHtml(String(value).replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' '));
 }
 
-async function fetchText(pathOrUrl, fetchImpl = globalThis.fetch) {
+async function fetchText(pathOrUrl, fetchImpl = globalThis.fetch, signal) {
   const url = pathOrUrl.startsWith('http') ? pathOrUrl : `${BASE_URL}${pathOrUrl}`;
-  const response = await fetchImpl(url, { headers: REQUEST_HEADERS, redirect: 'follow' });
-  if (!response.ok) {
-    const error = new Error(`Libvio HTTP ${response.status}`);
-    error.status = response.status;
-    throw error;
-  }
-  return response.text();
+  return fetchWithTimeout(fetchImpl, url, {
+    headers: REQUEST_HEADERS
+  }, {
+    signal,
+    consume: async (response) => {
+      if (!response.ok) {
+        const error = new Error(`Libvio HTTP ${response.status}`);
+        error.status = response.status;
+        throw error;
+      }
+      return readResponseText(response);
+    }
+  });
 }
 
 function parseSearchResults(html) {
@@ -127,10 +134,10 @@ function isPlayableUrl(url) {
   return /\.(m3u8|mp4)(?:[?#].*)?$/i.test(value) || /m3u8|mp4|video/i.test(value);
 }
 
-export async function search(keyword, { fetchImpl } = {}) {
+export async function search(keyword, { fetchImpl, signal } = {}) {
   const wd = String(keyword || '').trim();
   if (!wd) return statusResponse(STATUS.NO_RESULT, 'Missing keyword', { list: [] });
-  const html = await fetchText(`/search/-------------.html?wd=${encodeURIComponent(wd)}`, fetchImpl);
+  const html = await fetchText(`/search/-------------.html?wd=${encodeURIComponent(wd)}`, fetchImpl, signal);
   const list = parseSearchResults(html);
   return {
     status: list.length > 0 ? STATUS.READY : STATUS.NO_RESULT,
@@ -139,10 +146,10 @@ export async function search(keyword, { fetchImpl } = {}) {
   };
 }
 
-export async function detail(id, { fetchImpl } = {}) {
+export async function detail(id, { fetchImpl, signal } = {}) {
   const videoId = String(id || '').trim();
   if (!videoId) return statusResponse(STATUS.UNSUPPORTED, 'Missing video id', { episodes: [] });
-  const html = await fetchText(`/detail/${encodeURIComponent(videoId)}.html`, fetchImpl);
+  const html = await fetchText(`/detail/${encodeURIComponent(videoId)}.html`, fetchImpl, signal);
   const parsed = parseDetail(html, videoId);
   return {
     status: parsed.episodes.length > 0 ? STATUS.READY : STATUS.NO_RESULT,
@@ -152,11 +159,11 @@ export async function detail(id, { fetchImpl } = {}) {
   };
 }
 
-export async function play(id, flag = 'libvio', episode = 0, { fetchImpl } = {}) {
+export async function play(id, flag = 'libvio', episode = 0, { fetchImpl, signal } = {}) {
   const videoId = String(id || '').trim();
   const episodeNo = Math.max(1, Number.parseInt(episode, 10) + 1 || 1);
   if (!videoId) return statusResponse(STATUS.UNSUPPORTED, 'Missing video id', { url: '' });
-  const html = await fetchText(`/w/${encodeURIComponent(videoId)}-1-${episodeNo}.html`, fetchImpl);
+  const html = await fetchText(`/w/${encodeURIComponent(videoId)}-1-${episodeNo}.html`, fetchImpl, signal);
   const player = parsePlayer(html);
   const url = player?.url || '';
   if (!url || url === 'n') return statusResponse(STATUS.NO_RESULT, 'No playable URL returned', { url: '', player });

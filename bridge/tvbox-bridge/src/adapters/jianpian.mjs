@@ -1,27 +1,49 @@
+import { isIP } from 'node:net';
 import { STATUS, statusResponse } from '../status.mjs';
+import { fetchWithTimeout, readResponseJson } from '../http.mjs';
 
 const SOURCE_KEY = '荐片';
 const SOURCE_CODE = `tvbox:${SOURCE_KEY}`;
 const API_BASE_URL = 'https://api.ztcgi.com';
 const IMAGE_BASE_URL = 'https://img.jianpian.com';
-const UNSTABLE_IMAGE_HOSTS = new Set(['img.jianpian.com', 'img1.jianpian.com', 'img2.jianpian.com', 'img3.jianpian.com']);
 const REQUEST_HEADERS = {
   'User-Agent': 'Mozilla/5.0 (Linux; Android 9; V2196A Build/PQ3A.190705.08211809; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/91.0.4472.114 Mobile Safari/537.36;webank/h5face;webank/1.0;netType:NETWORK_WIFI;appVersion:416;packageName:com.jp3.xg3',
   'Accept': 'application/json,text/plain,*/*',
   'Referer': API_BASE_URL
 };
 
-function normalizeImageUrl(value = '') {
-  const url = String(value || '').trim();
-  if (!url) return '';
-  const absoluteUrl = /^https?:\/\//i.test(url)
-    ? url
-    : `${IMAGE_BASE_URL}${url.startsWith('/') ? '' : '/'}${url}`;
+function isPrivateImageHostname(hostname) {
+  const host = String(hostname || '').toLowerCase().replace(/^\[|\]$/g, '');
+  if (host === 'localhost' || host.endsWith('.local')) return true;
+  const ipVersion = isIP(host);
+  if (ipVersion === 4) {
+    return host.startsWith('10.') ||
+      host.startsWith('127.') ||
+      host.startsWith('192.168.') ||
+      /^172\.(1[6-9]|2\d|3[0-1])\./.test(host) ||
+      /^169\.254\./.test(host);
+  }
+  // Image CDNs should use hostnames; rejecting IPv6 literals also covers
+  // IPv4-mapped and alternate loopback encodings.
+  if (ipVersion === 6) return true;
+  return false;
+}
 
+function normalizeImageUrl(value = '') {
+  const rawUrl = String(value || '').trim();
+  if (!rawUrl) return '';
+  if (/^[a-z][a-z0-9+.-]*:/i.test(rawUrl) && !/^https?:\/\//i.test(rawUrl)) return '';
   try {
-    const parsed = new URL(absoluteUrl);
-    if (UNSTABLE_IMAGE_HOSTS.has(parsed.hostname.toLowerCase())) return '';
-    return absoluteUrl;
+    const parsed = new URL(
+      /^https?:\/\//i.test(rawUrl)
+        ? rawUrl
+        : `${IMAGE_BASE_URL}${rawUrl.startsWith('/') ? '' : '/'}${rawUrl}`
+    );
+    if (!['http:', 'https:'].includes(parsed.protocol)) return '';
+    if (parsed.username || parsed.password || isPrivateImageHostname(parsed.hostname)) return '';
+    parsed.protocol = 'https:';
+    parsed.hash = '';
+    return parsed.toString();
   } catch (_) {
     return '';
   }
@@ -64,15 +86,21 @@ function isPlayableUrl(url) {
   return /^https?:\/\//i.test(value) && /\.(m3u8|mp4)(?:[?#].*)?$/i.test(value);
 }
 
-async function fetchJson(pathOrUrl, fetchImpl = globalThis.fetch) {
+async function fetchJson(pathOrUrl, fetchImpl = globalThis.fetch, signal) {
   const url = pathOrUrl.startsWith('http') ? pathOrUrl : `${API_BASE_URL}${pathOrUrl}`;
-  const response = await fetchImpl(url, { headers: REQUEST_HEADERS, redirect: 'follow' });
-  if (!response.ok) {
-    const error = new Error(`Jianpian HTTP ${response.status}`);
-    error.status = response.status;
-    throw error;
-  }
-  return response.json();
+  return fetchWithTimeout(fetchImpl, url, {
+    headers: REQUEST_HEADERS
+  }, {
+    signal,
+    consume: async (response) => {
+      if (!response.ok) {
+        const error = new Error(`Jianpian HTTP ${response.status}`);
+        error.status = response.status;
+        throw error;
+      }
+      return readResponseJson(response);
+    }
+  });
 }
 
 function normalizeSearchItem(item) {
@@ -127,18 +155,18 @@ function normalizeVideoInfo(data) {
   };
 }
 
-async function fetchDetailData(id, fetchImpl) {
+async function fetchDetailData(id, fetchImpl, signal) {
   const videoId = String(id || '').trim();
   if (!videoId) return null;
-  const data = await fetchJson(`/api/video/detailv2?id=${encodeURIComponent(videoId)}`, fetchImpl);
+  const data = await fetchJson(`/api/video/detailv2?id=${encodeURIComponent(videoId)}`, fetchImpl, signal);
   return data?.data || null;
 }
 
-export async function search(keyword, { fetchImpl } = {}) {
+export async function search(keyword, { fetchImpl, signal } = {}) {
   const wd = String(keyword || '').trim();
   if (!wd) return statusResponse(STATUS.NO_RESULT, 'Missing keyword', { sourceKey: SOURCE_KEY, list: [] });
 
-  const data = await fetchJson(`/api/v2/search/videoV2?key=${encodeURIComponent(wd)}&category_id=88&page=1&pageSize=20`, fetchImpl);
+  const data = await fetchJson(`/api/v2/search/videoV2?key=${encodeURIComponent(wd)}&category_id=88&page=1&pageSize=20`, fetchImpl, signal);
   const list = (Array.isArray(data?.data) ? data.data : [])
     .map(normalizeSearchItem)
     .filter((item) => item.vod_id && item.vod_name);
@@ -150,8 +178,8 @@ export async function search(keyword, { fetchImpl } = {}) {
   };
 }
 
-export async function detail(id, { fetchImpl } = {}) {
-  const data = await fetchDetailData(id, fetchImpl);
+export async function detail(id, { fetchImpl, signal } = {}) {
+  const data = await fetchDetailData(id, fetchImpl, signal);
   if (!data) return statusResponse(STATUS.NO_RESULT, 'No detail returned', { sourceKey: SOURCE_KEY, episodes: [] });
 
   const episodes = flattenPlayableEpisodes(data).map(({ rawUrl, ...episode }) => episode);
@@ -163,8 +191,8 @@ export async function detail(id, { fetchImpl } = {}) {
   };
 }
 
-export async function play(id, flag = '', episode = 0, { fetchImpl } = {}) {
-  const data = await fetchDetailData(id, fetchImpl);
+export async function play(id, flag = '', episode = 0, { fetchImpl, signal } = {}) {
+  const data = await fetchDetailData(id, fetchImpl, signal);
   if (!data) return statusResponse(STATUS.NO_RESULT, 'No detail returned', { sourceKey: SOURCE_KEY, url: '' });
 
   const episodes = flattenPlayableEpisodes(data);
@@ -198,5 +226,6 @@ export const internals = {
   flattenPlayableEpisodes,
   normalizeVideoInfo,
   normalizePeople,
+  isPrivateImageHostname,
   isPlayableUrl
 };

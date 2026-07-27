@@ -1,248 +1,227 @@
-// 密码保护功能
+const authSessionState = {
+    loaded: false,
+    configured: null,
+    authenticated: false,
+    error: ''
+};
+let authSessionRequest = null;
 
-/**
- * 检查是否设置了密码保护
- * 通过读取页面上嵌入的环境变量来检查
- */
+function applyAuthStatus(status) {
+    authSessionState.loaded = true;
+    authSessionState.configured = status?.configured === true;
+    authSessionState.authenticated = status?.authenticated === true;
+    authSessionState.error = '';
+    window.ProxyAuth?.setSession?.(status);
+
+    // Remove credentials left by the legacy client-side hash scheme.
+    localStorage.removeItem('proxyAuthHash');
+    localStorage.removeItem('passwordVerified');
+}
+
+async function refreshAuthSession() {
+    if (authSessionRequest) return authSessionRequest;
+    const preloadedRequest = window.__openStreamAuthStatusPromise;
+    window.__openStreamAuthStatusPromise = null;
+    authSessionRequest = (preloadedRequest || fetch('/api/auth/status', {
+        method: 'GET',
+        credentials: 'same-origin',
+        cache: 'no-store',
+        headers: { Accept: 'application/json' }
+    }))
+        .then(async (response) => {
+            if (!response.ok) throw new Error(`认证服务异常 (${response.status})`);
+            const status = await response.json();
+            applyAuthStatus(status);
+            return status;
+        })
+        .catch((error) => {
+            authSessionState.loaded = true;
+            authSessionState.configured = null;
+            authSessionState.authenticated = false;
+            authSessionState.error = error?.message || '认证服务暂不可用';
+            throw error;
+        })
+        .finally(() => {
+            authSessionRequest = null;
+        });
+    return authSessionRequest;
+}
+
 function isPasswordProtected() {
-    // 只检查普通密码
-    const pwd = window.__ENV__ && window.__ENV__.PASSWORD;
-
-    // 检查普通密码是否有效
-    return typeof pwd === 'string' && pwd.length === 64 && !/^0+$/.test(pwd);
+    return authSessionState.loaded && authSessionState.configured === true;
 }
 
-/**
- * 检查是否强制要求设置密码
- * 如果没有设置有效的 PASSWORD，则认为需要强制设置密码
- * 为了安全考虑，所有部署都必须设置密码
- */
 function isPasswordRequired() {
-    return !isPasswordProtected();
+    return authSessionState.loaded && authSessionState.configured === false;
 }
 
-/**
- * 强制密码保护检查 - 防止绕过
- * 在关键操作前都应该调用此函数
- */
+function isPasswordVerified() {
+    return authSessionState.loaded && authSessionState.authenticated === true;
+}
+
 function ensurePasswordProtection() {
-    if (isPasswordRequired()) {
-        showPasswordModal();
-        throw new Error('Password protection is required');
-    }
-    if (isPasswordProtected() && !isPasswordVerified()) {
+    if (!authSessionState.loaded || authSessionState.error || isPasswordRequired() || !isPasswordVerified()) {
         showPasswordModal();
         throw new Error('Password verification required');
     }
     return true;
 }
 
-window.isPasswordProtected = isPasswordProtected;
-window.isPasswordRequired = isPasswordRequired;
-
-/**
- * 验证用户输入的密码是否正确（异步，使用SHA-256哈希）
- */
 async function verifyPassword(password) {
     try {
-        const correctHash = window.__ENV__?.PASSWORD;
-        if (!correctHash) return false;
-
-        const inputHash = await sha256(password);
-        const isValid = inputHash === correctHash;
-
-        if (isValid) {
-            // 清除旧的代理鉴权缓存，确保使用最新的哈希
-            localStorage.removeItem('proxyAuthHash');
-
-            localStorage.setItem(PASSWORD_CONFIG.localStorageKey, JSON.stringify({
-                verified: true,
-                timestamp: Date.now(),
-                passwordHash: correctHash
-            }));
-        }
-        return isValid;
+        const response = await fetch('/api/auth/login', {
+            method: 'POST',
+            credentials: 'same-origin',
+            cache: 'no-store',
+            headers: {
+                'Content-Type': 'application/json',
+                Accept: 'application/json'
+            },
+            body: JSON.stringify({ password })
+        });
+        const status = await response.json().catch(() => ({}));
+        if (!response.ok || !status.authenticated) return false;
+        applyAuthStatus(status);
+        return true;
     } catch (error) {
         console.error('验证密码时出错:', error);
+        authSessionState.error = '认证服务暂不可用，请稍后重试';
         return false;
     }
 }
 
-// 验证状态检查
-function isPasswordVerified() {
-    try {
-        if (!isPasswordProtected()) return true;
-
-        const stored = localStorage.getItem(PASSWORD_CONFIG.localStorageKey);
-        if (!stored) return false;
-
-        const { timestamp, passwordHash } = JSON.parse(stored);
-        const currentHash = window.__ENV__?.PASSWORD;
-
-        return timestamp && passwordHash === currentHash &&
-            Date.now() - timestamp < PASSWORD_CONFIG.verificationTTL;
-    } catch (error) {
-        console.error('检查密码验证状态时出错:', error);
-        return false;
-    }
-}
-
-// 更新全局导出
 window.isPasswordProtected = isPasswordProtected;
 window.isPasswordRequired = isPasswordRequired;
 window.isPasswordVerified = isPasswordVerified;
+window.isAuthSessionReady = () => authSessionState.loaded;
 window.verifyPassword = verifyPassword;
 window.ensurePasswordProtection = ensurePasswordProtection;
+window.refreshAuthSession = refreshAuthSession;
 
-// SHA-256实现，可用Web Crypto API
-async function sha256(message) {
-    if (window.crypto && crypto.subtle && crypto.subtle.digest) {
-        const msgBuffer = new TextEncoder().encode(message);
-        const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
-        const hashArray = Array.from(new Uint8Array(hashBuffer));
-        return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-    }
-    // HTTP 下调用原始 js‑sha256
-    if (typeof window._jsSha256 === 'function') {
-        return window._jsSha256(message);
-    }
-    throw new Error('No SHA-256 implementation available.');
-}
-
-/**
- * 显示密码验证弹窗
- */
 function showPasswordModal() {
     const passwordModal = document.getElementById('passwordModal');
-    if (passwordModal) {
-        // 防止出现豆瓣区域滚动条
-        document.getElementById('doubanArea').classList.add('hidden');
-        document.getElementById('passwordCancelBtn').classList.add('hidden');
+    if (!passwordModal) return;
 
-        // 检查是否需要强制设置密码
-        if (isPasswordRequired()) {
-            // 修改弹窗内容提示用户需要先设置密码
-            const title = passwordModal.querySelector('h2');
-            const description = passwordModal.querySelector('p');
-            if (title) title.textContent = '需要设置密码';
-            if (description) description.textContent = '请先在部署平台设置 PASSWORD 环境变量来保护您的实例';
+    document.getElementById('passwordCancelBtn')?.classList.add('hidden');
 
-            // 隐藏密码输入框和提交按钮，只显示提示信息
-            const form = passwordModal.querySelector('form');
-            const errorMsg = document.getElementById('passwordError');
-            if (form) form.style.display = 'none';
-            if (errorMsg) {
-                errorMsg.textContent = '为确保安全，必须设置 PASSWORD 环境变量才能使用本服务，请联系管理员进行配置';
-                errorMsg.classList.remove('hidden');
-                errorMsg.className = 'text-red-500 mt-2 font-medium'; // 改为更醒目的红色
-            }
-        } else {
-            // 正常的密码验证模式
-            const title = passwordModal.querySelector('h2');
-            const description = passwordModal.querySelector('p');
-            if (title) title.textContent = '访问验证';
-            if (description) description.textContent = '请输入密码继续访问';
+    const title = passwordModal.querySelector('h2');
+    const description = passwordModal.querySelector('p');
+    const form = passwordModal.querySelector('form');
+    const errorMsg = document.getElementById('passwordError');
 
-            const form = passwordModal.querySelector('form');
-            if (form) form.style.display = 'block';
+    if (!authSessionState.loaded) {
+        if (title) title.textContent = '正在验证访问状态';
+        if (description) description.textContent = '请稍候...';
+        if (form) form.style.display = 'none';
+        errorMsg?.classList.add('hidden');
+    } else if (authSessionState.error || authSessionState.configured === null) {
+        if (title) title.textContent = '认证服务暂不可用';
+        if (description) description.textContent = '暂时无法确认访问状态，请稍后刷新重试';
+        if (form) form.style.display = 'none';
+        if (errorMsg) {
+            errorMsg.textContent = authSessionState.error || '认证服务暂不可用';
+            errorMsg.classList.remove('hidden');
         }
-
-        passwordModal.style.display = 'flex';
-
-        // 只有在非强制设置密码模式下才聚焦输入框
-        if (!isPasswordRequired()) {
-            // 确保输入框获取焦点
-            setTimeout(() => {
-                const passwordInput = document.getElementById('passwordInput');
-                if (passwordInput) {
-                    passwordInput.focus();
-                }
-            }, 100);
+    } else if (isPasswordRequired()) {
+        if (title) title.textContent = '需要设置密码';
+        if (description) description.textContent = '请先在部署平台设置 PASSWORD 环境变量来保护您的实例';
+        if (form) form.style.display = 'none';
+        if (errorMsg) {
+            errorMsg.textContent = '为确保安全，必须设置 PASSWORD 环境变量才能使用本服务，请联系管理员进行配置';
+            errorMsg.className = 'text-red-500 mt-2 font-medium';
         }
+    } else {
+        if (title) title.textContent = '访问验证';
+        if (description) description.textContent = '请输入密码继续访问';
+        if (form) form.style.display = 'block';
+        errorMsg?.classList.add('hidden');
+    }
+
+    passwordModal.style.display = 'flex';
+    if (isPasswordProtected() && !isPasswordVerified()) {
+        setTimeout(() => document.getElementById('passwordInput')?.focus(), 100);
     }
 }
 
-/**
- * 隐藏密码验证弹窗
- */
 function hidePasswordModal() {
     const passwordModal = document.getElementById('passwordModal');
-    if (passwordModal) {
-        // 隐藏密码错误提示
-        hidePasswordError();
+    if (!passwordModal) return;
 
-        // 清空密码输入框
-        const passwordInput = document.getElementById('passwordInput');
-        if (passwordInput) passwordInput.value = '';
+    hidePasswordError();
+    const passwordInput = document.getElementById('passwordInput');
+    if (passwordInput) passwordInput.value = '';
+    passwordModal.style.display = 'none';
 
-        passwordModal.style.display = 'none';
-
-        // 如果启用豆瓣区域则显示豆瓣区域
-        if (localStorage.getItem('doubanEnabled') === 'true') {
-            document.getElementById('doubanArea').classList.remove('hidden');
-            initDouban();
-        }
-    }
+    window.updateDoubanVisibility?.();
 }
 
-/**
- * 显示密码错误信息
- */
-function showPasswordError() {
+function showPasswordError(message = '密码错误，请重试') {
     const errorElement = document.getElementById('passwordError');
-    if (errorElement) {
-        errorElement.classList.remove('hidden');
-    }
+    if (!errorElement) return;
+    errorElement.textContent = message;
+    errorElement.classList.remove('hidden');
 }
 
-/**
- * 隐藏密码错误信息
- */
 function hidePasswordError() {
-    const errorElement = document.getElementById('passwordError');
-    if (errorElement) {
-        errorElement.classList.add('hidden');
-    }
+    document.getElementById('passwordError')?.classList.add('hidden');
 }
 
-/**
- * 处理密码提交事件（异步）
- */
 async function handlePasswordSubmit() {
     const passwordInput = document.getElementById('passwordInput');
-    const password = passwordInput ? passwordInput.value.trim() : '';
+    const submitButton = document.getElementById('passwordSubmitBtn');
+    const password = passwordInput ? passwordInput.value : '';
+    if (!password) {
+        showPasswordError('请输入密码');
+        return;
+    }
+
+    if (submitButton) submitButton.disabled = true;
     if (await verifyPassword(password)) {
         hidePasswordModal();
-
-        // 触发密码验证成功事件
         document.dispatchEvent(new CustomEvent('passwordVerified'));
     } else {
-        showPasswordError();
+        showPasswordError(authSessionState.error || '密码错误，请重试');
         if (passwordInput) {
             passwordInput.value = '';
             passwordInput.focus();
         }
     }
+    if (submitButton) submitButton.disabled = false;
 }
 
-/**
- * 初始化密码验证系统
- */
-function initPasswordProtection() {
-    // 如果需要强制设置密码，显示警告弹窗
-    if (isPasswordRequired()) {
+async function logoutAuthSession() {
+    try {
+        await fetch('/api/auth/logout', {
+            method: 'POST',
+            credentials: 'same-origin',
+            cache: 'no-store'
+        });
+    } finally {
+        authSessionState.authenticated = false;
+        window.ProxyAuth?.clearAuthCache?.();
+    }
+}
+
+window.showPasswordModal = showPasswordModal;
+window.hidePasswordModal = hidePasswordModal;
+window.handlePasswordSubmit = handlePasswordSubmit;
+window.logoutAuthSession = logoutAuthSession;
+
+async function initPasswordProtection() {
+    showPasswordModal();
+    try {
+        await refreshAuthSession();
+    } catch (_) {
         showPasswordModal();
         return;
     }
 
-    // 如果设置了密码但用户未验证，显示密码输入框
-    if (isPasswordProtected() && !isPasswordVerified()) {
+    if (isPasswordVerified()) {
+        hidePasswordModal();
+        document.dispatchEvent(new CustomEvent('passwordVerified'));
+    } else {
         showPasswordModal();
-        return;
     }
 }
 
-// 在页面加载完成后初始化密码保护
-document.addEventListener('DOMContentLoaded', function () {
-    initPasswordProtection();
-});
+document.addEventListener('DOMContentLoaded', initPasswordProtection);

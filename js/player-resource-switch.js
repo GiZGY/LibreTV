@@ -1,8 +1,16 @@
 // 播放页资源切换：独立于 player.js，避免播放器主文件继续膨胀。
 const RESOURCE_SWITCH_CACHE_TTL = 5 * 60 * 1000;
+const RESOURCE_SWITCH_CACHE_LIMIT = 80;
+const RESOURCE_SWITCH_SEARCH_TIMEOUT = 8_000;
+const RESOURCE_SWITCH_SPEED_TIMEOUT = 7_000;
 const resourceSwitchSearchCache = new Map();
 const resourceSwitchDetailCache = new Map();
 const resourceSwitchSpeedCache = new Map();
+const resourceSwitchSearchInflight = new Map();
+const resourceSwitchDetailInflight = new Map();
+const resourceSwitchContainersBound = new WeakSet();
+let activeResourceSwitchRun = null;
+let resourceSwitchRunId = 0;
 
 function getCustomApiInfo(customApiIndex) {
     const index = parseInt(customApiIndex, 10);
@@ -29,23 +37,74 @@ function getCachedValue(cache, key) {
 }
 
 function setCachedValue(cache, key, value) {
+    cache.delete(key);
     cache.set(key, { time: Date.now(), value });
+    while (cache.size > RESOURCE_SWITCH_CACHE_LIMIT) {
+        cache.delete(cache.keys().next().value);
+    }
     return value;
 }
 
-async function runResourceQueue(items, concurrency, worker) {
-    if (typeof runSearchQueue === 'function') {
-        return runSearchQueue(items, concurrency, worker);
-    }
+function runCachedResourceRequest(cache, inflight, key, request, options = {}) {
+    const cached = getCachedValue(cache, key);
+    if (cached) return Promise.resolve(cached);
 
+    // A modal run owns its AbortSignal. Do not share an older cancellable request
+    // with a newer run, otherwise cancelling the old modal also cancels the new one.
+    if (options.signal) {
+        return Promise.resolve().then(request).then((value) => setCachedValue(cache, key, value));
+    }
+    if (inflight.has(key)) return inflight.get(key);
+
+    const pending = Promise.resolve()
+        .then(request)
+        .then((value) => setCachedValue(cache, key, value))
+        .finally(() => inflight.delete(key));
+    inflight.set(key, pending);
+    return pending;
+}
+
+function createResourceAbortError(message = '请求已取消') {
+    const error = new Error(message);
+    error.name = 'AbortError';
+    return error;
+}
+
+async function withResourceTimeout(factory, timeoutMs, parentSignal) {
+    const controller = new AbortController();
+    const abortFromParent = () => controller.abort(parentSignal?.reason || createResourceAbortError());
+    if (parentSignal?.aborted) throw createResourceAbortError();
+    parentSignal?.addEventListener('abort', abortFromParent, { once: true });
+    const timer = setTimeout(() => controller.abort(new Error('timeout')), timeoutMs);
+    try {
+        return await factory(controller.signal);
+    } catch (error) {
+        if (parentSignal?.aborted) throw createResourceAbortError();
+        if (controller.signal.aborted) {
+            const timeoutError = new Error('超时');
+            timeoutError.name = 'TimeoutError';
+            throw timeoutError;
+        }
+        throw error;
+    } finally {
+        clearTimeout(timer);
+        parentSignal?.removeEventListener('abort', abortFromParent);
+    }
+}
+
+async function runResourceQueue(items, concurrency, worker, signal) {
     const input = Array.isArray(items) ? items : [];
     const results = new Array(input.length);
     let nextIndex = 0;
-    const limit = Math.max(1, Math.min(Number(concurrency) || 1, input.length));
-    const workers = Array.from({ length: limit }, async () => {
-        while (nextIndex < input.length) {
+    const limit = Math.max(1, Math.min(Number(concurrency) || 1, input.length || 1));
+    const workers = Array.from({ length: Math.min(limit, input.length) }, async () => {
+        while (nextIndex < input.length && !signal?.aborted) {
             const currentIndex = nextIndex++;
-            results[currentIndex] = await worker(input[currentIndex], currentIndex);
+            try {
+                results[currentIndex] = await worker(input[currentIndex], currentIndex);
+            } catch (error) {
+                if (error?.name !== 'AbortError') throw error;
+            }
         }
     });
     await Promise.allSettled(workers);
@@ -65,120 +124,126 @@ function buildResourceApiParams(sourceKey) {
     return '&source=' + encodeURIComponent(sourceKey);
 }
 
-async function fetchResourceDetail(sourceKey, vodId) {
+async function fetchResourceDetail(sourceKey, vodId, options = {}) {
     const apiParams = buildResourceApiParams(sourceKey);
     if (!apiParams) throw new Error('API配置无效');
 
     const cacheKey = `${sourceKey}|${vodId}|${apiParams}`;
-    const cached = getCachedValue(resourceSwitchDetailCache, cacheKey);
-    if (cached) return cached;
+    return runCachedResourceRequest(resourceSwitchDetailCache, resourceSwitchDetailInflight, cacheKey, async () => {
+        const adapterResult = window.OpenStreamSourceAdapter?.detail
+            ? await window.OpenStreamSourceAdapter.detail(sourceKey, vodId, { signal: options.signal })
+            : null;
 
-    const adapterResult = window.OpenStreamSourceAdapter?.detail
-        ? await window.OpenStreamSourceAdapter.detail(sourceKey, vodId)
-        : null;
+        let data;
+        let episodes;
+        if (adapterResult) {
+            if (adapterResult.status !== 'ready') throw new Error(adapterResult.status || '获取失败');
+            data = adapterResult.data || {};
+            episodes = adapterResult.episodes;
+        } else {
+            const response = await fetch(`/api/detail?id=${encodeURIComponent(vodId)}${apiParams}`, {
+                signal: options.signal
+            });
+            if (!response.ok) throw new Error('获取失败');
+            data = await response.json();
+            episodes = data?.episodes;
+        }
 
-    let data;
-    if (adapterResult) {
-        if (adapterResult.status !== 'ready') throw new Error(adapterResult.status || '获取失败');
-        data = adapterResult.data;
-    } else {
-        const response = await fetch(`/api/detail?id=${encodeURIComponent(vodId)}${apiParams}`);
-        if (!response.ok) throw new Error('获取失败');
-        data = await response.json();
-    }
-
-    if (!data || !Array.isArray(data.episodes) || data.episodes.length === 0) {
-        throw new Error('无播放源');
-    }
-    return setCachedValue(resourceSwitchDetailCache, cacheKey, data);
+        if (!Array.isArray(episodes) || episodes.length === 0) {
+            throw new Error('无播放源');
+        }
+        return { ...data, episodes };
+    }, options);
 }
 
-async function searchResourceOption(opt, title) {
+async function searchResourceOption(opt, title, options = {}) {
     const cacheKey = `${opt.key}|${title}`;
-    const cached = getCachedValue(resourceSwitchSearchCache, cacheKey);
-    if (cached) return cached;
+    return runCachedResourceRequest(resourceSwitchSearchCache, resourceSwitchSearchInflight, cacheKey, async () => {
+        const adapterResult = window.OpenStreamSourceAdapter?.search
+            ? await window.OpenStreamSourceAdapter.search(
+                opt.key,
+                title,
+                getDefaultSearchFilters(),
+                { maxPages: 1, signal: options.signal }
+            )
+            : { status: 'ready', list: await searchByAPIAndKeyWord(opt.key, title, {}, { maxPages: 1, signal: options.signal }) };
+        if (adapterResult.status === 'login_required' || adapterResult.status === 'unsupported') return null;
 
-    const adapterResult = window.OpenStreamSourceAdapter?.search
-        ? await window.OpenStreamSourceAdapter.search(opt.key, title, getDefaultSearchFilters(), { maxPages: 1 })
-        : { status: 'ready', list: await searchByAPIAndKeyWord(opt.key, title) };
-    if (adapterResult.status === 'login_required' || adapterResult.status === 'unsupported') return null;
-
-    const queryResult = adapterResult.list;
-    if (!Array.isArray(queryResult) || queryResult.length === 0) return null;
-
-    const exact = queryResult.find(res => res.vod_name === title);
-    return setCachedValue(resourceSwitchSearchCache, cacheKey, exact || queryResult[0]);
+        const queryResult = adapterResult.list;
+        if (!Array.isArray(queryResult) || queryResult.length === 0) return null;
+        return queryResult.find((result) => result.vod_name === title) || queryResult[0];
+    }, options);
 }
 
-// 测试视频源速率的函数
-async function testVideoSourceSpeed(sourceKey, vodId) {
+async function resolveResourceEpisode(sourceKey, vodId, episodes, index, options = {}) {
+    const targetIndex = index >= 0 && index < episodes.length ? index : 0;
+    const resolved = await window.OpenStreamPlayerEpisodes.resolveEpisode(
+        episodes[targetIndex],
+        targetIndex,
+        { sourceKey, videoId: vodId },
+        { signal: options.signal }
+    );
+    if (resolved.status !== 'ready' || !resolved.url) {
+        throw new Error(resolved.status || '播放地址无效');
+    }
+    return { targetIndex, targetUrl: resolved.url, descriptor: resolved };
+}
+
+// Detail must be resolved first: bridge play responses do not carry episode lists.
+async function testVideoSourceSpeed(sourceKey, vodId, options = {}) {
     const cacheKey = `${sourceKey}|${vodId}`;
     const cached = getCachedValue(resourceSwitchSpeedCache, cacheKey);
     if (cached) return cached;
 
     try {
         const startTime = performance.now();
-        const playable = window.OpenStreamSourceAdapter?.play
-            ? await window.OpenStreamSourceAdapter.play(sourceKey, vodId, '', 0)
-            : null;
-        const data = playable?.data || await fetchResourceDetail(sourceKey, vodId);
-        const firstEpisodeUrl = playable?.url || data.episodes[0];
-        if (!firstEpisodeUrl || (playable && playable.status !== 'ready')) {
-            return setCachedValue(resourceSwitchSpeedCache, cacheKey, { speed: -1, error: playable?.status || '链接无效' });
-        }
+        const detail = await fetchResourceDetail(sourceKey, vodId, { signal: options.signal });
+        const resolved = await resolveResourceEpisode(sourceKey, vodId, detail.episodes, 0, { signal: options.signal });
 
         try {
-            await fetch(firstEpisodeUrl, {
+            await fetch(resolved.targetUrl, {
                 method: 'HEAD',
                 mode: 'no-cors',
                 cache: 'no-cache',
-                signal: AbortSignal.timeout(5000)
+                signal: options.signal
             });
-        } catch (_) {
-            // 播放链接 HEAD 经常被跨域或源站限制；失败时使用详情接口耗时兜底。
+        } catch (error) {
+            if (options.signal?.aborted) throw error;
+            // 播放链接 HEAD 经常被跨域或源站限制；详情+播放解析耗时仍可用于排序。
         }
 
-        const totalTime = performance.now() - startTime;
         return setCachedValue(resourceSwitchSpeedCache, cacheKey, {
-            speed: Math.round(totalTime),
-            episodes: data.episodes.length,
+            speed: Math.round(performance.now() - startTime),
+            episodes: detail.episodes.length,
             error: null
         });
     } catch (error) {
+        if (options.signal?.aborted || error?.name === 'AbortError') throw createResourceAbortError();
         return setCachedValue(resourceSwitchSpeedCache, cacheKey, {
             speed: -1,
-            error: error.name === 'AbortError' ? '超时' : (error.message || '测试失败')
+            error: error?.name === 'TimeoutError' ? '超时' : (error.message || '测试失败')
         });
     }
 }
 
-// 格式化速度显示
 function formatSpeedDisplay(speedResult) {
+    if (!speedResult || speedResult.pending) {
+        return '<span class="speed-indicator">检测中...</span>';
+    }
     if (speedResult.speed === -1) {
-        return `<span class="speed-indicator error">❌ ${speedResult.error}</span>`;
+        return `<span class="speed-indicator error">不可用 · ${escapeResourceHtml(speedResult.error || '检测失败')}</span>`;
     }
 
     const speed = speedResult.speed;
     let className = 'speed-indicator good';
-    let icon = '🟢';
-
-    if (speed > 2000) {
-        className = 'speed-indicator poor';
-        icon = '🔴';
-    } else if (speed > 1000) {
-        className = 'speed-indicator medium';
-        icon = '🟡';
-    }
-
-    const note = speedResult.note ? ` (${speedResult.note})` : '';
-    return `<span class="${className}">${icon} ${speed}ms${note}</span>`;
+    if (speed > 2000) className = 'speed-indicator poor';
+    else if (speed > 1000) className = 'speed-indicator medium';
+    return `<span class="${className}">${speed}ms</span>`;
 }
 
 function getResourceOptions() {
     const options = selectedAPIs.map((curr) => {
-        if (API_SITES[curr]) {
-            return { key: curr, name: API_SITES[curr].name };
-        }
+        if (API_SITES[curr]) return { key: curr, name: API_SITES[curr].name };
         const customIndex = parseInt(curr.replace('custom_', ''), 10);
         if (customAPIs[customIndex]) {
             return { key: curr, name: customAPIs[customIndex].name || '自定义资源' };
@@ -195,61 +260,67 @@ function getResourceOptions() {
         .sort((a, b) => rank.get(a.key) - rank.get(b.key));
 }
 
+function escapeResourceHtml(value) {
+    return String(value || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+function encodeInlineResourceArg(value) {
+    return encodeURIComponent(String(value || '')).replace(/'/g, '%27');
+}
+
 function renderSwitchResourceCards({ allResults, speedResults, resourceOptions, currentSourceCode, currentVideoId }) {
     const sortedResults = Object.entries(allResults).sort(([keyA, resultA], [keyB, resultB]) => {
         const isCurrentA = String(keyA) === String(currentSourceCode) && String(resultA.vod_id) === String(currentVideoId);
         const isCurrentB = String(keyB) === String(currentSourceCode) && String(resultB.vod_id) === String(currentVideoId);
+        if (isCurrentA !== isCurrentB) return isCurrentA ? -1 : 1;
 
-        if (isCurrentA && !isCurrentB) return -1;
-        if (!isCurrentA && isCurrentB) return 1;
-
-        const speedA = speedResults[keyA]?.speed || 99999;
-        const speedB = speedResults[keyB]?.speed || 99999;
-
-        if (speedA === -1 && speedB !== -1) return 1;
-        if (speedA !== -1 && speedB === -1) return -1;
-        if (speedA === -1 && speedB === -1) return 0;
-
-        return speedA - speedB;
+        const speedA = speedResults[keyA];
+        const speedB = speedResults[keyB];
+        if (!speedA || speedA.pending) return (!speedB || speedB.pending) ? 0 : 1;
+        if (!speedB || speedB.pending) return -1;
+        if (speedA.speed === -1) return speedB.speed === -1 ? 0 : 1;
+        if (speedB.speed === -1) return -1;
+        return speedA.speed - speedB.speed;
     });
 
     if (sortedResults.length === 0) {
-        return '<div style="text-align:center;padding:20px;color:#aaa;grid-column:1/-1;">没有找到可切换资源</div>';
+        return '<div style="text-align:center;padding:20px;color:#aaa;grid-column:1/-1;">暂未找到可切换资源</div>';
     }
 
     let html = '<div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 p-4">';
     for (const [sourceKey, result] of sortedResults) {
         if (!result) continue;
         const isCurrentSource = String(sourceKey) === String(currentSourceCode) && String(result.vod_id) === String(currentVideoId);
-        const sourceName = resourceOptions.find(opt => opt.key === sourceKey)?.name || '未知资源';
-        const speedResult = speedResults[sourceKey] || { speed: -1, error: '未测试' };
+        const sourceName = resourceOptions.find((option) => option.key === sourceKey)?.name || '未知资源';
+        const speedResult = speedResults[sourceKey] || { pending: true };
+        const sourceArg = escapeResourceHtml(encodeInlineResourceArg(sourceKey));
+        const videoArg = escapeResourceHtml(encodeInlineResourceArg(result.vod_id));
 
         html += `
             <div class="relative group ${isCurrentSource ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:scale-105 transition-transform'}"
-                 ${!isCurrentSource ? `onclick="switchToResource('${sourceKey}', '${result.vod_id}')"` : ''}>
+                 ${!isCurrentSource ? `role="button" tabindex="0" data-resource-switch data-resource-source="${sourceArg}" data-resource-video="${videoArg}"` : ''}>
                 <div class="aspect-[2/3] rounded-lg overflow-hidden bg-gray-800 relative">
-                    <img src="${result.vod_pic}"
-                         alt="${result.vod_name}"
+                    <img src="${escapeResourceHtml(result.vod_pic)}"
+                         alt="${escapeResourceHtml(result.vod_name)}"
                          class="w-full h-full object-cover"
-                         onerror="this.src='data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjNjY2IiBzdHJva2Utd2lkdGg9IjIiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCI+PHJlY3QgeD0iMyIgeT0iMyIgd2lkdGg9IjE4IiBoZWlnaHQ9IjE4IiByeD0iMiIgcnk9IjIiPjwvcmVjdD48cGF0aCBkPSJNMjEgMTV2NGEyIDIgMCAwIDEtMiAySDVhMiAyIDAgMCAxLTItMnYtNCI+PC9wYXRoPjxwb2x5bGluZSBwb2ludHM9IjE3IDggMTIgMyA3IDgiPjwvcG9seWxpbmU+PHBhdGggZD0iTTEyIDN2MTIiPjwvcGF0aD48L3N2Zz4='">
+                         loading="lazy"
+                         decoding="async"
+                         data-resource-poster>
                     <div class="absolute top-1 right-1 speed-badge bg-black bg-opacity-75">
                         ${formatSpeedDisplay(speedResult)}
                     </div>
                 </div>
                 <div class="mt-2">
-                    <div class="text-xs font-medium text-gray-200 truncate">${result.vod_name}</div>
-                    <div class="text-[10px] text-gray-400 truncate">${sourceName}</div>
-                    <div class="text-[10px] text-gray-500 mt-1">
-                        ${speedResult.episodes ? `${speedResult.episodes}集` : ''}
-                    </div>
+                    <div class="text-xs font-medium text-gray-200 truncate">${escapeResourceHtml(result.vod_name)}</div>
+                    <div class="text-[10px] text-gray-400 truncate">${escapeResourceHtml(sourceName)}</div>
+                    <div class="text-[10px] text-gray-500 mt-1">${speedResult.episodes ? `${speedResult.episodes}集` : ''}</div>
                 </div>
-                ${isCurrentSource ? `
-                    <div class="absolute inset-0 flex items-center justify-center">
-                        <div class="bg-blue-600 bg-opacity-75 rounded-lg px-2 py-0.5 text-xs text-white font-medium">
-                            当前播放
-                        </div>
-                    </div>
-                ` : ''}
+                ${isCurrentSource ? '<div class="absolute inset-0 flex items-center justify-center"><div class="bg-orange-600 bg-opacity-75 rounded-lg px-2 py-0.5 text-xs text-white font-medium">当前播放</div></div>' : ''}
             </div>
         `;
     }
@@ -257,82 +328,156 @@ function renderSwitchResourceCards({ allResults, speedResults, resourceOptions, 
     return html;
 }
 
+function bindResourceSwitchInteractions(container) {
+    if (!container || resourceSwitchContainersBound.has(container)) return;
+    resourceSwitchContainersBound.add(container);
+
+    const activate = (target) => {
+        const card = target.closest?.('[data-resource-switch]');
+        if (!card || !container.contains(card)) return;
+        try {
+            switchToResource(
+                decodeURIComponent(card.dataset.resourceSource || ''),
+                decodeURIComponent(card.dataset.resourceVideo || '')
+            );
+        } catch {
+            window.showToast?.('线路信息无效，请重新搜索', 'error');
+        }
+    };
+
+    container.addEventListener('click', (event) => activate(event.target));
+    container.addEventListener('keydown', (event) => {
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        if (!event.target.closest?.('[data-resource-switch]')) return;
+        event.preventDefault();
+        activate(event.target);
+    });
+    container.addEventListener('error', (event) => {
+        const image = event.target.closest?.('img[data-resource-poster]');
+        if (!image || image.dataset.fallbackApplied === 'true') return;
+        image.dataset.fallbackApplied = 'true';
+        image.src = 'image/nomedia.png?v=551423ac211e';
+    }, true);
+}
+
+function cancelPlayerResourceSwitch() {
+    if (!activeResourceSwitchRun) return;
+    activeResourceSwitchRun.controller.abort(createResourceAbortError());
+    activeResourceSwitchRun = null;
+}
+
+function isResourceSwitchRunActive(run) {
+    return !!run && activeResourceSwitchRun?.id === run.id && !run.controller.signal.aborted;
+}
+
+function renderResourceSwitchProgress(run, state) {
+    if (!isResourceSwitchRunActive(run)) return;
+    const status = state.searching
+        ? `正在查找可切换资源 ${state.searched}/${state.total}`
+        : `正在验证播放线路 ${state.tested}/${state.found}`;
+    run.modalContent.innerHTML = `
+        <div class="px-4 pt-2 text-sm text-gray-400">${status}</div>
+        ${renderSwitchResourceCards(state)}
+    `;
+    bindResourceSwitchInteractions(run.modalContent);
+}
+
 async function showSwitchResourceModal() {
+    cancelPlayerResourceSwitch();
     const urlParams = new URLSearchParams(window.location.search);
-    const currentSourceCode = urlParams.get('source');
-    const currentVideoId = urlParams.get('id');
     const modal = document.getElementById('modal');
     const modalTitle = document.getElementById('modalTitle');
     const modalContent = document.getElementById('modalContent');
+    const run = {
+        id: ++resourceSwitchRunId,
+        controller: new AbortController(),
+        modalContent
+    };
+    activeResourceSwitchRun = run;
 
-    modalTitle.innerHTML = `<span class="break-words">${currentVideoTitle}</span>`;
-    modalContent.innerHTML = '<div style="text-align:center;padding:20px;color:#aaa;grid-column:1/-1;">正在加载资源列表...</div>';
+    modalTitle.textContent = currentVideoTitle;
+    modalContent.innerHTML = '<div style="text-align:center;padding:20px;color:#aaa;">正在查找可切换资源...</div>';
     modal.classList.remove('hidden');
 
     const config = getResourceSwitchConfig();
     const resourceOptions = getResourceOptions();
-    const allResults = {};
-    const speedResults = {};
-    let searchedCount = 0;
+    const state = {
+        allResults: {},
+        speedResults: {},
+        resourceOptions,
+        currentSourceCode: urlParams.get('source'),
+        currentVideoId: urlParams.get('id'),
+        searched: 0,
+        tested: 0,
+        total: resourceOptions.length,
+        found: 0,
+        searching: true
+    };
 
     await runResourceQueue(resourceOptions, config.searchConcurrency || 3, async (opt) => {
         try {
-            const result = await searchResourceOption(opt, currentVideoTitle);
-            if (result) allResults[opt.key] = result;
+            const result = await withResourceTimeout(
+                (signal) => searchResourceOption(opt, currentVideoTitle, { signal }),
+                config.searchTimeout || RESOURCE_SWITCH_SEARCH_TIMEOUT,
+                run.controller.signal
+            );
+            if (result && isResourceSwitchRunActive(run)) {
+                state.allResults[opt.key] = result;
+                state.speedResults[opt.key] = { pending: true };
+                state.found = Object.keys(state.allResults).length;
+            }
         } catch (error) {
-            console.warn(`资源 ${opt.key} 搜索失败:`, error);
+            if (error?.name !== 'AbortError') console.warn(`资源 ${opt.key} 搜索失败:`, error.message || error);
         } finally {
-            searchedCount += 1;
-            modalContent.innerHTML = `<div style="text-align:center;padding:20px;color:#aaa;grid-column:1/-1;">正在查找可切换资源... ${searchedCount}/${resourceOptions.length}</div>`;
+            state.searched += 1;
+            renderResourceSwitchProgress(run, state);
         }
-    });
+    }, run.controller.signal);
 
-    const resultEntries = Object.entries(allResults);
-    if (resultEntries.length === 0) {
-        modalContent.innerHTML = renderSwitchResourceCards({ allResults, speedResults, resourceOptions, currentSourceCode, currentVideoId });
-        return;
-    }
-
-    let testedCount = 0;
-    modalContent.innerHTML = `<div style="text-align:center;padding:20px;color:#aaa;grid-column:1/-1;">正在测试各资源速率... 0/${resultEntries.length}</div>`;
+    if (!isResourceSwitchRunActive(run)) return false;
+    state.searching = false;
+    const resultEntries = Object.entries(state.allResults);
+    renderResourceSwitchProgress(run, state);
 
     await runResourceQueue(resultEntries, config.speedConcurrency || 2, async ([sourceKey, result]) => {
         try {
-            speedResults[sourceKey] = await testVideoSourceSpeed(sourceKey, result.vod_id);
+            state.speedResults[sourceKey] = await withResourceTimeout(
+                (signal) => testVideoSourceSpeed(sourceKey, result.vod_id, { signal }),
+                config.speedTimeout || RESOURCE_SWITCH_SPEED_TIMEOUT,
+                run.controller.signal
+            );
         } catch (error) {
-            console.warn(`资源 ${sourceKey} 测速失败:`, error);
-            speedResults[sourceKey] = { speed: -1, error: '测试失败' };
+            if (error?.name !== 'AbortError') {
+                state.speedResults[sourceKey] = {
+                    speed: -1,
+                    error: error?.name === 'TimeoutError' ? '超时' : '测试失败'
+                };
+            }
         } finally {
-            testedCount += 1;
-            modalContent.innerHTML = `<div style="text-align:center;padding:20px;color:#aaa;grid-column:1/-1;">正在测试各资源速率... ${testedCount}/${resultEntries.length}</div>`;
+            state.tested += 1;
+            renderResourceSwitchProgress(run, state);
         }
-    });
+    }, run.controller.signal);
 
-    modalContent.innerHTML = renderSwitchResourceCards({ allResults, speedResults, resourceOptions, currentSourceCode, currentVideoId });
+    if (!isResourceSwitchRunActive(run)) return false;
+    renderResourceSwitchProgress(run, state);
+    return true;
 }
 
-// 切换资源的函数
 async function switchToResource(sourceKey, vodId) {
+    cancelPlayerResourceSwitch();
     document.getElementById('modal').classList.add('hidden');
-
     showLoading();
     try {
         const data = await fetchResourceDetail(sourceKey, vodId);
-        const currentIndex = currentEpisodeIndex;
-        const targetIndex = currentIndex < data.episodes.length ? currentIndex : 0;
-        const targetUrl = data.episodes[targetIndex];
-        const watchUrl = `player.html?id=${vodId}&source=${sourceKey}&url=${encodeURIComponent(targetUrl)}&index=${targetIndex}&title=${encodeURIComponent(currentVideoTitle)}`;
+        const resolved = await resolveResourceEpisode(sourceKey, vodId, data.episodes, currentEpisodeIndex);
+        const watchUrl = `player.html?id=${encodeURIComponent(vodId)}&source=${encodeURIComponent(sourceKey)}&url=${encodeURIComponent(resolved.targetUrl)}&index=${resolved.targetIndex}&title=${encodeURIComponent(currentVideoTitle)}`;
 
-        try {
-            localStorage.setItem('currentVideoTitle', data.vod_name || '未知视频');
-            localStorage.setItem('currentEpisodes', JSON.stringify(data.episodes));
-            localStorage.setItem('currentEpisodeIndex', targetIndex);
-            localStorage.setItem('currentSourceCode', sourceKey);
-            localStorage.setItem('lastPlayTime', Date.now());
-        } catch (e) {
-            console.error('保存播放状态失败:', e);
-        }
-
+        localStorage.setItem('currentVideoTitle', data.vod_name || data.videoInfo?.title || currentVideoTitle || '未知视频');
+        localStorage.setItem('currentEpisodes', JSON.stringify(data.episodes));
+        localStorage.setItem('currentEpisodeIndex', resolved.targetIndex);
+        localStorage.setItem('currentSourceCode', sourceKey);
+        localStorage.setItem('lastPlayTime', Date.now());
         window.location.href = watchUrl;
     } catch (error) {
         console.error('切换资源失败:', error);
@@ -358,23 +503,14 @@ async function findPlayableFallbackResource(reason = '') {
     for (const opt of options) {
         try {
             const result = await searchResourceOption(opt, currentVideoTitle);
-            if (!result || !result.vod_id) continue;
-
-            const playable = window.OpenStreamSourceAdapter?.play
-                ? await window.OpenStreamSourceAdapter.play(opt.key, result.vod_id, '', currentEpisodeIndex)
-                : null;
-            if (playable && playable.status !== 'ready') continue;
-
-            const data = playable?.data || await fetchResourceDetail(opt.key, result.vod_id);
-            const targetIndex = playable?.episodeIndex ?? (currentEpisodeIndex < data.episodes.length ? currentEpisodeIndex : 0);
-            const targetUrl = playable?.url || data.episodes[targetIndex];
-            if (!targetUrl) continue;
-
+            if (!result?.vod_id) continue;
+            const data = await fetchResourceDetail(opt.key, result.vod_id);
+            const resolved = await resolveResourceEpisode(opt.key, result.vod_id, data.episodes, currentEpisodeIndex);
             return {
                 sourceKey: opt.key,
                 vodId: result.vod_id,
-                targetIndex,
-                targetUrl,
+                targetIndex: resolved.targetIndex,
+                targetUrl: resolved.targetUrl,
                 data,
                 reason,
                 previousSource: currentSourceCode,
@@ -384,7 +520,6 @@ async function findPlayableFallbackResource(reason = '') {
             console.warn(`自动换线候选 ${opt.key} 不可用:`, error.message || error);
         }
     }
-
     return null;
 }
 
@@ -404,7 +539,7 @@ async function autoSwitchToBestResource(reason = '') {
         localStorage.setItem('currentSourceCode', fallback.sourceKey);
         localStorage.setItem('lastPlayTime', Date.now());
 
-        const watchUrl = `player.html?id=${fallback.vodId}&source=${fallback.sourceKey}&url=${encodeURIComponent(fallback.targetUrl)}&index=${fallback.targetIndex}&position=${Math.floor(currentPosition)}&title=${encodeURIComponent(currentVideoTitle)}`;
+        const watchUrl = `player.html?id=${encodeURIComponent(fallback.vodId)}&source=${encodeURIComponent(fallback.sourceKey)}&url=${encodeURIComponent(fallback.targetUrl)}&index=${fallback.targetIndex}&position=${Math.floor(currentPosition)}&title=${encodeURIComponent(currentVideoTitle)}`;
         showToast('当前线路异常，已自动切换备用线路', 'info');
         window.location.href = watchUrl;
         return true;
@@ -414,6 +549,23 @@ async function autoSwitchToBestResource(reason = '') {
     }
 }
 
+const originalCloseResourceModal = window.closeModal;
+if (typeof originalCloseResourceModal === 'function' && !window.__openStreamResourceCloseWrapped) {
+    window.__openStreamResourceCloseWrapped = true;
+    window.closeModal = function (...args) {
+        cancelPlayerResourceSwitch();
+        return originalCloseResourceModal(...args);
+    };
+}
+
 window.showSwitchResourceModal = showSwitchResourceModal;
 window.switchToResource = switchToResource;
 window.autoSwitchToBestResource = autoSwitchToBestResource;
+window.cancelPlayerResourceSwitch = cancelPlayerResourceSwitch;
+window.OpenStreamResourceSwitch = {
+    showSwitchResourceModal,
+    switchToResource,
+    autoSwitchToBestResource,
+    cancel: cancelPlayerResourceSwitch,
+    testVideoSourceSpeed
+};

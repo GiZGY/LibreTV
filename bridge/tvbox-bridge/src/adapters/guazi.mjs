@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import { STATUS, statusResponse } from '../status.mjs';
+import { fetchWithTimeout, readResponseJson } from '../http.mjs';
 
 const SOURCE_KEY = '瓜子';
 const SOURCE_CODE = `tvbox:${SOURCE_KEY}`;
@@ -44,37 +45,27 @@ function decryptPayload(hex) {
   return JSON.parse(text);
 }
 
-async function withTimeout(fn, timeoutMs = REQUEST_TIMEOUT_MS) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    return await fn(controller.signal);
-  } finally {
-    clearTimeout(timer);
-  }
-}
+async function postEncrypted(path, payload, { fetchImpl = globalThis.fetch, signal } = {}) {
+  return fetchWithTimeout(fetchImpl, `${API_BASE_URL}${path}`, {
+    method: 'POST',
+    headers: REQUEST_HEADERS,
+    body: JSON.stringify({ params: encryptPayload(payload) })
+  }, {
+    signal,
+    timeoutMs: REQUEST_TIMEOUT_MS,
+    consume: async (response) => {
+      if (!response.ok) {
+        const error = new Error(`Guazi HTTP ${response.status}`);
+        error.status = response.status;
+        throw error;
+      }
 
-async function postEncrypted(path, payload, { fetchImpl = globalThis.fetch } = {}) {
-  return withTimeout(async (signal) => {
-    const response = await fetchImpl(`${API_BASE_URL}${path}`, {
-      method: 'POST',
-      headers: REQUEST_HEADERS,
-      body: JSON.stringify({ params: encryptPayload(payload) }),
-      redirect: 'follow',
-      signal
-    });
-
-    if (!response.ok) {
-      const error = new Error(`Guazi HTTP ${response.status}`);
-      error.status = response.status;
-      throw error;
+      const json = await readResponseJson(response);
+      if (typeof json?.data === 'string' && json.data) {
+        json.data = decryptPayload(json.data);
+      }
+      return json;
     }
-
-    const json = await response.json();
-    if (typeof json?.data === 'string' && json.data) {
-      json.data = decryptPayload(json.data);
-    }
-    return json;
   });
 }
 
@@ -183,23 +174,23 @@ function normalizeEpisodeList(vodId, urls = []) {
     });
 }
 
-async function fetchDetailData(id, fetchImpl) {
+async function fetchDetailData(id, fetchImpl, signal) {
   const videoId = String(id || '').trim();
   if (!videoId) return null;
-  const json = await postEncrypted('/Pc/Resource/GetVodInfo', { vod_id: videoId }, { fetchImpl });
+  const json = await postEncrypted('/Pc/Resource/GetVodInfo', { vod_id: videoId }, { fetchImpl, signal });
   return json?.code === 200 ? (json.data || null) : null;
 }
 
-async function fetchEpisodeData(id, fetchImpl) {
+async function fetchEpisodeData(id, fetchImpl, signal) {
   const videoId = String(id || '').trim();
   if (!videoId) return null;
   const numericId = Number(videoId);
   const vodId = Number.isFinite(numericId) && numericId > 0 ? numericId : videoId;
-  const json = await postEncrypted('/Pc/Resource/GetOnePlayList', { vod_id: vodId, pageSize: 0, page: 1 }, { fetchImpl });
+  const json = await postEncrypted('/Pc/Resource/GetOnePlayList', { vod_id: vodId, pageSize: 0, page: 1 }, { fetchImpl, signal });
   return json?.code === 200 ? (json.data || null) : null;
 }
 
-export async function search(keyword, { fetchImpl } = {}) {
+export async function search(keyword, { fetchImpl, signal } = {}) {
   const wd = String(keyword || '').trim();
   if (!wd) return statusResponse(STATUS.NO_RESULT, 'Missing keyword', { sourceKey: SOURCE_KEY, list: [] });
 
@@ -211,7 +202,7 @@ export async function search(keyword, { fetchImpl } = {}) {
     keywords: wd,
     page: 1,
     pageSize: 20
-  }, { fetchImpl });
+  }, { fetchImpl, signal });
   const list = (Array.isArray(json?.data?.list) ? json.data.list : [])
     .map(normalizeSearchItem)
     .filter((item) => item.vod_id && item.vod_name);
@@ -223,10 +214,10 @@ export async function search(keyword, { fetchImpl } = {}) {
   };
 }
 
-export async function detail(id, { fetchImpl } = {}) {
+export async function detail(id, { fetchImpl, signal } = {}) {
   const [detailData, episodeData] = await Promise.all([
-    fetchDetailData(id, fetchImpl),
-    fetchEpisodeData(id, fetchImpl)
+    fetchDetailData(id, fetchImpl, signal),
+    fetchEpisodeData(id, fetchImpl, signal)
   ]);
   if (!detailData && !episodeData) {
     return statusResponse(STATUS.NO_RESULT, 'No detail returned', { sourceKey: SOURCE_KEY, episodes: [] });
@@ -242,8 +233,8 @@ export async function detail(id, { fetchImpl } = {}) {
   };
 }
 
-export async function play(id, flag = SOURCE_KEY, episode = 0, { fetchImpl } = {}) {
-  const episodeData = await fetchEpisodeData(id, fetchImpl);
+export async function play(id, flag = SOURCE_KEY, episode = 0, { fetchImpl, signal } = {}) {
+  const episodeData = await fetchEpisodeData(id, fetchImpl, signal);
   const episodes = normalizeEpisodeList(id, episodeData?.urls);
   const index = Math.max(0, Number.parseInt(episode, 10) || 0);
   const selected = episodes[index] || episodes[0];

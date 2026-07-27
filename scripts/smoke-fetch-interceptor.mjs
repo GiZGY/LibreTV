@@ -2,10 +2,27 @@ import assert from 'assert/strict';
 import vm from 'vm';
 import { readFileSync } from 'fs';
 
-const originalFetchCalls = [];
+const configSource = readFileSync(new URL('../js/config.js', import.meta.url), 'utf8');
+for (const match of configSource.matchAll(/jisu:\s*\{([^}]+)\}/g)) {
+  assert.doesNotMatch(match[1], /\bdetail\s*:/, 'jisu must use its working CMS detail endpoint');
+}
 
-async function originalFetch(input) {
+const originalFetchCalls = [];
+let cancelledUpstreamSignal = null;
+
+async function originalFetch(input, init = {}) {
   originalFetchCalls.push(String(input));
+  if (String(input).includes('cancel-detail')) {
+    cancelledUpstreamSignal = init.signal;
+    return new Promise((resolve, reject) => {
+      const rejectAbort = () => reject(new DOMException('Aborted', 'AbortError'));
+      if (init.signal?.aborted) {
+        rejectAbort();
+        return;
+      }
+      init.signal?.addEventListener('abort', rejectAbort, { once: true });
+    });
+  }
   return new Response(JSON.stringify({
     code: 200,
     list: [
@@ -19,6 +36,7 @@ async function originalFetch(input) {
 
 const context = {
   URL,
+  Request,
   Response,
   AbortController,
   console,
@@ -34,6 +52,10 @@ const context = {
     search: {
       path: '/api.php/provide/vod/?ac=detail&wd=',
       headers: {}
+    },
+    detail: {
+      path: '/api.php/provide/vod/?ac=detail&ids=',
+      headers: {}
     }
   },
   PROXY_URL: '/proxy/',
@@ -41,7 +63,9 @@ const context = {
     location: {
       origin: 'https://tv.cursorflow.top'
     },
-    fetch: originalFetch
+    fetch: originalFetch,
+    isAuthSessionReady: () => true,
+    isPasswordVerified: () => true
   }
 };
 context.fetch = (...args) => context.window.fetch(...args);
@@ -65,8 +89,28 @@ assert.equal(searchJson.code, 200);
 assert.equal(searchJson.list[0].source_code, 'demo');
 assert.ok(originalFetchCalls.some((url) => url.startsWith('/proxy/https%3A%2F%2Fcms.example.test')));
 
+context.window.isAuthSessionReady = () => false;
+const unauthorizedResponse = await context.window.fetch(
+  new Request('https://tv.cursorflow.top/api/search?wd=blocked&source=demo')
+);
+assert.equal(unauthorizedResponse.status, 401);
+assert.equal((await unauthorizedResponse.json()).code, 401);
+
+context.window.isAuthSessionReady = () => true;
+const detailAbortController = new AbortController();
+const cancelledDetailRequest = context.window.fetch(
+  '/api/detail?id=cancel-detail&source=demo',
+  { signal: detailAbortController.signal }
+);
+await new Promise(resolve => setTimeout(resolve, 0));
+detailAbortController.abort();
+await assert.rejects(cancelledDetailRequest, error => error?.name === 'AbortError');
+assert.equal(cancelledUpstreamSignal?.aborted, true);
+
 console.log(JSON.stringify({
   ok: true,
   tvboxPassThrough: originalFetchCalls[0],
-  legacySearchIntercepted: searchJson.list[0].source_code
+  legacySearchIntercepted: searchJson.list[0].source_code,
+  unauthorizedStatus: unauthorizedResponse.status,
+  detailCancellationReachedUpstream: cancelledUpstreamSignal?.aborted === true
 }, null, 2));

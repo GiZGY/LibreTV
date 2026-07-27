@@ -1,0 +1,17 @@
+.git
+.github
+.vercel
+node_modules
+bridge/tvbox-bridge/node_modules
+*.log
+.env
+.env.*
+!.env.example
+coverage
+dist
+dist-ssr
+public
+.DS_Store
+*.zip
+*.tar
+*.tgz

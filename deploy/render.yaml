@@ -1,8 +1,8 @@
 services:
   - type: web
-    name: libretv
+    name: openstream
     runtime: node
     plan: free
-    buildCommand: 'npm install'
-    startCommand: 'node server.mjs'
-    autoDeploy: true 
+    buildCommand: 'npm ci && npm run build'
+    startCommand: 'npm start'
+    autoDeploy: true

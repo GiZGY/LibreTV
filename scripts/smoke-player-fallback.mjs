@@ -112,6 +112,7 @@ context.fetch = async (url) => {
 
 runFile('js/source-health.js');
 runFile('js/source-adapter.js');
+runFile('js/player-episodes.js');
 runFile('js/player-resource-switch.js');
 
 const switched = await context.autoSwitchToBestResource('smoke_failure');

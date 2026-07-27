@@ -4,13 +4,6 @@ const PROXY_URL = '/proxy/';    // 适用于 Cloudflare, Netlify (带重写), Ve
 const SEARCH_HISTORY_KEY = 'videoSearchHistory';
 const MAX_HISTORY_ITEMS = 5;
 
-// 密码保护配置
-// 注意：PASSWORD 环境变量是必需的，所有部署都必须设置密码以确保安全
-const PASSWORD_CONFIG = {
-    localStorageKey: 'passwordVerified',  // 存储验证状态的键名
-    verificationTTL: 90 * 24 * 60 * 60 * 1000  // 验证有效期（90天，约3个月）
-};
-
 // 网站信息配置
 const SITE_CONFIG = {
         dyttzy: {
@@ -63,7 +56,6 @@ const SITE_CONFIG = {
     jisu: {
         api: 'https://jszyapi.com/api.php/provide/vod',
         name: '极速资源',
-        detail: 'https://jszyapi.com', 
     },
     dbzy: {
         api: 'https://dbzy.tv/api.php/provide/vod',
@@ -106,9 +98,9 @@ const SITE_CONFIG = {
         name: '量子资源站'
     },
     name: 'OpenStream',
-    url: 'https://libretv.is-an.org',
+    url: 'https://tv.cursorflow.top',
     description: '免费在线视频搜索与观看平台',
-    logo: 'image/openstream-logo.svg?v=20260212g',
+    logo: 'image/openstream-logo.svg?v=0f26b3dc53f8',
     version: '1.1.1'
 };
 
@@ -164,7 +156,6 @@ const API_SITES = {
     jisu: {
         api: 'https://jszyapi.com/api.php/provide/vod',
         name: '极速资源',
-        detail: 'https://jszyapi.com', 
     },
     dbzy: {
         api: 'https://dbzy.tv/api.php/provide/vod',

@@ -10,7 +10,7 @@
     "apple-mobile-web-app-status-bar-style": "black",
     "icons": [
       {
-        "src": "image/openstream-logo.svg",
+        "src": "image/openstream-logo.svg?v=0f26b3dc53f8",
         "sizes": "any",
         "type": "image/svg+xml"
       }
