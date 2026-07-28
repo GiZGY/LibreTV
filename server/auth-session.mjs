@@ -3,7 +3,9 @@ import crypto from 'node:crypto';
 export const AUTH_COOKIE_NAME = 'openstream_session';
 export const PROXY_TOKEN_BUCKET_MS = 5 * 60 * 1000;
 export const RESOURCE_TOKEN_BUCKET_MS = 6 * 60 * 60 * 1000;
-export const MIN_PASSWORD_LENGTH = 16;
+// Existing deployments accepted any non-empty PASSWORD. Keep that contract so
+// an auth upgrade never locks users out; deployment docs still recommend 16+.
+export const MIN_PASSWORD_LENGTH = 1;
 const DEFAULT_SESSION_TTL_SECONDS = 30 * 24 * 60 * 60;
 
 function getPassword(env = process.env) {
