@@ -7,6 +7,7 @@ import {
   createProxyToken,
   createResourceProxyToken,
   createSessionToken,
+  isPasswordConfigured,
   verifyPassword,
   verifyProxyToken,
   verifyResourceProxyToken,
@@ -67,14 +68,19 @@ async function invoke(handler, request) {
 
 assert.equal(verifyPassword('auth-smoke-password', env), true);
 assert.equal(verifyPassword('wrong', env), false);
-assert.equal((await import('../server/auth-session.mjs')).isPasswordConfigured({ PASSWORD: 'short' }), false);
+assert.equal(isPasswordConfigured({ PASSWORD: 'short' }), true);
 const weakEnv = { PASSWORD: 'short-pass' };
-assert.equal(verifyPassword('short-pass', weakEnv), false);
-assert.equal(createSessionToken(weakEnv, now), '');
-assert.equal(verifySessionToken(createSessionToken(weakEnv, now), weakEnv, now), false);
-assert.equal(createProxyToken(weakEnv, now), null);
-assert.equal(verifyProxyToken('guessed-token', now, weakEnv, now), false);
-assert.equal(createResourceProxyToken('https://media.example/segment.ts', weakEnv, now), null);
+assert.equal(verifyPassword('short-pass', weakEnv), true);
+const shortSession = createSessionToken(weakEnv, now);
+assert.notEqual(shortSession, '');
+assert.equal(verifySessionToken(shortSession, weakEnv, now), true);
+const shortProxy = createProxyToken(weakEnv, now);
+assert.ok(shortProxy?.token);
+assert.equal(verifyProxyToken(shortProxy.token, shortProxy.bucket, weakEnv, now), true);
+const shortResource = createResourceProxyToken('https://media.example/segment.ts', weakEnv, now);
+assert.ok(shortResource?.token);
+assert.equal(isPasswordConfigured({ PASSWORD: '' }), false);
+assert.equal(verifyPassword('anything', { PASSWORD: '' }), false);
 
 const session = createSessionToken(env, now);
 assert.equal(verifySessionToken(session, env, now), true);
