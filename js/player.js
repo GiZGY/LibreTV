@@ -532,7 +532,8 @@ function initPlayer(videoUrl) {
     // 配置HLS.js选项
     const hlsConfig = {
         debug: false,
-        loader: adFilteringEnabled ? CustomHlsJsLoader : Hls.DefaultConfig.loader,
+        // Preserve timestamp boundaries until source-specific ad rules are verified.
+        loader: Hls.DefaultConfig.loader,
         enableWorker: true,
         lowLatencyMode: false,
         backBufferLength: 90,
@@ -1121,22 +1122,8 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
 
 // 过滤可疑的广告内容
 function filterAdsFromM3U8(m3u8Content, strictMode = false) {
-    if (!m3u8Content) return '';
-
-    // 按行分割M3U8内容
-    const lines = m3u8Content.split('\n');
-    const filteredLines = [];
-
-    for (let i = 0; i < lines.length; i++) {
-        const line = lines[i];
-
-        // 只过滤#EXT-X-DISCONTINUITY标识
-        if (!line.includes('#EXT-X-DISCONTINUITY')) {
-            filteredLines.push(line);
-        }
-    }
-
-    return filteredLines.join('\n');
+    // DISCONTINUITY is a decoding boundary, not evidence of an advertisement.
+    return m3u8Content;
 }
 
 
