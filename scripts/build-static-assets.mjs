@@ -7,6 +7,8 @@ import { transform } from 'esbuild';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const outputDir = path.join(root, 'compiled');
 const publicDir = path.join(root, 'public');
+const buildVersion = (await fs.readFile(path.join(root, 'VERSION.txt'), 'utf8')).trim();
+if (!/^(?:\d+\.\d+\.\d+|\d{12})$/.test(buildVersion)) throw new Error('Invalid build version');
 const publicFiles = [
   'VERSION.txt',
   'about.html',
@@ -120,6 +122,7 @@ async function buildJavaScript(name, files) {
   const result = await transform(source, {
     loader: 'js',
     target: 'es2020',
+    define: { __OPENSTREAM_VERSION__: JSON.stringify(buildVersion) },
     legalComments: 'none',
     minifyWhitespace: true,
     minifySyntax: true,

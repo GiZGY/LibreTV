@@ -1,7 +1,7 @@
 {
   "name": "libretv",
   "type": "module",
-  "version": "1.1.2",
+  "version": "1.1.3",
   "private": true,
   "engines": {
     "node": "22.x"
@@ -36,7 +36,7 @@
     "smoke:config-import": "node scripts/smoke-config-import.mjs",
     "smoke:workflows": "node scripts/smoke-workflow-security.mjs",
     "smoke:static-performance": "node scripts/smoke-static-performance.mjs",
-    "smoke:watch": "node scripts/smoke-watch-redirect.mjs",
+    "smoke:watch": "node scripts/smoke-watch-redirect.mjs && node scripts/smoke-version-cache.mjs",
     "smoke:bridge-performance": "node bridge/tvbox-bridge/scripts/smoke-performance.mjs",
     "smoke:bridge-security": "node bridge/tvbox-bridge/scripts/smoke-server-security.mjs",
     "smoke:bridge-fixtures": "node bridge/tvbox-bridge/scripts/smoke-libvio-fixture.mjs && node bridge/tvbox-bridge/scripts/smoke-jianpian-fixture.mjs && node bridge/tvbox-bridge/scripts/smoke-guazi-fixture.mjs",

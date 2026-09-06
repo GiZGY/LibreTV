@@ -51,7 +51,8 @@ export async function runCycle(store, { sources, queries, signal, audit = runAud
     SAMPLE_TITLES[(store.state.runs * 2 + 1) % SAMPLE_TITLES.length]];
   const deadline = AbortSignal.timeout(10 * 60 * 1000);
   const bounded = signal ? AbortSignal.any([signal, deadline]) : deadline;
-  const report = await audit({ sources, queries: sample, signal: bounded,
+  // Rotate source priority as well as titles so a bounded budget cannot permanently starve the tail.
+  const report = await audit({ sources, queries: sample, signal: bounded, sourceOffset: store.state.runs,
     onMedia: media => observeMedia(media, { state: store.state, budget, rules, offset,
       read: read || ((url, b) => downloadSegment(url, b, { signal: bounded })),
       saveEvidence: store.saveEvidence, now }) });

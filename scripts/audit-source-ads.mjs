@@ -107,11 +107,17 @@ async function searchVideo(key, site, query, signal) {
   return { status: urls.length ? 'ready' : 'unsupported_playback', urls };
 }
 
-export async function runAudit({ sources, evidenceDir, onResult = () => {}, onMedia, queries = QUERIES, signal } = {}) {
+export function rotateSources(sites, offset = 0) {
+  if (!Number.isSafeInteger(offset) || offset < 0) throw new Error('Invalid source offset');
+  const start = sites.length ? offset % sites.length : 0;
+  return [...sites.slice(start), ...sites.slice(0, start)];
+}
+
+export async function runAudit({ sources, evidenceDir, onResult = () => {}, onMedia, queries = QUERIES, signal, sourceOffset = 0 } = {}) {
   if (!Array.isArray(queries) || !queries.length || queries.length > 12 || queries.some(q =>
     !q || typeof q.keyword !== 'string' || typeof q.title !== 'string' || !q.keyword.trim() || !q.title.trim() ||
     q.keyword.length > 80 || q.title.length > 80)) throw new Error('Invalid queries');
-  const sites = (await loadSites()).filter(([key]) => !sources || sources.includes(key));
+  const sites = rotateSources((await loadSites()).filter(([key]) => !sources || sources.includes(key)), sourceOffset);
   if (!sites.length || sources?.some(key => !sites.some(([id]) => id === key))) throw new Error('Unknown source');
   if (evidenceDir) {
     evidenceDir = path.resolve(evidenceDir);
