@@ -1,0 +1,15 @@
+[Unit]
+Description=OpenStream bounded advertisement observation
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=/srv/openstream-ad-observer/runtime.env
+ExecStart=/usr/bin/docker run --rm --name openstream-ad-observer-run --network host --memory 384m --cpus 0.5 --pids-limit 48 --read-only --cap-drop ALL --security-opt no-new-privileges:true --init --volume openstream-ad-observer-data:/data ${OPENSTREAM_AD_OBSERVER_IMAGE} node services/ad-observer/worker.mjs once --data /data
+ExecStopPost=/bin/sh -c 'if /usr/bin/docker inspect openstream-ad-observer-run >/dev/null 2>&1; then /usr/bin/docker stop -t 30 openstream-ad-observer-run; fi'
+TimeoutStartSec=12min
+TimeoutStopSec=45s
+StandardOutput=journal
+StandardError=journal

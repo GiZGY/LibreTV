@@ -1,0 +1,11 @@
+[Unit]
+Description=Run OpenStream advertisement observation every six hours
+
+[Timer]
+OnCalendar=*-*-* 00,06,12,18:00:00 UTC
+RandomizedDelaySec=5min
+Persistent=true
+Unit=openstream-ad-observer.service
+
+[Install]
+WantedBy=timers.target

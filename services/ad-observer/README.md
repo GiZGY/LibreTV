@@ -99,6 +99,25 @@ docker compose -f services/ad-observer/compose.yml stop
 独立容器、无监听端口、非 root、只读系统盘、专用数据卷、0.5 CPU/384 MiB。
 默认六小时一次；不自动重启以免崩溃锁造成循环启动，需要运维关注退出与报告新鲜度。
 容器健康检查确认最近七小时内有完整轮次；它不证明采样源可播放或广告全覆盖。
+
+### LA 定时部署
+
+低内存主机可改用随附的 `openstream-ad-observer.service` 与 `.timer`，替代常驻 watch，
+两种方式不能同时使用同一数据目录。timer 每六小时触发一次容器 `once`，完成后释放内存，
+重启后补一次错过的计划，不补跑所有历史轮次。systemd 不会重叠启动同一 oneshot 服务。
+
+固定镜像引用写入 `/srv/openstream-ad-observer/runtime.env` 的
+`OPENSTREAM_AD_OBSERVER_IMAGE`。专用 volume 为 `openstream-ad-observer-data`，
+无监听端口；host 网络用于复用 LA 已验证的源出口，公网地址限制仍由 HTTP 客户端强制执行。
+
+检查 `systemctl list-timers openstream-ad-observer.timer`、
+`systemctl show openstream-ad-observer.service -p Result -p ExecMainStatus` 和专用卷内 `report.json`。
+服务退出成功不代表每个源成功，必须另查报告的各源和素材状态。
+检查报告可用同镜像执行 `status --data /data`，不要读取无关容器的配置或数据。
+
+暂停采样用 `systemctl disable --now openstream-ad-observer.timer`，
+正在运行时再 `systemctl stop openstream-ad-observer.service`；保留专用数据卷。
+镜像回退时修改 runtime.env 中的固定引用，下一轮才生效，不需要重启现有 TV bridge。
 部署需单独授权，不能把本地命令成功当成 VPS 已经部署。
 
 ## 回归
