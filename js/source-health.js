@@ -110,7 +110,11 @@
     }
 
     function getQualityMap() {
-        if (!cachedQualityMap) cachedQualityMap = readJsonStorage('apiQualities', {});
+        if (!cachedQualityMap) {
+            cachedQualityMap = window.OpenStreamSourceCatalog?.freshQualities(
+                localStorage.getItem('apiQualities'), localStorage.getItem('qualityTestTime')
+            ) || readJsonStorage('apiQualities', {});
+        }
         return cachedQualityMap;
     }
 
@@ -314,6 +318,14 @@
         cachedCustomApis = null;
     }
 
+    function reset() {
+        clearTimeout(saveTimer);
+        saveTimer = 0;
+        state = { ...DEFAULT_HEALTH, sources: {} };
+        localStorage.removeItem(STORAGE_KEY);
+        refreshStoredMetrics();
+    }
+
     window.addEventListener?.('pagehide', () => {
         if (!saveTimer) return;
         clearTimeout(saveTimer);
@@ -332,6 +344,7 @@
         getSourceStatus,
         recordSourceEvent,
         refreshStoredMetrics,
+        reset,
         looksLikeLoginSource,
         _computeScore: computeScore,
         _storageKey: STORAGE_KEY

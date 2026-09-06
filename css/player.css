@@ -452,3 +452,25 @@ input:checked + .slider:before {
 #username {
     display: none !important;
 }
+.ad-skip-notice {
+    position: absolute;
+    z-index: 30;
+    top: 18px;
+    left: 18px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 12px;
+    border-radius: 8px;
+    color: #fff;
+    background: rgba(20, 20, 20, 0.85);
+    font-size: 13px;
+}
+.ad-skip-notice button {
+    color: #fb923c;
+    cursor: pointer;
+}
+.ad-skip-notice button:focus-visible {
+    outline: 2px solid #fb923c;
+    outline-offset: 3px;
+}

@@ -98,6 +98,7 @@ let currentVideoTitle = '';
 let currentEpisodeIndex = 0;
 let art = null; // 用于 ArtPlayer 实例
 let currentHls = null; // 跟踪当前HLS实例
+let adGuardCleanup = null;
 let currentEpisodes = [];
 let episodesReversed = false;
 let autoplayEnabled = true; // 默认开启自动连播
@@ -518,6 +519,8 @@ function initPlayer(videoUrl) {
         return
     }
     const playbackStartedAt = performance.now();
+    adGuardCleanup?.();
+    adGuardCleanup = null;
 
     resetArrowRightLongPress();
     longPressSpeedCleanup?.();
@@ -534,6 +537,10 @@ function initPlayer(videoUrl) {
         debug: false,
         // Preserve timestamp boundaries until source-specific ad rules are verified.
         loader: Hls.DefaultConfig.loader,
+        fLoader: window.OpenStreamAdGuard?.createFragmentLoader(
+            Hls.DefaultConfig.loader,
+            (context, response) => adGuardCleanup?.inspect?.(context, response)
+        ),
         enableWorker: true,
         lowLatencyMode: false,
         backBufferLength: 90,
@@ -751,6 +758,12 @@ function initPlayer(videoUrl) {
                 // 创建新的HLS实例
                 const hls = new Hls(hlsConfig);
                 currentHls = hls;
+                adGuardCleanup?.();
+                adGuardCleanup = window.OpenStreamAdGuard?.attach({
+                    hls, video, events: Hls.Events,
+                    host: video.closest('.art-video-player') || document.getElementById('player'),
+                    enabled: () => localStorage.getItem('verifiedAdSkippingEnabled') !== 'false'
+                });
 
                 // 跟踪是否已经显示错误
                 let errorDisplayed = false;

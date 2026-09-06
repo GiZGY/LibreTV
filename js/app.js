@@ -8,12 +8,11 @@ function readStoredArray(key, fallback = []) {
     }
 }
 
-let selectedAPIs = readStoredArray(
-    'selectedAPIs',
-    ['jisu', 'bfzy', 'baidu', 'hwba', 'qiqi', 'mozhua']
-).filter(item => typeof item === 'string'); // 默认选中资源
 let customAPIs = readStoredArray('customAPIs')
     .filter(item => item && typeof item === 'object' && !Array.isArray(item)); // 存储自定义API列表
+let selectedAPIs = window.OpenStreamSourceCatalog.reconcileSelection(
+    localStorage.getItem('selectedAPIs'), API_SITES, customAPIs
+);
 
 // 添加当前播放的集数索引
 let currentEpisodeIndex = 0;
@@ -33,6 +32,7 @@ let latencyTestTime = null; // 测速时间戳
 // 存储API质量检测数据（从localStorage加载缓存）
 let apiQualities = {};
 let qualityTestTime = null; // 质量检测时间戳
+let qualityStateGeneration = 0;
 
 function escapeAppHtml(value) {
     return String(value ?? '')
@@ -42,7 +42,6 @@ function escapeAppHtml(value) {
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#39;');
 }
-let hideZombieApis = localStorage.getItem('hideZombieApis') !== 'false'; // 默认隐藏僵尸源
 let searchFilters = loadSearchFilters();
 
 function getDefaultSearchFilters() {
@@ -338,14 +337,17 @@ async function runPassiveQualitySample() {
 
     passiveQualityController?.abort();
     passiveQualityController = new AbortController();
+    const controller = passiveQualityController;
+    const generation = qualityStateGeneration;
     try {
         await ensureQualityRuntime();
+        if (controller.signal.aborted) return;
         const result = await measureApiQuality(apiId, {
             playTest: true,
-            signal: passiveQualityController.signal,
+            signal: controller.signal,
             bypassCache: true
         });
-        if (passiveQualityController.signal.aborted || !result?.quality) return;
+        if (controller.signal.aborted || generation !== qualityStateGeneration || !result?.quality) return;
 
         const quality = { ...result.quality, testedAt: Date.now(), passive: true };
         apiQualities[apiId] = quality;
@@ -437,7 +439,7 @@ function loadQualityCache() {
         const cached = localStorage.getItem('apiQualities');
         const cachedTime = localStorage.getItem('qualityTestTime');
         if (cached && cachedTime) {
-            apiQualities = JSON.parse(cached);
+            apiQualities = window.OpenStreamSourceCatalog.freshQualities(cached, cachedTime);
             qualityTestTime = parseInt(cachedTime);
         }
     } catch (e) {
@@ -461,6 +463,9 @@ loadQualityCache();
 
 // 页面初始化
 document.addEventListener('DOMContentLoaded', function () {
+    // Reconcile saved IDs before rendering; keep the complete catalogue separate
+    // from both user selection and transient health measurements.
+    localStorage.setItem('selectedAPIs', JSON.stringify(selectedAPIs));
     // 初始化API复选框
     initAPICheckboxes();
 
@@ -475,13 +480,8 @@ document.addEventListener('DOMContentLoaded', function () {
 
     // 设置默认API选择（如果是第一次加载）
     if (!localStorage.getItem('hasInitializedDefaults')) {
-        // 默认选中资源
-        selectedAPIs = ["jisu", "bfzy", "baidu", "hwba", "qiqi", "mozhua"];
-        localStorage.setItem('selectedAPIs', JSON.stringify(selectedAPIs));
-
         // 默认选中过滤开关
         localStorage.setItem('yellowFilterEnabled', 'true');
-        localStorage.setItem(PLAYER_CONFIG.adFilteringStorage, 'true');
 
         // 默认启用豆瓣功能
         localStorage.setItem('doubanEnabled', 'true');
@@ -498,16 +498,7 @@ document.addEventListener('DOMContentLoaded', function () {
     // 更新检测时间显示
     updateLatencyTimeDisplay();
 
-    // 设置隐藏僵尸源开关初始状态
-    const hideZombieToggle = document.getElementById('hideZombieToggle');
-    if (hideZombieToggle) {
-        hideZombieToggle.checked = hideZombieApis;
-        hideZombieToggle.addEventListener('change', (e) => {
-            hideZombieApis = !!e.target.checked;
-            localStorage.setItem('hideZombieApis', hideZombieApis ? 'true' : 'false');
-            initAPICheckboxes();
-        });
-    }
+    document.getElementById('restoreSourcesBtn')?.addEventListener('click', restoreSourceDefaults);
 
     // 设置黄色内容过滤器开关初始状态
     const yellowFilterToggle = document.getElementById('yellowFilterToggle');
@@ -515,11 +506,12 @@ document.addEventListener('DOMContentLoaded', function () {
         yellowFilterToggle.checked = localStorage.getItem('yellowFilterEnabled') === 'true';
     }
 
-    // 设置广告过滤开关初始状态
-    const adFilterToggle = document.getElementById('adFilterToggle');
-    if (adFilterToggle) {
-        adFilterToggle.checked = false;
-        adFilterToggle.disabled = true;
+    const verifiedAdToggle = document.getElementById('verifiedAdToggle');
+    if (verifiedAdToggle) {
+        verifiedAdToggle.checked = localStorage.getItem('verifiedAdSkippingEnabled') !== 'false';
+        verifiedAdToggle.addEventListener('change', () => {
+            localStorage.setItem('verifiedAdSkippingEnabled', String(verifiedAdToggle.checked));
+        });
     }
 
     // 设置事件监听器
@@ -540,7 +532,7 @@ function initAPICheckboxes() {
     normaldiv.className = 'grid grid-cols-2 gap-2';
     const normalTitle = document.createElement('div');
     normalTitle.className = 'api-group-title';
-    normalTitle.textContent = '普通资源';
+    normalTitle.textContent = '全部内置资源';
     normaldiv.appendChild(normalTitle);
 
     // 创建普通API源的复选框
@@ -561,7 +553,6 @@ function initAPICheckboxes() {
     sortedApiKeys.forEach(apiKey => {
         const api = API_SITES[apiKey];
         if (api.adult) return; // 跳过成人内容API，稍后添加
-        if (hideZombieApis && !selectedAPIs.includes(apiKey) && apiQualities[apiKey]?.score === 0) return;
 
         const checked = selectedAPIs.includes(apiKey);
         const latency = apiLatencies[apiKey];
@@ -619,6 +610,7 @@ function initAPICheckboxes() {
 
     // 初始检查成人内容状态
     checkAdultAPIsSelected();
+    updateSelectedApiCount();
 }
 
 // 添加成人API列表
@@ -656,7 +648,6 @@ function addAdultAPI() {
 
         sortedAdultKeys.forEach(apiKey => {
             const api = API_SITES[apiKey];
-            if (hideZombieApis && !selectedAPIs.includes(apiKey) && apiQualities[apiKey]?.score === 0) return;
             const checked = selectedAPIs.includes(apiKey);
             const latency = apiLatencies[apiKey];
             const q = apiQualities[apiKey];
@@ -950,6 +941,29 @@ function updateSelectedApiCount() {
     if (countEl) {
         countEl.textContent = selectedAPIs.length;
     }
+    const totalEl = document.getElementById('sourceCatalogCount');
+    if (totalEl) totalEl.textContent = Object.values(API_SITES).filter(api => !api.adult).length;
+}
+
+function restoreSourceDefaults() {
+    qualityStateGeneration += 1;
+    cancelPassiveQualitySampling();
+    apiQualities = {};
+    apiLatencies = {};
+    qualityTestTime = null;
+    latencyTestTime = null;
+    for (const key of ['apiQualities', 'apiLatencies', 'qualityTestTime', 'latencyTestTime', 'hideZombieApis']) {
+        localStorage.removeItem(key);
+    }
+    window.OpenStreamSourceHealth?.reset?.();
+    window.OpenStreamSourceAdapter?.clearCache?.();
+    selectedAPIs = window.OpenStreamSourceCatalog.defaults(API_SITES);
+    localStorage.setItem('selectedAPIs', JSON.stringify(selectedAPIs));
+    initAPICheckboxes();
+    renderCustomAPIsList();
+    updateSelectedApiCount();
+    updateLatencyTimeDisplay();
+    showToast('已恢复默认选源，观看记录和自定义源已保留', 'success');
 }
 
 // 全选或取消全选API
@@ -1153,13 +1167,6 @@ function setupEventListeners() {
         });
     }
 
-    // 广告过滤开关事件绑定
-    const adFilterToggle = document.getElementById('adFilterToggle');
-    if (adFilterToggle) {
-        adFilterToggle.addEventListener('change', function (e) {
-            localStorage.setItem(PLAYER_CONFIG.adFilteringStorage, e.target.checked);
-        });
-    }
 }
 
 // 重置搜索区域
@@ -1619,6 +1626,7 @@ function getPortableConfigKeys() {
         'customAPIs',
         'yellowFilterEnabled',
         'adFilteringEnabled',
+        'verifiedAdSkippingEnabled',
         'doubanEnabled',
         'hasInitializedDefaults',
         SEARCH_FILTERS_CONFIG.storageKey,
@@ -1647,6 +1655,7 @@ function validatePortableConfigValue(key, value) {
     const booleanKeys = new Set([
         'yellowFilterEnabled',
         'adFilteringEnabled',
+        'verifiedAdSkippingEnabled',
         'doubanEnabled',
         'hasInitializedDefaults'
     ]);
@@ -2079,6 +2088,7 @@ async function testAllApiLatency() {
 // 质量检测：更贴近真实播放体验（搜索 + 详情 + 首集链接可达性）
 async function testAllApiQuality(options = {}) {
     const { silent = false } = options;
+    const generation = qualityStateGeneration;
     const btn = document.getElementById('testSpeedBtn');
     if (!btn || btn.disabled) return;
 
@@ -2134,6 +2144,7 @@ async function testAllApiQuality(options = {}) {
         // 合并：以 baseResults 为底，候选用 playResults 覆盖
         const playMap = new Map(playResults.map(r => [r.apiId, r]));
         const results = baseResults.map(r => playMap.get(r.apiId) || r);
+        if (generation !== qualityStateGeneration) return;
 
         const testedAt = Date.now();
         results.forEach(res => {
@@ -2160,12 +2171,10 @@ async function testAllApiQuality(options = {}) {
         saveLatencyCache();
         window.OpenStreamSourceHealth?.refreshStoredMetrics?.();
 
-        // 只自动选择真实通过播放首包验证的源，不用未验证候选补足数量。
+        // Detection updates health, not the user's search scope.
         const preferred = window.OpenStreamQualitySelection
             .selectVerifiedPlayable(results, 5)
             .map((result) => result.apiId);
-        selectedAPIs = preferred;
-        localStorage.setItem('selectedAPIs', JSON.stringify(selectedAPIs));
 
         initAPICheckboxes();
         renderCustomAPIsList();
@@ -2173,10 +2182,10 @@ async function testAllApiQuality(options = {}) {
         updateLatencyTimeDisplay();
 
         if (!silent) {
-            const message = selectedAPIs.length > 0
-                ? `检测完成！已自动选择${selectedAPIs.length}个验证可播放的资源`
-                : '检测完成，但本次没有验证出可播放资源';
-            showToast(message, selectedAPIs.length > 0 ? 'success' : 'warning');
+            const message = preferred.length > 0
+                ? `检测完成，${preferred.length} 个资源通过播放验证；已保留你的勾选`
+                : '本次未验证出可播放资源，已保留你的勾选，可稍后重试';
+            showToast(message, preferred.length > 0 ? 'success' : 'warning');
         }
     } catch (error) {
         console.error('质量检测过程出错:', error);

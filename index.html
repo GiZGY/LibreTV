@@ -32,7 +32,7 @@
     <link rel="manifest" href="manifest.json">
     <link rel="preload" href="image/openstream-logo.svg?v=0f26b3dc53f8" as="image" type="image/svg+xml" fetchpriority="high">
     <link rel="stylesheet" href="compiled/index.min.css?v=da13c0b24716">
-    <script src="compiled/index.min.js?v=6cfa87788852" defer></script>
+    <script src="compiled/index.min.js?v=97cacd6da91d" defer></script>
 </head>
 
 <body class="page-bg text-white" data-quality-runtime-src="compiled/quality-runtime.min.js?v=768100719090">
@@ -126,11 +126,9 @@
                         </svg>
                         质量检测
                     </button>
-                    <label class="flex items-center gap-1 px-2 py-1 bg-[#222] border border-[#333] rounded text-xs text-gray-400 select-none">
-                        <input type="checkbox" id="hideZombieToggle"
-                            class="form-checkbox h-3 w-3 text-blue-600 bg-[#222] border border-[#333]">
-                        隐藏僵尸源
-                    </label>
+                    <button id="restoreSourcesBtn" type="button"
+                        class="px-2 py-1 bg-[#333] hover:bg-[#444] text-white text-xs rounded"
+                        title="恢复默认勾选并清除检测记录，保留观看记录和自定义源">恢复默认选源</button>
                 </div>
 
                 <!-- API选择区域 - 使用滚动区域 -->
@@ -142,7 +140,7 @@
 
                 <!-- API信息显示 -->
                 <div class="text-xs text-gray-500 flex justify-between items-center">
-                    <span>已选API数量：<span id="selectedApiCount" class="text-white">0</span></span>
+                    <span>内置 <span id="sourceCatalogCount" class="text-white">0</span> 个 · 已选 <span id="selectedApiCount" class="text-white">0</span> 个（含自定义）</span>
                     <span id="siteStatus" class="ml-2"></span>
                 </div>
             </div>
@@ -214,11 +212,11 @@
                 <!-- 广告过滤开关 -->
                 <div class="flex items-center justify-between mb-3 pb-3 border-b border-[#222]">
                     <div>
-                        <label class="text-sm font-medium text-gray-400">分片广告过滤</label>
-                        <p class="text-xs text-gray-500 mt-1">暂时停用，保障影片完整播放</p>
+                        <label for="verifiedAdToggle" class="text-sm font-medium text-gray-400">跳过已知广告</label>
+                        <p class="text-xs text-gray-500 mt-1">完整匹配已确认广告后跳过，支持撤销</p>
                     </div>
                     <div class="relative inline-block w-12 align-middle select-none">
-                        <input type="checkbox" id="adFilterToggle"
+                        <input type="checkbox" id="verifiedAdToggle"
                             class="opacity-0 absolute w-full h-full cursor-pointer z-10">
                         <div
                             class="toggle-bg bg-[#333] w-12 h-6 rounded-full transition-colors duration-300 ease-in-out">

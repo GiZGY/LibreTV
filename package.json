@@ -41,8 +41,10 @@
     "smoke:bridge-security": "node bridge/tvbox-bridge/scripts/smoke-server-security.mjs",
     "smoke:bridge-fixtures": "node bridge/tvbox-bridge/scripts/smoke-libvio-fixture.mjs && node bridge/tvbox-bridge/scripts/smoke-jianpian-fixture.mjs && node bridge/tvbox-bridge/scripts/smoke-guazi-fixture.mjs",
     "smoke:production:tvbox": "node scripts/smoke-production-tvbox.mjs",
-    "smoke:all": "npm run smoke:streaming && npm run smoke:source-status && npm run smoke:search-ui-security && npm run smoke:dynamic-ui-security && npm run smoke:player-fallback && npm run smoke:player-tvbox && npm run smoke:player-loader && npm run smoke:player-lifecycle && npm run smoke:player-keyboard && npm run smoke:resource-switch && npm run smoke:quality-selection && npm run smoke:quality-runtime && npm run smoke:playback-quality && npm run smoke:auth && npm run smoke:server-static && npm run smoke:tvbox-proxy && npm run smoke:proxy-handler && npm run smoke:fetch-interceptor && npm run smoke:config-import && npm run smoke:workflows && npm run smoke:watch && npm run smoke:bridge-performance && npm run smoke:bridge-security && npm run smoke:bridge-fixtures && npm run smoke:static-performance",
-    "quality": "npm run build && npm run smoke:all && npm audit --audit-level=high"
+    "smoke:all": "npm run smoke:source-catalog && npm run smoke:ad-guard && npm run smoke:streaming && npm run smoke:source-status && npm run smoke:search-ui-security && npm run smoke:dynamic-ui-security && npm run smoke:player-fallback && npm run smoke:player-tvbox && npm run smoke:player-loader && npm run smoke:player-lifecycle && npm run smoke:player-keyboard && npm run smoke:resource-switch && npm run smoke:quality-selection && npm run smoke:quality-runtime && npm run smoke:playback-quality && npm run smoke:auth && npm run smoke:server-static && npm run smoke:tvbox-proxy && npm run smoke:proxy-handler && npm run smoke:fetch-interceptor && npm run smoke:config-import && npm run smoke:workflows && npm run smoke:watch && npm run smoke:bridge-performance && npm run smoke:bridge-security && npm run smoke:bridge-fixtures && npm run smoke:static-performance",
+    "quality": "npm run build && npm run smoke:all && npm audit --audit-level=high",
+    "smoke:source-catalog": "node scripts/smoke-source-catalog.mjs",
+    "smoke:ad-guard": "node scripts/smoke-ad-timeline.mjs && node scripts/smoke-ad-guard.mjs"
   },
   "dependencies": {
     "compression": "^1.8.1",
