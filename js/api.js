@@ -26,7 +26,7 @@ function createApiAbortError(reason) {
 async function handleApiRequest(url, options = {}) {
     const customApi = url.searchParams.get('customApi') || '';
     const customDetail = url.searchParams.get('customDetail') || '';
-    const source = url.searchParams.get('source') || 'heimuer';
+    const source = url.searchParams.get('source') || 'jisu';
 
     try {
         if (url.pathname === '/api/search') {
@@ -73,14 +73,8 @@ async function handleApiRequest(url, options = {}) {
                     throw new Error('API返回的数据格式无效');
                 }
 
-                // 360 资源疑似不支持关键词搜索：无论 wd 是什么都会返回同一批“短剧”列表
-                // 这里直接将其标记为搜索失败，避免污染站点可用性测试/质量评分/排序
                 if (source === 'zy360') {
-                    return JSON.stringify({
-                        code: 400,
-                        msg: '360资源疑似不支持关键词搜索，已忽略该源结果',
-                        list: [],
-                    });
+                    data.list = filter360SearchResults(data.list, searchQuery);
                 }
 
                 // 添加源信息到每个结果
@@ -105,7 +99,7 @@ async function handleApiRequest(url, options = {}) {
         // 详情处理
         if (url.pathname === '/api/detail') {
             const id = url.searchParams.get('id');
-            const sourceCode = url.searchParams.get('source') || 'heimuer'; // 获取源代码
+            const sourceCode = source;
 
             if (!id) {
                 throw new Error('缺少视频ID参数');

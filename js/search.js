@@ -310,18 +310,6 @@ async function searchByAPIAndKeyWord(apiId, query, filters, options = {}) {
         if (options.signal?.aborted) {
             throw createSearchAbortError(options.signal.reason);
         }
-        // 360 资源当前疑似不支持关键词搜索：无论 wd 是什么都会返回同一批“短剧”列表
-        // 为避免污染搜索结果，直接忽略它（用户仍可在设置里取消勾选）。
-        if (apiId === 'zy360') {
-            if (!window.__ZY360_SEARCH_WARNED__) {
-                window.__ZY360_SEARCH_WARNED__ = true;
-                try {
-                    window.showToast && window.showToast('360资源疑似不支持关键词搜索，已自动忽略该源结果（避免短剧刷屏）', 'info');
-                } catch (_) {}
-            }
-            return [];
-        }
-
         let apiName;
         let apiBaseUrl;
 
@@ -388,6 +376,7 @@ async function searchByAPIAndKeyWord(apiId, query, filters, options = {}) {
 
         // 关键词搜索：保持原逻辑，不应用筛选。
         if (hasKeyword) {
+            if (apiId === 'zy360') allResults = filter360SearchResults(allResults, query);
             return dedupeResults(allResults);
         }
 

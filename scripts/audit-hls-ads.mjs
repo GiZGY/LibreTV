@@ -10,18 +10,25 @@ export function parseMediaPlaylist(text) {
   let duration = null;
   let cc = 0;
   let byteRange = '';
+  let encrypted = false;
+  let initMap = false;
+  let gap = false;
   const fragments = [];
   for (const raw of text.split(/\r?\n/)) {
     const line = raw.trim();
     if (line.startsWith('#EXTINF:')) duration = Number(line.slice(8).split(',')[0]);
     else if (line === '#EXT-X-DISCONTINUITY') cc += 1;
     else if (line.startsWith('#EXT-X-BYTERANGE:')) byteRange = line.slice(17);
+    else if (line.startsWith('#EXT-X-KEY:')) encrypted = !/^#EXT-X-KEY:METHOD=NONE(?:,|$)/.test(line);
+    else if (line.startsWith('#EXT-X-MAP:')) initMap = true;
+    else if (line === '#EXT-X-GAP') gap = true;
     else if (line && !line.startsWith('#')) {
       if (!Number.isFinite(duration) || duration <= 0) throw new Error('Missing or invalid segment duration');
-      fragments.push({ sn: fragments.length, url: line, duration, start, cc, byteRange });
+      fragments.push({ sn: fragments.length, url: line, duration, start, cc, byteRange, encrypted, initMap, gap });
       start += duration;
       duration = null;
       byteRange = '';
+      gap = false;
     }
   }
   if (duration !== null || !fragments.length) throw new Error('Incomplete media playlist');

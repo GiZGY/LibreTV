@@ -694,37 +694,11 @@ function setCategoryButtonsActive(category) {
     });
 }
 
-// 填充搜索框，确保豆瓣资源API被选中，然后执行搜索
+// 推荐条目只提供片名，播放搜索沿用用户选源。
 async function fillAndSearchWithDouban(title) {
     if (!title) return;
     const searchTitle = String(title).trim();
     if (!searchTitle) return;
-    
-    // 确保豆瓣资源API被选中
-    if (typeof selectedAPIs !== 'undefined' && !selectedAPIs.includes('dbzy')) {
-        // 在设置中勾选豆瓣资源API复选框
-        const doubanCheckbox = document.querySelector('input[id="api_dbzy"]');
-        if (doubanCheckbox) {
-            doubanCheckbox.checked = true;
-            
-            // 触发updateSelectedAPIs函数以更新状态
-            if (typeof updateSelectedAPIs === 'function') {
-                updateSelectedAPIs();
-            } else {
-                // 如果函数不可用，则手动添加到selectedAPIs
-                selectedAPIs.push('dbzy');
-                localStorage.setItem('selectedAPIs', JSON.stringify(selectedAPIs));
-                
-                // 更新选中API计数（如果有这个元素）
-                const countEl = document.getElementById('selectedAPICount');
-                if (countEl) {
-                    countEl.textContent = selectedAPIs.length;
-                }
-            }
-            
-            showToast('已自动选择豆瓣资源API', 'info');
-        }
-    }
     
     // 填充搜索框并执行搜索
     const input = document.getElementById('searchInput');

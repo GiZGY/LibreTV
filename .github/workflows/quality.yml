@@ -46,6 +46,12 @@ jobs:
       - name: Build bridge container
         run: docker build --tag openstream-tvbox-bridge:quality bridge/tvbox-bridge
 
+      - name: Validate and build ad observer
+        run: |
+          docker compose -f services/ad-observer/compose.yml config -q
+          docker build --tag openstream-ad-observer:quality -f services/ad-observer/Dockerfile .
+          docker run --rm openstream-ad-observer:quality node services/ad-observer/worker.mjs --help
+
       - name: Validate and build OpenStream container
         env:
           PASSWORD: quality-check-only

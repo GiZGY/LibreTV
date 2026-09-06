@@ -1,0 +1,28 @@
+services:
+  ad-observer:
+    build:
+      context: ../..
+      dockerfile: services/ad-observer/Dockerfile
+    init: true
+    restart: "no"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 384m
+    cpus: 0.5
+    pids_limit: 48
+    stop_grace_period: 30s
+    healthcheck:
+      test: ["CMD", "node", "-e", "const r=JSON.parse(require('fs').readFileSync('/data/report.json'));process.exit(r.status==='completed'&&Date.now()-Date.parse(r.createdAt)<7*3600000?0:1)"]
+      interval: 5m
+      timeout: 5s
+      start_period: 12m
+      retries: 2
+    volumes:
+      - ad-observer-data:/data
+    logging:
+      options:
+        max-size: "5m"
+        max-file: "2"
+volumes:
+  ad-observer-data:
