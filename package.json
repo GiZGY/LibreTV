@@ -1,7 +1,7 @@
 {
   "name": "libretv",
   "type": "module",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "private": true,
   "engines": {
     "node": "22.x"
@@ -44,7 +44,10 @@
     "smoke:all": "npm run smoke:source-catalog && npm run smoke:ad-guard && npm run smoke:streaming && npm run smoke:source-status && npm run smoke:search-ui-security && npm run smoke:dynamic-ui-security && npm run smoke:player-fallback && npm run smoke:player-tvbox && npm run smoke:player-loader && npm run smoke:player-lifecycle && npm run smoke:player-keyboard && npm run smoke:resource-switch && npm run smoke:quality-selection && npm run smoke:quality-runtime && npm run smoke:playback-quality && npm run smoke:auth && npm run smoke:server-static && npm run smoke:tvbox-proxy && npm run smoke:proxy-handler && npm run smoke:fetch-interceptor && npm run smoke:config-import && npm run smoke:workflows && npm run smoke:watch && npm run smoke:bridge-performance && npm run smoke:bridge-security && npm run smoke:bridge-fixtures && npm run smoke:static-performance",
     "quality": "npm run build && npm run smoke:all && npm audit --audit-level=high",
     "smoke:source-catalog": "node scripts/smoke-source-catalog.mjs",
-    "smoke:ad-guard": "node scripts/smoke-ad-timeline.mjs && node scripts/smoke-ad-guard.mjs"
+    "smoke:ad-guard": "node scripts/smoke-ad-timeline.mjs && node scripts/smoke-ad-guard.mjs && node scripts/smoke-ad-audit.mjs && node scripts/smoke-ad-observer.mjs",
+    "audit:source-ads": "node scripts/audit-source-ads.mjs",
+    "ads:observe": "node services/ad-observer/worker.mjs",
+    "smoke:ad-observer": "node scripts/smoke-ad-observer.mjs"
   },
   "dependencies": {
     "compression": "^1.8.1",

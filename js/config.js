@@ -28,10 +28,6 @@ const API_SITES = {
         api: 'https://bfzyapi.com/api.php/provide/vod',
         name: '暴风资源',
     },
-    tyyszy: {
-        api: 'https://tyyszy.com/api.php/provide/vod',
-        name: '天涯资源',
-    },
     xiaomaomi: {
         api: 'https://zy.xmm.hk/api.php/provide/vod',
         name: '小猫咪资源',
@@ -41,11 +37,6 @@ const API_SITES = {
         name: '非凡影视',
         detail: 'http://ffzy5.tv', 
     },
-    heimuer: {
-        api: 'https://json.heimuer.xyz/api.php/provide/vod',
-        name: '黑木耳',
-        detail: 'https://heimuer.tv', 
-    },
     zy360: {
         api: 'https://360zy.com/api.php/provide/vod',
         name: '360资源',
@@ -54,10 +45,6 @@ const API_SITES = {
         api: 'https://www.iqiyizyapi.com/api.php/provide/vod',
         name: 'iqiyi资源',
     },
-    wolong: {
-        api: 'https://wolongzyw.com/api.php/provide/vod',
-        name: '卧龙资源',
-    }, 
     hwba: {
         api: 'https://cjhwba.com/api.php/provide/vod',
         name: '华为吧资源',
@@ -65,10 +52,6 @@ const API_SITES = {
     jisu: {
         api: 'https://jszyapi.com/api.php/provide/vod',
         name: '极速资源',
-    },
-    dbzy: {
-        api: 'https://dbzy.tv/api.php/provide/vod',
-        name: '豆瓣资源',
     },
     mozhua: {
         api: 'https://mozhuazy.com/api.php/provide/vod',
@@ -93,10 +76,6 @@ const API_SITES = {
     wujin: {
         api: 'https://api.wujinapi.me/api.php/provide/vod',
         name: '无尽资源'
-    },
-    wwzy: {
-        api: 'https://wwzy.tv/api.php/provide/vod',
-        name: '旺旺短剧'
     },
     ikun: {
         api: 'https://ikunzyapi.com/api.php/provide/vod',
@@ -132,6 +111,15 @@ function extendAPISites(newSites) {
 // 暴露到全局
 window.API_SITES = API_SITES;
 window.extendAPISites = extendAPISites;
+
+function filter360SearchResults(items, query) {
+    const normalize = value => String(value || '').toLowerCase().replace(/[\s:：·-]/g, '');
+    const keyword = normalize(query);
+    const list = Array.isArray(items) ? items : [];
+    // This provider previously ignored wd. Keep irrelevant catalog pages out
+    // without permanently blocking valid keyword results.
+    return keyword ? list.filter(item => normalize(item?.vod_name).includes(keyword)) : list;
+}
 
 
 // 添加聚合搜索的配置选项

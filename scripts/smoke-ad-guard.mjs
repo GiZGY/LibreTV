@@ -20,6 +20,29 @@ context.document = { createElement: () => ({
 }) };
 vm.runInContext(source, context);
 const guard = context.OpenStreamAdGuard;
+vm.runInContext(fs.readFileSync(new URL('../js/ad-rules.js', import.meta.url), 'utf8'), context);
+const ruleIds = new Set();
+for (const configured of context.OpenStreamAdRules) {
+  assert.ok(!ruleIds.has(configured.id), 'rule IDs must be unique');
+  ruleIds.add(configured.id);
+  let start = 30;
+  const parts = configured.segments.map((part, i) => {
+    const frag = { sn: i, url: `https://fixture.test/${i}.ts`, start, duration: part.duration };
+    start += part.duration;
+    return frag;
+  });
+  parts.push({ sn: parts.length, url: 'https://fixture.test/film.ts', start, duration: 1000 });
+  // Expiration is tested separately; keep archived rule regressions repeatable.
+  const candidate = guard.findCandidates(parts, [configured], Date.parse(configured.reviewedAt))[0];
+  assert.ok(candidate, `${configured.id}: complete sequence must be discoverable`);
+  const active = { ...candidate, rule: { ...configured, expiresAt: new Date(Date.now() + 86400000).toISOString() } };
+  const complete = new Map(candidate.parts.map((frag, i) => [guard.fragmentKey(frag), configured.segments[i].sha256]));
+  assert.equal(guard.rangeFor(active, complete, start + 1000).end, start);
+  for (const part of candidate.parts) {
+    const partial = new Map(complete); partial.delete(guard.fragmentKey(part));
+    assert.equal(guard.rangeFor(active, partial, start + 1000), null, `${configured.id}: every part is mandatory`);
+  }
+}
 const payloads = [Buffer.from('confirmed-ad-part-1'), Buffer.from('confirmed-ad-part-2')];
 const hashes = payloads.map(payload => createHash('sha256').update(payload).digest('hex'));
 const rule = { id: 'fixture', expiresAt: new Date(Date.now() + 86400000).toISOString(), segments: hashes.map(sha256 => ({ duration: 5, sha256 })) };
