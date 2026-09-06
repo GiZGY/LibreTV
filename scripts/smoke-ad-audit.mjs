@@ -1,8 +1,13 @@
 import assert from 'node:assert/strict';
-import { selectMovie, cmsPlaylists, failureStatus, resolveMedia, parseOptions, runAudit } from './audit-source-ads.mjs';
+import { selectMovie, cmsPlaylists, failureStatus, resolveMedia, parseOptions, runAudit, rotateSources } from './audit-source-ads.mjs';
 import { auditPlaylist } from './audit-hls-ads.mjs';
 
 const movie = { vod_name: 'X战警：天启', vod_id: 1 };
+assert.deepEqual(rotateSources(['a', 'b', 'c'], 1), ['b', 'c', 'a']);
+assert.deepEqual(rotateSources(['a', 'b', 'c'], 4), ['b', 'c', 'a']);
+assert.deepEqual(rotateSources([], 3), []);
+assert.throws(() => rotateSources(['a'], -1));
+assert.throws(() => rotateSources(['a'], NaN));
 assert.deepEqual(parseOptions(['--sources', 'bfzy', '--out', '/tmp/report.json']), { '--sources': 'bfzy', '--out': '/tmp/report.json' });
 assert.throws(() => parseOptions(['--sources']), /arguments/);
 assert.throws(() => parseOptions(['--typo', 'value']), /arguments/);

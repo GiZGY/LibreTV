@@ -8,6 +8,7 @@ async function fetchVersion(url, errorMessage, options = {}) {
 }
 
 const VERSION_CHECK_CACHE_KEY = 'openstreamVersionCheckCache';
+const VERSION_BUILD = typeof __OPENSTREAM_VERSION__ === 'string' ? __OPENSTREAM_VERSION__ : null;
 const VERSION_CHECK_INTERVAL = 24 * 60 * 60 * 1000;
 const VERSION_CHECK_MIN_DELAY = 15 * 1000;
 const VERSION_FETCH_TIMEOUT = 2500;
@@ -29,6 +30,7 @@ function readCachedVersionCheck() {
     try {
         const cached = JSON.parse(localStorage.getItem(VERSION_CHECK_CACHE_KEY) || 'null');
         if (!cached || !cached.result || !cached.checkedAt) return null;
+        if (VERSION_BUILD && cached.result.current !== VERSION_BUILD) return null;
         if (Date.now() - cached.checkedAt > VERSION_CHECK_INTERVAL) return null;
         return cached.result;
     } catch (_) {
@@ -49,7 +51,7 @@ function writeCachedVersionCheck(result) {
 async function checkForUpdates() {
     try {
         // 获取当前版本
-        const currentVersion = await fetchVersionWithTimeout('/VERSION.txt', '获取当前版本失败', {
+        const currentVersion = VERSION_BUILD || await fetchVersionWithTimeout('/VERSION.txt', '获取当前版本失败', {
             cache: 'no-cache'
         });
         
@@ -170,6 +172,8 @@ function createVersionElement(result) {
                 });
             }
         }, 100);
+    } else if (result.checking) {
+        versionElement.textContent = `版本: ${result.currentFormatted}`;
     } else {
         versionElement.innerHTML = `版本: ${result.currentFormatted} <span class="text-green-500">(最新版本)</span>`;
     }
@@ -191,6 +195,8 @@ function addVersionInfoToFooter() {
     const cachedResult = readCachedVersionCheck();
     if (cachedResult) {
         displayVersionElement(createVersionElement(cachedResult));
+    } else if (VERSION_BUILD) {
+        displayVersionElement(createVersionElement({ currentFormatted: VERSION_BUILD, checking: true }));
     }
 
     const runCheck = () => checkForUpdates().then(result => {
