@@ -49,12 +49,29 @@ export function auditPlaylist(text) {
     occurrences.push({ start: block[0].start, end: block.at(-1).start + block.at(-1).duration, segments: block.length });
     repeated.set(signature, occurrences);
   }
+  // Address rotation and a single insertion defeat URL-repetition checks.
+  // These are review candidates only: ordinary scenes also form short blocks.
+  const shortBlocks = text.includes('#EXT-X-ENDLIST') ? blocks.filter(block =>
+    block.length >= 2 && block.length <= 100 &&
+    block.reduce((sum, frag) => sum + frag.duration, 0) <= 120 &&
+    block.every(frag => !frag.encrypted && !frag.byteRange && !frag.initMap && !frag.gap)
+  ) : [];
   return {
     playlistSha256: createHash('sha256').update(text).digest('hex'),
     duration: fragments.at(-1).start + fragments.at(-1).duration,
     segments: fragments.length,
     blocks: blocks.length,
     hasEndList: text.includes('#EXT-X-ENDLIST'),
+    shortBlockReview: {
+      status: 'needs_content_verification',
+      total: shortBlocks.length,
+      truncated: shortBlocks.length > 64,
+      blocks: shortBlocks.slice(0, 64).map(block => ({
+        start: block[0].start,
+        end: block.at(-1).start + block.at(-1).duration,
+        segments: block.length
+      }))
+    },
     candidates: [...repeated].filter(([, occurrences]) => occurrences.length > 1).map(([id, occurrences]) => ({
       id, status: 'needs_content_verification', occurrences
     }))
