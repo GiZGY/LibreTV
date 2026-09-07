@@ -43,4 +43,16 @@ const audit = auditPlaylist('#EXTM3U\n#EXTINF:2,\na.ts?token=private\n#EXT-X-DIS
 assert.equal(audit.candidates[0].status, 'needs_content_verification');
 assert.doesNotMatch(JSON.stringify(audit), /token|private|\.ts/);
 assert.equal(auditPlaylist(media).candidates.length, 0);
+const single = auditPlaylist('#EXTM3U\n#EXTINF:300,\nfilm.ts\n#EXT-X-DISCONTINUITY\n#EXTINF:3,\na.ts?token=private\n#EXTINF:4,\nb.ts\n#EXT-X-DISCONTINUITY\n#EXTINF:300,\nrest.ts\n#EXT-X-ENDLIST');
+assert.equal(single.candidates.length, 0);
+assert.equal(single.shortBlockReview.total, 1, 'single insertions must not disappear from the audit');
+assert.equal(single.shortBlockReview.status, 'needs_content_verification');
+assert.doesNotMatch(JSON.stringify(single), /private|token/);
+const short = '#EXTINF:3,\na.ts\n#EXTINF:4,\nb.ts\n';
+assert.equal(auditPlaylist('#EXTM3U\n' + short).shortBlockReview.total, 0, 'live playlists are not VOD candidates');
+assert.equal(auditPlaylist('#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI="key"\n' + short + '#EXT-X-ENDLIST').shortBlockReview.total, 0);
+const many = auditPlaylist('#EXTM3U\n' + Array.from({ length: 70 }, () => short).join('#EXT-X-DISCONTINUITY\n') + '#EXT-X-ENDLIST');
+assert.equal(many.shortBlockReview.total, 70);
+assert.equal(many.shortBlockReview.blocks.length, 64);
+assert.equal(many.shortBlockReview.truncated, true);
 console.log(JSON.stringify({ ok: true, exactTitle: true, boundedRenditions: true, timeoutNotEmpty: true, redactedReports: true, candidatesNotConfirmed: true }));

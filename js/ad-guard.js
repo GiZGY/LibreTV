@@ -57,7 +57,11 @@
     }
 
     function attach({ hls, video, events, host, rules = window.OpenStreamAdRules || [], enabled = () => true }) {
-        if (!window.crypto?.subtle) return () => {};
+        if (!window.crypto?.subtle) {
+            const dispose = () => {};
+            dispose.getStatus = () => ({ supported: false, enabled: enabled(), reason: 'crypto_unavailable' });
+            return dispose;
+        }
         let candidates = [];
         let relevantUrls = new Set();
         const verified = new Map();
@@ -68,6 +72,7 @@
         let noticeTimer = 0;
         let undoTime = null;
         let undoId = null;
+        let skips = 0;
 
         function clearNotice() {
             clearTimeout(noticeTimer);
@@ -113,6 +118,7 @@
                 undoId = range.id;
                 try { video.currentTime = range.end; } catch (_) { return; }
                 excluded.add(range.id);
+                skips++;
                 showNotice();
                 break;
             }
@@ -164,6 +170,18 @@
         video.addEventListener('timeupdate', tick);
         dispose.inspect = (context, response) => onFragment(null, {
             frag: context?.frag, payload: response?.data
+        });
+        // Counts only: diagnostics must not expose media URLs or viewing history.
+        // Zero candidates means unknown coverage, not an ad-free video.
+        dispose.getStatus = () => ({
+            supported: true,
+            enabled: enabled(),
+            disposed,
+            rules: rules.length,
+            candidates: candidates.length,
+            verifiedSegments: verified.size,
+            verifiedRanges: candidates.filter(candidate => rangeFor(candidate, verified, video.duration)).length,
+            skips
         });
         return dispose;
     }
