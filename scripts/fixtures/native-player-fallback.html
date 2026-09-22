@@ -1,0 +1,56 @@
+<!doctype html><meta charset="utf-8"><title>Native player fallback acceptance</title>
+<style>body{font:16px system-ui;margin:24px}#player{width:640px;height:360px}textarea{width:95%;height:320px}</style>
+<h1>Silent ArtPlayer fallback acceptance</h1>
+<p>Local fixture; startup errors are injected. No production rules or settings are changed.</p>
+<button id="run">Run fallback checks</button><div id="player"></div>
+<textarea id="result" aria-label="Fallback results" readonly>Ready</textarea>
+<script src="/artplayer.js"></script><script src="/ad-guard.js"></script>
+<script src="/native-ad-session.js"></script>
+<script>
+const output=document.querySelector('#result'),results=[];
+let art,timer;
+const report=()=>output.value=JSON.stringify(results,null,2);
+const check=(name,pass)=>{results.push({name,pass:!!pass});report();if(!pass)throw Error(name);};
+const until=(test,label)=>new Promise((resolve,reject)=>{const started=performance.now();const poll=()=>{if(test())return resolve();if(performance.now()-started>15000)return reject(Error(label));timer=setTimeout(poll,50);};poll();});
+document.querySelector('#run').onclick=async function(){
+ this.disabled=true;results.length=0;
+ try{
+  for(const mode of ['missing','constructor','codec']){
+   let hls=null,guard=null,nativePlayback=false,recoveries=0,failed=false,overlayTimer,overlayNotice;
+   const next=document.querySelector('#player'),media=null;
+   const fail=()=>{failed=true;};
+   let destroyed=0;
+   class InjectedHls{
+    static isSupported(){return true;}
+    static DefaultConfig={loader:class{}};
+    static Events={ERROR:'error'};
+    static ErrorTypes={MEDIA_ERROR:'mediaError'};
+    constructor(){if(mode==='constructor')throw Error('injected initialization');}
+    on(_event,callback){this.callback=callback;}
+    off(){}
+    loadSource(){}
+    attachMedia(){queueMicrotask(()=>this.callback('error',{fatal:true,type:'mediaError',details:'bufferAddCodecError'}));}
+    destroy(){destroyed++;}
+   }
+   window.Hls=mode==='missing'?undefined:InjectedHls;
+   const customType=__CUSTOM_TYPE__;
+   const productionHandler=customType.m3u8;
+   customType.m3u8=(video,url)=>{video.muted=true;video.defaultMuted=true;video.volume=0;return productionHandler(video,url);};
+   art=new Artplayer({container:next,url:'/video.m3u8',type:'m3u8',customType,muted:true,volume:0,autoplay:false,playsInline:true});
+   art.video.muted=true;art.video.defaultMuted=true;art.video.volume=0;
+   await until(()=>nativePlayback,'native takeover');
+   check(mode+' silent before play',art.video.muted&&art.video.volume===0);
+   await art.video.play();
+   await until(()=>art.video.currentTime>1&&art.video.readyState>=2,'native playback progress');
+   check(mode+' real playback',!failed&&art.video.currentTime>1&&Number.isFinite(art.video.duration));
+   check(mode+' session safely without reviewed record',!!guard&&guard.getStatus().status==='no_unique_reviewed_version');
+   check(mode+' remains silent',art.video.muted&&art.video.volume===0);
+   if(mode==='codec')check('old Hls destroyed once',destroyed===1);
+   art.video.pause();guard?.();hls?.destroy();art.destroy(false);art=null;
+  }
+  check('complete',true);
+ }catch(error){results.push({name:error.message,pass:false});report();}
+ finally{clearTimeout(timer);if(art){art.video.pause();art.destroy(false);art=null;}this.disabled=false;}
+};
+window.addEventListener('pagehide',()=>{clearTimeout(timer);art?.destroy(false);});
+</script>

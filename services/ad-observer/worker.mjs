@@ -6,7 +6,7 @@ import { runAudit } from '../../scripts/audit-source-ads.mjs';
 import { candidateStatus, compileRules, createBudget, downloadSegment, observeMedia,
   pruneState, reviewCandidate, sha256, titleId } from './core.mjs';
 import { atomicJson, openStore, readSnapshot } from './store.mjs';
-import { loadBaseline, validateRules } from './rule-gate.mjs';
+import { loadBaseline, loadRuleBundle, validateRuleBundle } from './rule-gate.mjs';
 
 const SAMPLE_TITLES = [
   { keyword: 'X战警', title: 'X战警：天启' }, { keyword: '飞驰人生2', title: '飞驰人生2' },
@@ -55,7 +55,7 @@ export async function runCycle(store, { sources, queries, signal, audit = runAud
   const report = await audit({ sources, queries: sample, signal: bounded, sourceOffset: store.state.runs,
     onMedia: media => observeMedia(media, { state: store.state, budget, rules, offset,
       read: read || ((url, b) => downloadSegment(url, b, { signal: bounded })),
-      saveEvidence: store.saveEvidence, now }) });
+      saveEvidence: store.saveEvidence, now, decryptAes: true }) });
   store.state.runs++;
   const summary = { createdAt: now.toISOString(), status: bounded.aborted ? 'interrupted' : 'completed',
     scope: report.scope, sampledCases: report.rows.length, bytesBudgeted: budget.bytes,
@@ -72,14 +72,17 @@ export async function runCycle(store, { sources, queries, signal, audit = runAud
 }
 
 export async function exportRelease(store) {
-  const rules = compileRules(store.state, await loadBaseline());
-  const validation = await validateRules(rules);
-  const version = sha256(JSON.stringify(rules));
-  const release = { schema: 1, version, createdAt: new Date().toISOString(), rules, validation };
+  const baseline = await loadRuleBundle();
+  const rules = compileRules(store.state, baseline.rules);
+  const overlayRules = baseline.overlayRules.filter(rule=>Date.parse(rule.expiresAt)>Date.now());
+  const validation = await validateRuleBundle(rules, overlayRules);
+  const version = sha256(JSON.stringify({rules,overlayRules}));
+  const release = { schema: 2, version, createdAt: new Date().toISOString(), rules, overlayRules, validation };
   const directory = path.join(store.directory, 'releases', version);
   await fs.mkdir(directory, { recursive: true, mode: 0o700 });
   const javascript = '// Reviewed content fingerprints. Unknown material never authorizes skipping.\n' +
-    `window.OpenStreamAdRules = ${JSON.stringify(rules, null, 2)};\n`;
+    `window.OpenStreamAdRules = ${JSON.stringify(rules, null, 2)};\n` +
+    `window.OpenStreamOverlayRules = ${JSON.stringify(overlayRules, null, 2)};\n`;
   // Content-addressed outputs are reproducible; they never modify the website or deploy it.
   await fs.writeFile(path.join(directory, 'ad-rules.js'), javascript, { mode: 0o600 });
   await atomicJson(path.join(directory, 'release.json'), release);

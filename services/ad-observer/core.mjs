@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { parseMediaPlaylist } from '../../scripts/audit-hls-ads.mjs';
 import { fetchWithTimeout, readResponseBytes } from '../../bridge/tvbox-bridge/src/http.mjs';
+import { aesInspection } from './aes.mjs';
 
 export const sha256 = value => createHash('sha256').update(value).digest('hex');
 export const titleId = title => sha256(title.replace(/[\s：:·\-]/g, '').toLowerCase());
@@ -12,6 +13,12 @@ export function discoverBlocks(text, offset = 0) {
   if (!text.includes('#EXT-X-ENDLIST')) return { status: 'unsupported_live', blocks: [] };
   const fragments = parseMediaPlaylist(text);
   if (fragments.length > 15000) return { status: 'manifest_limit', blocks: [] };
+  const excluded = Object.fromEntries(['encrypted', 'byteRange', 'initMap', 'gap']
+    .map(key => [key, fragments.filter(fragment => Boolean(fragment[key])).length]));
+  if (fragments.length && fragments.every(fragment =>
+    fragment.encrypted || fragment.byteRange || fragment.initMap || fragment.gap)) {
+    return { status: 'unsupported_media_features', excluded, blocks: [] };
+  }
   const blocks = [];
   for (const fragment of fragments) {
     if (!blocks.length || blocks.at(-1)[0].cc !== fragment.cc) blocks.push([]);
@@ -20,9 +27,26 @@ export function discoverBlocks(text, offset = 0) {
   const eligible = blocks.filter(block => block.length >= 2 && block.length <= 100 &&
     block.reduce((sum, f) => sum + f.duration, 0) <= 120 &&
     block.every(f => !f.encrypted && !f.byteRange && !f.initMap && !f.gap));
-  // Rotate the window across runs instead of repeatedly examining only the opening.
-  const unique = [...new Map(eligible.map(block => [sha256(JSON.stringify(block.map(f =>
-    [f.url, f.duration]))), block])).values()];
+  // Repeated blocks are useful sampling leads, never permission to delete.
+  // Prioritize them on the first pass, then rotate through all other candidates.
+  const grouped = new Map();
+  for (const block of eligible) {
+    const key = sha256(JSON.stringify(block.map(f => [f.url, f.duration])));
+    const previous = grouped.get(key);
+    if (previous) previous.count++;
+    else grouped.set(key, { block, count:1 });
+  }
+  const unique = [...grouped.values()].sort((a,b)=>b.count-a.count).map(entry=>entry.block);
+  if (!unique.length && blocks.length === 1 && fragments.length >= 8) {
+    // Continuous streams still need content inspection. Sparse samples cannot
+    // establish absence of ads and do not become skip rules without review.
+    const samples = [0.125,0.375,0.625,0.875].map(fraction => {
+      const start = Math.min(fragments.length - 2, Math.floor(fragments.length * fraction));
+      return fragments.slice(start,start+2);
+    }).filter(parts => parts.reduce((sum,f)=>sum+f.duration,0)<=120 &&
+      parts.every(f=>!f.encrypted&&!f.byteRange&&!f.initMap&&!f.gap));
+    if (samples.length) return {status:'sparse_content_samples',kind:'sparse',eligible:samples.length,blocks:samples};
+  }
   const start = unique.length ? offset % unique.length : 0;
   return { status: unique.length ? 'candidates_found' : 'no_eligible_blocks',
     eligible: unique.length, blocks: [...unique.slice(start), ...unique.slice(0, start)].slice(0, LIMITS.blocksPerLine) };
@@ -66,7 +90,8 @@ export function recordCandidate(state, segments, occurrence, now = new Date()) {
   entry.lastSeen = now.toISOString();
   const observation = { source: occurrence.source,
     titleId: titleId(occurrence.title),
-    line: occurrence.index, start: occurrence.start, end: occurrence.end };
+    line: occurrence.index, start: occurrence.start, end: occurrence.end,
+    ...(occurrence.kind === 'sparse' ? {kind:'sparse'} : {}) };
   const key = JSON.stringify(observation);
   if (!entry.observations.some(item => JSON.stringify(item) === key)) {
     entry.observations.push(observation);
@@ -96,19 +121,21 @@ export function candidateStatus(entry, rules, now = Date.now()) {
 }
 
 export async function observeMedia({ source, title, index, media }, { state, budget, rules,
-  offset = 0, read = downloadSegment, saveEvidence = async () => false, now = new Date() }) {
-  const discovery = discoverBlocks(media.text, offset);
+  offset = 0, read = downloadSegment, saveEvidence = async () => false, now = new Date(), decryptAes = false }) {
+  const aes = decryptAes ? aesInspection(media.text, media.url, read, budget) : null;
+  const discovery = discoverBlocks(aes?.discoveryText || media.text, offset);
   const results = [];
   for (const block of discovery.blocks) {
     try {
       const segments = [], buffers = [];
       for (const part of block) {
-        const bytes = await read(new URL(part.url, media.url).href, budget);
+        const payload = await read(new URL(part.url, media.url).href, budget);
+        const bytes = aes ? await aes.decrypt(payload) : payload;
         segments.push({ duration: part.duration, sha256: sha256(bytes) });
         buffers.push(bytes);
       }
       const entry = recordCandidate(state, segments, { source, title, index,
-        start: block[0].start, end: block.at(-1).start + block.at(-1).duration }, now);
+        start: block[0].start, end: block.at(-1).start + block.at(-1).duration,kind:discovery.kind }, now);
       if (!entry) { results.push({ status: 'candidate_limit' }); continue; }
       if (!entry.evidenceDigest) {
         const saved = await saveEvidence(entry.id, segments, buffers);
@@ -121,7 +148,9 @@ export async function observeMedia({ source, title, index, media }, { state, bud
       if (budget.exhausted) break;
     }
   }
-  return { status: discovery.status, eligible: discovery.eligible || 0, sampled: results.length, results };
+  return { status: discovery.status, eligible: discovery.eligible || 0,
+    ...(aes ? { inspection: 'aes128_plaintext' } : {}),
+    ...(discovery.excluded ? { excluded: discovery.excluded } : {}), sampled: results.length, results };
 }
 
 export function reviewCandidate(entry, { verdict, evidenceDigest, reviewedAt, expiresAt }) {

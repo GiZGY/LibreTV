@@ -121,6 +121,15 @@ assert.match(playlistBody, /resource=/);
 assert.match(playlistBody, /rb=/);
 assert.match(playlist.headers.get('cache-control'), /max-age=60/);
 
+const inspectionRequest = new MockRequest('https://media.example/master.m3u8');
+inspectionRequest.query.inspect = 'manifest';
+const inspectedPlaylist = await runHandler(async () => new Response(masterPlaylist, {
+  headers: { 'content-type': 'application/vnd.apple.mpegurl' }
+}), inspectionRequest);
+assert.equal(inspectedPlaylist.body().toString(), masterPlaylist, 'inspection preserves exact upstream bytes');
+assert.equal(inspectedPlaylist.headers.get('cache-control'), 'private, no-store');
+assert.equal(inspectedPlaylist.headers.get('vercel-cdn-cache-control'), 'no-store');
+
 const mediaPlaylist = await runHandler(async () => new Response(
   '#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI="key.bin"\n#EXT-X-MAP:URI="init.mp4"\n#EXTINF:6,\nsegment.ts\n',
   { headers: { 'content-type': 'text/plain' } }
@@ -243,6 +252,13 @@ const invalidAuth = await runHandler(async () => new Response('unexpected'), new
   }
 ));
 assert.equal(invalidAuth.statusCode, 401);
+
+const limitedCatalog = await runHandler(async () => new Response(JSON.stringify({r:1,msg:'检测到有异常请求从您的IP发出，请登录再试!'}), {
+  headers:{'content-type':'application/json'}
+}), new MockRequest('https://movie.douban.com/j/new_search_subjects?tags=电影&start=0'));
+assert.equal(limitedCatalog.statusCode,429);
+assert.match(limitedCatalog.headers.get('cache-control'),/no-store/);
+assert.equal(limitedCatalog.headers.has('vercel-cdn-cache-control'),false);
 
 let timeoutAborted = false;
 const timeoutStart = Date.now();

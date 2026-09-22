@@ -2,11 +2,12 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import vm from 'node:vm';
 import { candidateStatus, compileRules, createBudget, discoverBlocks, downloadSegment, LIMITS,
   observeMedia, pruneState, reviewCandidate, sequenceId, sha256 } from '../services/ad-observer/core.mjs';
 import { openStore, readSnapshot } from '../services/ad-observer/store.mjs';
 import { exportRelease, parseArgs, runCycle } from '../services/ad-observer/worker.mjs';
-import { validateRules } from '../services/ad-observer/rule-gate.mjs';
+import { validateRules, loadRuleBundle, validateRuleBundle } from '../services/ad-observer/rule-gate.mjs';
 
 const playlist = '#EXTM3U\n#EXTINF:200,\nfilm.ts\n#EXT-X-DISCONTINUITY\n#EXTINF:5,\na.ts?token=private\n#EXTINF:5,\nb.ts?token=private\n#EXT-X-DISCONTINUITY\n#EXTINF:200,\nrest.ts\n#EXT-X-ENDLIST';
 const payloads = [Buffer.from('ad-part-a'), Buffer.from('ad-part-b')];
@@ -25,6 +26,31 @@ assert.equal(discoverBlocks(mixed).blocks.length, 1, 'unencrypted candidates in 
 const many = '#EXTM3U\n' + Array.from({ length: 10 }, (_, i) => `#EXT-X-DISCONTINUITY\n#EXTINF:5,\na${i}.ts\n#EXTINF:5,\nb${i}.ts`).join('\n') + '\n#EXT-X-ENDLIST';
 assert.notEqual(discoverBlocks(many, 0).blocks[0][0].url, discoverBlocks(many, 4).blocks[0][0].url);
 assert.equal(discoverBlocks(many).blocks.length, 4);
+const recurring = '#EXT-X-DISCONTINUITY\n#EXTINF:5,\nrepeat-a.ts\n#EXTINF:5,\nrepeat-b.ts\n';
+const prioritized = many.replace('#EXT-X-ENDLIST', recurring + recurring + '#EXT-X-ENDLIST');
+assert.equal(discoverBlocks(prioritized).blocks[0][0].url,'repeat-a.ts','bounded sampling should not miss recurring material after many normal blocks');
+assert.notEqual(discoverBlocks(prioritized,1).blocks[0][0].url,'repeat-a.ts','later runs still rotate past repeated material');
+assert.equal(discoverBlocks(prioritized).eligible,11,'recurrence must not duplicate download work');
+const continuous = '#EXTM3U\n'+Array.from({length:80},(_,i)=>'#EXTINF:5,\nscene'+i+'.ts').join('\n')+'\n#EXT-X-ENDLIST';
+const sparse = discoverBlocks(continuous);
+assert.equal(sparse.status,'sparse_content_samples');
+assert.equal(sparse.kind,'sparse');
+assert.deepEqual(sparse.blocks.map(parts=>parts[0].url),['scene10.ts','scene30.ts','scene50.ts','scene70.ts']);
+assert.ok(sparse.blocks.every(parts=>parts.length===2));
+assert.equal(discoverBlocks(continuous.replace('#EXTM3U','#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI="key"')).blocks.length,0);
+const encryptedContinuous = continuous.replace('#EXTM3U','#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI="key"');
+const unsupported = await observeMedia({source:'encrypted',title:'Control',index:0,
+  media:{text:encryptedContinuous,url:'https://media.test/list.m3u8'}},
+  {state:{candidates:{}},budget:createBudget(),rules:[],read:async()=>{throw new Error('must not fetch unsupported media');}});
+assert.equal(unsupported.status,'unsupported_media_features');
+assert.equal(unsupported.excluded.encrypted,80);
+assert.equal(unsupported.sampled,0);
+assert.equal(discoverBlocks(continuous.replace('#EXTM3U','#EXTM3U\n#EXT-X-MAP:URI="init"')).excluded.initMap,80);
+const sparseState={candidates:{}};
+await observeMedia({source:'continuous',title:'Control',index:0,media:{text:continuous,url:'https://media.test/list.m3u8'}},
+  {state:sparseState,budget:createBudget(),rules:[],read:async()=>Buffer.from('normal-control')});
+assert.ok(Object.values(sparseState.candidates).every(entry=>entry.observations.every(o=>o.kind==='sparse')));
+assert.deepEqual(compileRules(sparseState,[]),[],'content sampling never authorizes automatic skipping');
 
 const state = { candidates: {} };
 const budget = createBudget();
@@ -110,6 +136,20 @@ try {
   assert.equal(candidateStatus(entry, rules), 'known_ad');
   const release = await exportRelease(store);
   assert.equal(release.validation.browserPlayback, 'not_executed');
+  const bundle=await loadRuleBundle();
+  const exported={window:{}};
+  vm.runInNewContext(await fs.readFile(path.join(release.directory,'ad-rules.js'),'utf8'),exported);
+  assert.equal(JSON.stringify(exported.window.OpenStreamOverlayRules),JSON.stringify(bundle.overlayRules.filter(rule=>Date.parse(rule.expiresAt)>Date.now())),
+    'Export must retain current unexpired overlay fingerprints');
+  assert.ok(exported.window.OpenStreamAdRules.every(rule=>rule.action!=='report_overlay'));
+  const overlay={...rules[0],id:'overlay-test',action:'report_overlay'};
+  await assert.rejects(validateRules([overlay]));
+  await assert.rejects(validateRuleBundle(rules,[overlay]),/Conflicting/);
+  const reorderedOverlay={...overlay,segments:overlay.segments.map(part=>({sha256:part.sha256,duration:part.duration}))};
+  await assert.rejects(validateRuleBundle(rules,[reorderedOverlay]),/Conflicting/,
+    'JSON property order must not bypass conflicting classification detection');
+  await assert.rejects(validateRuleBundle([],Array.from({length:33},(_,i)=>({...overlay,id:'overlay-'+i}))),/capacity/);
+  assert.equal((await validateRuleBundle([],[overlay])).overlayRules,1);
   assert.equal((await exportRelease(store)).version, release.version);
   reviewCandidate(entry, { ...review, verdict: 'content' });
   assert.equal(compileRules(store.state, rules).length, 0, 'content review withdraws even matching baseline rules');

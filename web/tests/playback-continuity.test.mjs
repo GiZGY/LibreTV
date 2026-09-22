@@ -1,0 +1,40 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import vm from 'node:vm';
+const read=name=>fs.readFileSync(new URL('../'+name,import.meta.url),'utf8');
+test('completed records restart and new episodes require a known previous count',()=>{
+ const app=read('app.js');
+ const context=vm.createContext({historyMetadata:{},isSeries:f=>f.type==='电视剧',playbackTime:String});
+ vm.runInContext(app.slice(app.indexOf('function watchedComplete('),app.indexOf('function toast(')),context);
+ assert.equal(context.watchedComplete({position:990,duration:1000}),true);
+ assert.equal(context.watchedComplete({position:500,duration:1000}),false);
+ context.historyMetadata.a={episode:4,totalEpisodes:5,position:10,duration:100};
+ assert.equal(context.newEpisode({id:'a',type:'电视剧',episodes:7}),6);
+ assert.equal(context.newEpisode({id:'a',type:'电影',episodes:7}),0);
+ context.historyMetadata.a={position:100,duration:100};
+ assert.equal(context.historyLabel('a'),'重新观看');
+ assert.equal(context.newEpisode({id:'a',type:'电视剧',episodes:7}),0);
+});
+test('hero never includes below seven or missing ratings and shelves stay disjoint',()=>{
+ const source=read('live-ui.js');
+ const context=vm.createContext({homeItems:[{id:'low',rating:5.9},{id:'seven',rating:7},{id:'unknown'},{id:'high',rating:8}]});
+ vm.runInContext(source.slice(source.indexOf('  const featuredFilms='),source.indexOf('  async function fetchHome('))+';globalThis.featured=featuredFilms();globalThis.rest=homeRecommendations();',context);
+ assert.deepEqual(Array.from(context.featured,f=>f.id),['seven','high']);
+ assert.deepEqual(Array.from(context.rest,f=>f.id),[]);
+});
+test('resume maps relative position once and restart clears the saved position',()=>{
+ const source=read('player-preview.js');
+ const block=source.slice(source.indexOf('   let restored=false;'),source.indexOf("   instance.on('video:timeupdate',()=>{\n    const duration"));
+ const events={},messages=[],buttons=[];let saved;
+ const instance={duration:1200,currentTime:0,on:(name,fn)=>events[name]=fn};
+ const context=vm.createContext({instance,skip:{intro:0,outro:0},media:{filmId:'a',resume:100,resumeRatio:.5,switched:true},load:()=>1,toast:s=>messages.push(s),playbackTime:String,document:{createElement:()=>{const b={};buttons.push(b);return b;},querySelector:()=>({append(){}})},window:{LivePlayback:{progress:(...args)=>saved=args}},clearTimeout(){},setTimeout(){return 1;},toastTimer:null});
+ vm.runInContext(block,context);events['video:loadedmetadata']();
+ assert.equal(instance.currentTime,600);
+ instance.currentTime=650;events['video:durationchange']();assert.equal(instance.currentTime,650);
+ assert.equal(messages[0],'已切线 · 进度已对齐');
+ context.media={filmId:'a',resume:100};
+ vm.runInContext('restored=false;',context);
+ events['video:loadedmetadata']();assert.equal(instance.currentTime,100);
+ buttons[0].onclick();assert.equal(instance.currentTime,0);assert.equal(saved[0],0);
+});

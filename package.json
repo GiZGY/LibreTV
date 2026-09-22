@@ -44,12 +44,21 @@
     "smoke:all": "npm run smoke:source-catalog && npm run smoke:ad-guard && npm run smoke:streaming && npm run smoke:source-status && npm run smoke:search-ui-security && npm run smoke:dynamic-ui-security && npm run smoke:player-fallback && npm run smoke:player-tvbox && npm run smoke:player-loader && npm run smoke:player-lifecycle && npm run smoke:player-keyboard && npm run smoke:resource-switch && npm run smoke:quality-selection && npm run smoke:quality-runtime && npm run smoke:playback-quality && npm run smoke:auth && npm run smoke:server-static && npm run smoke:tvbox-proxy && npm run smoke:proxy-handler && npm run smoke:fetch-interceptor && npm run smoke:config-import && npm run smoke:workflows && npm run smoke:watch && npm run smoke:bridge-performance && npm run smoke:bridge-security && npm run smoke:bridge-fixtures && npm run smoke:static-performance",
     "quality": "npm run build && npm run smoke:all && npm audit --audit-level=high",
     "smoke:source-catalog": "node scripts/smoke-source-catalog.mjs",
-    "smoke:ad-guard": "node scripts/smoke-ad-timeline.mjs && node scripts/smoke-ad-guard.mjs && node scripts/smoke-ad-audit.mjs && node scripts/smoke-ad-observer.mjs",
+    "smoke:ad-guard": "node scripts/smoke-ad-timeline.mjs && node scripts/smoke-ad-guard.mjs && node scripts/smoke-ad-audit.mjs && node scripts/smoke-ad-observer.mjs && node scripts/smoke-ad-corpus.mjs && node scripts/smoke-ad-encryption.mjs",
+    "smoke:ad-corpus": "node scripts/smoke-ad-corpus.mjs",
+    "smoke:native-ads": "node scripts/smoke-native-inspection.mjs && node scripts/smoke-native-ad-evidence.mjs && node scripts/smoke-native-ad-verifier.mjs && node scripts/smoke-native-ad-transport.mjs && node scripts/smoke-native-ad-session.mjs && node scripts/smoke-native-ad-guard.mjs && node scripts/smoke-native-ad-review.mjs && node scripts/smoke-native-ad-registry.mjs && node scripts/smoke-player-native-fallback.mjs && node scripts/smoke-silent-preview.mjs",
     "audit:source-ads": "node scripts/audit-source-ads.mjs",
+    "test:ad-browser": "node scripts/serve-ad-acceptance.mjs",
     "ads:observe": "node services/ad-observer/worker.mjs",
-    "smoke:ad-observer": "node scripts/smoke-ad-observer.mjs"
+    "smoke:ad-observer": "node scripts/smoke-ad-observer.mjs",
+    "audit:source-health": "node scripts/audit-source-health.mjs",
+    "build:new-ui": "node scripts/build-new-ui.mjs",
+    "test:new-ui": "node --test web/tests/*.test.mjs",
+    "smoke:new-ui-build": "node scripts/smoke-new-ui-build.mjs",
+    "quality:new-ui": "npm run test:new-ui && npm run build:new-ui && npm run smoke:new-ui-build"
   },
   "dependencies": {
+    "@vercel/functions": "^3.9.9",
     "compression": "^1.8.1",
     "cors": "^2.8.5",
     "dotenv": "^16.5.0",

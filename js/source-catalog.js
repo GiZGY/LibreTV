@@ -1,5 +1,5 @@
 (function () {
-    const DEFAULT_KEYS = ['jisu', 'bfzy', 'baidu', 'hwba', 'qiqi', 'mozhua'];
+    const DEFAULT_KEYS = ['jisu', 'lzi', 'dyttzy', 'hongniu', 'guangsu', 'huya'];
     const QUALITY_TTL = 24 * 60 * 60 * 1000;
     const FAILURE_TTL = 30 * 60 * 1000;
     const owns = (object, key) => Object.prototype.hasOwnProperty.call(object, key);
@@ -35,5 +35,37 @@
         }));
     }
 
-    window.OpenStreamSourceCatalog = { defaults, reconcileSelection, freshQualities };
+    const CATALOG_REVISION = 2;
+    const CATALOG_KEY = 'openstreamCatalogSnapshot';
+
+    function migrateCatalog(sites, storage) {
+        try {
+            const current = Object.fromEntries(Object.entries(sites)
+                .filter(([, site]) => !site.adult)
+                .map(([key, site]) => [key, String(site.api || '')]));
+            let previous;
+            try { previous = JSON.parse(storage.getItem(CATALOG_KEY)); } catch (_) {}
+            if (previous?.revision === CATALOG_REVISION &&
+                JSON.stringify(previous.sources) === JSON.stringify(current)) return false;
+            let custom;
+            try { custom = JSON.parse(storage.getItem('customAPIs')); } catch (_) {}
+            const selected = reconcileSelection(storage.getItem('selectedAPIs'), sites,
+                Array.isArray(custom) ? custom : []);
+            // Repair legacy auto-trimmed selections once; later updates only add
+            // newly introduced recommended sources, not user-disabled ones.
+            const added = defaults(sites).filter(key =>
+                previous?.revision !== CATALOG_REVISION || !owns(previous.sources || {}, key));
+            storage.setItem('selectedAPIs', JSON.stringify([...new Set([...selected, ...added])]));
+            for (const key of ['apiQualities', 'apiLatencies', 'qualityTestTime',
+                'latencyTestTime', 'openstreamSourceHealth', 'hideZombieApis']) {
+                storage.removeItem(key);
+            }
+            // Commit last: interrupted or quota-limited migrations retry safely.
+            storage.setItem(CATALOG_KEY, JSON.stringify({ revision: CATALOG_REVISION, sources: current }));
+            return true;
+        } catch (_) { return false; }
+    }
+
+    window.OpenStreamSourceCatalog = { defaults, reconcileSelection, freshQualities, migrateCatalog };
+    if (window.API_SITES && typeof localStorage !== 'undefined') migrateCatalog(window.API_SITES, localStorage);
 })();

@@ -1,4 +1,5 @@
 let proxyCredentials = null;
+let publicProxyAccess = false;
 let proxyCredentialsRequest = null;
 let proxyCredentialsRefreshTimer = null;
 
@@ -11,6 +12,7 @@ function normalizeProxyCredentials(value) {
 }
 
 function setSession(authStatus) {
+    publicProxyAccess = authStatus?.accessMode === 'public';
     proxyCredentials = normalizeProxyCredentials(authStatus?.proxy);
     if (proxyCredentialsRefreshTimer) clearTimeout(proxyCredentialsRefreshTimer);
     proxyCredentialsRefreshTimer = null;
@@ -65,6 +67,7 @@ function addAuthToProxyUrlSync(url) {
 }
 
 async function addAuthToProxyUrl(url) {
+    if (publicProxyAccess) return url;
     if (!hasUsableCredentials()) {
         await refreshProxyCredentials();
     }
