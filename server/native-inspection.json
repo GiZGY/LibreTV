@@ -1,0 +1,63 @@
+[
+  {
+    "reviewedAt": "2026-09-22T08:24:20.518Z",
+    "expiresAt": "2026-09-23T08:24:21.518Z",
+    "resources": [
+      {
+        "urlSha256": "4fbbed98911f142e98bae5d1db3234ed087d4a459a849076ac2896c55be113b5",
+        "bodySha256": "1448667b119b628ef2f5766b0f69cc64f5b0bc83f776685a70a94382729719a6",
+        "maxBytes": 321015
+      },
+      {
+        "urlSha256": "86588df106a8066fec64e36729d6a0b27bcb783fb6188a2324702c2a00487ba8",
+        "bodySha256": "0590f5a31a77bbda81420100df91f40b172a5dcddbcc38620512da0409bda58c",
+        "maxBytes": 930976
+      },
+      {
+        "urlSha256": "e10b2ef706c6267617664bf0224c09760e7a347885389adff0315f9787140673",
+        "bodySha256": "6b91d2a34fc3e142dd4d2d4962d6f14837f4b1e0862093678124c9a515c235c7",
+        "maxBytes": 533356
+      },
+      {
+        "urlSha256": "2eedb8d3698c952048301f4c900d4bc2649eb95717fcd7a1b6ae56e3cb0e4dee",
+        "bodySha256": "469bead0a8c736562cf3a3164cec3f62e4337529562b044a0988a80c8adf0585",
+        "maxBytes": 544824
+      },
+      {
+        "urlSha256": "cbb11d6c03ee3e1d65e7207d29e01ef4046e83dc8da10a926a433624277dade9",
+        "bodySha256": "e0ad58fe48cf821b37cc4d1f9b5940cc6203458171a0e253e608c53a1ff992b2",
+        "maxBytes": 1267496
+      },
+      {
+        "urlSha256": "89075c1c2f9ec620a460801cf290ab4d34fa14fe74b2428159344a1a5a9e4c3a",
+        "bodySha256": "1e54ae33953aad607ba3387e0ebc5b290a6bd0959f4f2728341d4b275f1ffd60",
+        "maxBytes": 914056
+      },
+      {
+        "urlSha256": "def6d3d824fd3f9cf0d6b7525d0bf61017c622f0c7bec9bb34e45e1b1744d271",
+        "bodySha256": "ab84dbb3dba161d1b9dfa0f15e4ef183467c082ebe7cdaf07adf159d0387b57d",
+        "maxBytes": 930976
+      },
+      {
+        "urlSha256": "24fe35c25d7af1ab466076c9eb91c29f931e4285f6b319888960b16a37faccab",
+        "bodySha256": "900f1f4a55685023510fd7d15938bf7cf7c43135903d603b72839ffe03b76a9d",
+        "maxBytes": 709512
+      },
+      {
+        "urlSha256": "3467bf66cf5f46c6d5e8d938f29cb3b93488b02cd358440dba1d02190fca6129",
+        "bodySha256": "d496d1669704693a0e6b8e8352cd17e393efcca263aea98dc1bee42a9b5c4ea5",
+        "maxBytes": 890744
+      },
+      {
+        "urlSha256": "712f7c87be97c1f0dc12196d6ffe8b2d1e45274351cbf915569229d29ff252e4",
+        "bodySha256": "dd9980776a30adc7fb23c164a7f2cb693d4f32a0788adf92645321cf531c8baf",
+        "maxBytes": 661008
+      },
+      {
+        "urlSha256": "be3e357520de724fb09974072d4bec21eaee018edc23723ff0fb50cd344eed11",
+        "bodySha256": "1afbf5d128e9aa31bf2861a77a06a8fe30e94515801975f899173ce9fa2da9f9",
+        "maxBytes": 99
+      }
+    ]
+  }
+]

@@ -1,11 +1,11 @@
 {
-  "generatedAt": "2026-09-07T14:36:47.508Z",
+  "generatedAt": "2026-09-22T10:06:04.754Z",
   "bundles": {
     "index": {
       "js": {
         "file": "compiled/index.min.js",
-        "hash": "877bba115f38",
-        "bytes": 242178
+        "hash": "62095a6c058d",
+        "bytes": 242490
       },
       "css": {
         "file": "compiled/index.min.css",
@@ -23,8 +23,8 @@
     "player": {
       "js": {
         "file": "compiled/player.min.js",
-        "hash": "133b1c4b4ffb",
-        "bytes": 144896
+        "hash": "024b11a03ceb",
+        "bytes": 153924
       },
       "css": {
         "file": "compiled/player.min.css",

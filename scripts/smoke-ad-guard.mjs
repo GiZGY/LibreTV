@@ -60,6 +60,13 @@ const verified = new Map([[guard.fragmentKey(fragments[1]), hashes[0]], [guard.f
 assert.equal(guard.rangeFor(candidates[0], verified, 3600).end, 30);
 assert.equal(guard.rangeFor(candidates[0], verified, 29), null);
 assert.equal(guard.rangeFor(candidates[0], verified, Infinity), null);
+for (const firstDuration of [3, 7, NaN, Infinity, 0, -1]) {
+  const broken = {...candidates[0],parts:candidates[0].parts.map(part=>({...part}))};
+  broken.parts[0].duration=firstDuration;
+  assert.equal(guard.rangeFor(broken,verified,3600),null,'internal gaps/overlaps must fail even with a plausible overall interval');
+}
+const invalidBoundary = {...candidates[0],next:{...candidates[0].next,start:NaN}};
+assert.equal(guard.rangeFor(invalidBoundary,verified,3600),null,'invalid next-fragment coordinates must refuse a skip');
 assert.equal(guard.findCandidates(fragments, [{ ...rule, expiresAt: '2000-01-01' }]).length, 0);
 const mismatch = new Map(verified); mismatch.set(guard.fragmentKey(fragments[2]), 'changed-bytes');
 assert.equal(guard.rangeFor(candidates[0], mismatch, 3600), null);
@@ -108,6 +115,169 @@ assert.equal(dispose.getStatus().disposed, true);
 assert.equal(video.handlers.timeupdate, undefined);
 assert.ok([...hls.events.values()].every(listeners => listeners.size === 0));
 assert.equal(JSON.stringify(fragments), before, 'HLS media structure must remain untouched');
+
+const aesKey = new Uint8Array(16).fill(7), aesIv = new Uint8Array(16).fill(3);
+const importedAes = await webcrypto.subtle.importKey('raw', aesKey, 'AES-CBC', false, ['encrypt']);
+const transferableCipher = await webcrypto.subtle.encrypt({name:'AES-CBC',iv:aesIv},importedAes,payloads[0]);
+const decrypting = guard.decryptForInspection(transferableCipher,{method:'AES-128',keyFormat:'identity',key:aesKey,iv:aesIv});
+structuredClone(transferableCipher,{transfer:[transferableCipher]});
+assert.equal(Buffer.from(await decrypting).toString(),payloads[0].toString(),'loader inspection must survive HLS worker buffer transfer');
+const encryptedParts = fragments.map(part => ({...part, decryptdata:{method:'AES-128',keyFormat:'identity',key:aesKey,iv:aesIv}}));
+const aesHls = new Emitter(), aesVideo = {...video,currentTime:21,handlers:{}};
+const aesGuard = guard.attach({hls:aesHls,video:aesVideo,events,rules:[rule]});
+await aesHls.emit('level',{details:{live:false,fragments:encryptedParts}});
+for (let i=0;i<2;i++) {
+  const payload = await webcrypto.subtle.encrypt({name:'AES-CBC',iv:aesIv},importedAes,payloads[i]);
+  await aesHls.emit('fragment',{frag:encryptedParts[i+1],payload});
+  assert.equal(aesVideo.currentTime,i===0?21:30,'AES still requires every plaintext fingerprint');
+}
+assert.equal(aesVideo.duration,3600);
+assert.equal(aesKey[0],7,'inspection must not mutate the player key');
+await assert.rejects(guard.decryptForInspection(new Uint8Array(16),{method:'SAMPLE-AES',keyFormat:'identity',key:aesKey,iv:aesIv}));
+await assert.rejects(guard.decryptForInspection(new Uint8Array(16),{method:'AES-128',keyFormat:'other',key:aesKey,iv:aesIv}));
+await assert.rejects(guard.decryptForInspection(new Uint8Array(16),{method:'AES-128',keyFormat:'identity',iv:aesIv}));
+aesGuard();
+
+const overlayHls=new Emitter(),overlayVideo={...video,currentTime:21,handlers:{}};
+const overlaySignals=[];
+const overlayGuard=guard.attach({hls:overlayHls,video:overlayVideo,events,rules:[],overlayRules:[rule],onOverlay:value=>overlaySignals.push(value)});
+await overlayHls.emit('level',{details:{live:false,fragments}});
+await overlayHls.emit('fragment',{frag:fragments[1],payload:payloads[0]});
+assert.equal(overlaySignals.length,0,'partial evidence cannot flag a programme version');
+await overlayHls.emit('fragment',{frag:fragments[2],payload:payloads[1]});
+assert.equal(overlaySignals.length,1);
+assert.equal(overlayVideo.currentTime,21,'burned-in advertising must never seek past programme footage');
+assert.equal(overlayGuard.getStatus().skips,0);
+assert.equal(overlayGuard.getStatus().overlays,1);
+assert.equal(guard.rangeFor({...candidates[0],rule:{...rule,action:'report_overlay'}},verified,3600),null);
+overlayVideo.handlers.timeupdate();
+assert.equal(overlaySignals.length,1,'one signal per fingerprint per playback session');
+overlayGuard();
+
+// Equal-duration scenes used to overflow the global cap and erase every rule.
+const uniform = Array.from({ length: 1000 }, (_, sn) => ({
+  sn, url: `https://fixture.test/uniform-${sn}.ts`, start: sn * 5, duration: 5, type: 'main'
+}));
+const uniformCandidates = guard.findCandidates(uniform, [rule]);
+assert.equal(uniformCandidates.length, 256);
+assert.equal(uniformCandidates.truncated, true);
+const bounded = guard.findCandidates(uniform, [rule], Date.now(), { start: 3881, end: 4091 });
+assert.ok(bounded.length > 0 && bounded.length < 50);
+assert.equal(bounded.truncated, false);
+const distantHls = new Emitter();
+const distantVideo = { ...video, currentTime: 0, duration: 5000, handlers: {},
+  seekable: { length: 1, start: () => 0, end: () => 5000 } };
+const distantGuard = guard.attach({ hls: distantHls, video: distantVideo, events, rules: [rule] });
+await distantHls.emit('level', { details: { live: false, fragments: uniform } });
+distantVideo.currentTime = 4001;
+await distantHls.emit('fragment', { frag: uniform[800], payload: payloads[0] });
+assert.equal(distantVideo.currentTime, 4001, 'a seek must not weaken full-sequence verification');
+await distantHls.emit('fragment', { frag: uniform[801], payload: payloads[1] });
+assert.equal(distantVideo.currentTime, 4010, 'known ads late in a uniform movie remain detectable');
+assert.equal(distantVideo.duration, 5000);
+assert.equal(distantGuard.getStatus().candidateLimitReached, false);
+distantVideo.currentTime = 0;
+distantVideo.handlers.timeupdate();
+assert.equal(distantGuard.getStatus().verifiedSegments, 0, 'hashes outside the playback window are evicted');
+distantGuard();
+
+// Buffering may correct EXTINF by more than the discovery tolerance. Refreshing
+// after a seek must retain fully verified candidates, without relaxing bounds.
+const correctedParts = fragments.map(part=>({...part}));
+const correctedVideo = {...video,currentTime:5,paused:true,handlers:{}};
+const correctedHls = new Emitter();
+const correctedGuard = guard.attach({hls:correctedHls,video:correctedVideo,events,rules:[rule]});
+await correctedHls.emit('level',{details:{live:false,fragments:correctedParts}});
+await correctedHls.emit('fragment',{frag:correctedParts[1],payload:payloads[0]});
+await correctedHls.emit('fragment',{frag:correctedParts[2],payload:payloads[1]});
+correctedParts[1].duration=5.04;
+correctedParts[2].start=25.04;
+correctedParts[2].duration=4.96;
+correctedVideo.currentTime=21;
+correctedVideo.paused=false;
+correctedVideo.handlers.timeupdate();
+assert.equal(correctedVideo.currentTime,30,'demux correction must not erase a verified sequence on refresh');
+assert.equal(correctedGuard.getStatus().verifiedRanges,1);
+correctedGuard();
+
+// A receiver may use different coordinates. Neither verified bytes nor a
+// pending digest authorize a remote seek; local playback can resume safely.
+const remoteListeners = new Map();
+const remoteVideo = {...video,currentTime:21,handlers:{},remote:{state:'disconnected',
+  addEventListener(name,fn){remoteListeners.set(name,fn);},
+  removeEventListener(name){remoteListeners.delete(name);}}};
+const remoteHls = new Emitter();
+const remoteGuard = guard.attach({hls:remoteHls,video:remoteVideo,events,rules:[rule]});
+await remoteHls.emit('level',{details:{live:false,fragments}});
+remoteVideo.paused = true;
+await remoteHls.emit('fragment',{frag:fragments[1],payload:payloads[0]});
+await remoteHls.emit('fragment',{frag:fragments[2],payload:payloads[1]});
+assert.equal(remoteGuard.getStatus().verifiedRanges,1);
+remoteVideo.paused = false;
+for(const state of ['connecting','connected']){
+  remoteVideo.remote.state=state;
+  remoteListeners.get(state==='connecting'?'connecting':'connect')();
+  remoteVideo.handlers.timeupdate();
+  assert.equal(remoteVideo.currentTime,21,'remote timeline must remain untouched');
+  assert.equal(remoteGuard.getStatus().supported,false);
+  assert.equal(remoteGuard.getStatus().reason,'remote_playback');
+}
+remoteVideo.remote.state='disconnected';
+remoteVideo.webkitCurrentPlaybackTargetIsWireless=true;
+remoteVideo.handlers.webkitcurrentplaybacktargetiswirelesschanged();
+remoteVideo.handlers.timeupdate();
+assert.equal(remoteVideo.currentTime,21,'AirPlay must also disable local seeks');
+remoteVideo.webkitCurrentPlaybackTargetIsWireless=false;
+remoteListeners.get('disconnect')();
+remoteVideo.handlers.timeupdate();
+assert.equal(remoteVideo.currentTime,30,'verified local playback resumes after disconnect');
+remoteGuard();
+assert.equal(remoteListeners.size,0);
+assert.equal(Object.keys(remoteVideo.handlers).length,0);
+
+const handoverHls = new Emitter();
+const handoverVideo = {...video,currentTime:21,handlers:{},remote:{state:'disconnected'}};
+const handoverGuard = guard.attach({hls:handoverHls,video:handoverVideo,events,rules:[rule]});
+await handoverHls.emit('level',{details:{live:false,fragments}});
+await handoverHls.emit('fragment',{frag:fragments[1],payload:payloads[0]});
+let finishRemoteDigest;
+context.crypto = {subtle:{digest:()=>new Promise(resolve=>{finishRemoteDigest=resolve;})}};
+const handoverPending=handoverHls.emit('fragment',{frag:fragments[2],payload:payloads[1]});
+handoverVideo.remote.state='connected';
+finishRemoteDigest(new Uint8Array(Buffer.from(hashes[1],'hex')).buffer);
+await handoverPending;
+assert.equal(handoverVideo.currentTime,21,'a digest finishing during handover must not seek');
+assert.equal(handoverGuard.getStatus().skips,0);
+handoverGuard();
+context.crypto=webcrypto;
+
+// Inspection overload must not retain an unbounded queue or authorize a skip.
+const boundedHls = new Emitter();
+const completions = [];
+context.crypto = { subtle: { digest: () => new Promise(resolve => completions.push(resolve)) } };
+const boundedInspection = guard.attach({ hls: boundedHls, video, events, rules: [rule] });
+await boundedHls.emit('level', { details: { live: false, fragments } });
+const jobs = [];
+for (let i = 0; i < 6; i++) jobs.push(boundedHls.emit('fragment', {
+  frag: { ...fragments[1], sn: 100 + i }, payload: payloads[0]
+}));
+assert.equal(completions.length, 4);
+assert.equal(boundedInspection.getStatus().inspectionLimitHits, 2);
+completions.splice(0).forEach(resolve => resolve(new Uint8Array(32).buffer));
+await Promise.all(jobs);
+assert.equal(boundedInspection.getStatus().pendingInspections, 0);
+assert.equal(boundedInspection.getStatus().pendingInspectionBytes, 0);
+const large = new Uint8Array(8 * 1024 * 1024);
+const largeJobs = [0, 1, 2].map(i => boundedHls.emit('fragment', {
+  frag: { ...fragments[1], sn: 200 + i }, payload: large
+}));
+assert.equal(completions.length, 2, '16 MiB input budget enforced before hashing');
+assert.equal(boundedInspection.getStatus().pendingInspectionBytes, 16 * 1024 * 1024);
+completions.splice(0).forEach(resolve => resolve(new Uint8Array(32).buffer));
+await Promise.all(largeJobs);
+assert.equal(boundedInspection.getStatus().pendingInspectionBytes, 0);
+assert.equal(boundedInspection.getStatus().skips, 0);
+boundedInspection();
 
 // A pending digest after destruction cannot seek or update a disposed player.
 const lateHls = new Emitter();

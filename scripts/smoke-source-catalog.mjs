@@ -20,9 +20,9 @@ vm.runInContext(read('js/source-catalog.js'), context);
 const catalog = context.OpenStreamSourceCatalog;
 const sites = context.API_SITES;
 const ordinary = Object.keys(sites).filter(key => !sites[key].adult);
-assert.equal(ordinary.length, 20);
+assert.equal(ordinary.length, 11);
 const plain = value => JSON.parse(JSON.stringify(value));
-const retired = ['heimuer', 'wolong', 'wwzy', 'dbzy', 'tyyszy'];
+const retired = ['heimuer', 'wolong', 'wwzy', 'dbzy', 'tyyszy', 'ruyi', 'xiaomaomi', 'ffzy', 'hwba', 'mozhua', 'yinghua', 'baidu', 'wujin', 'ikun', 'qiqi', 'tvbox:荐片', 'tvbox:瓜子'];
 for (const key of retired) assert.equal(sites[key], undefined, `${key}: retired endpoint must not be offered`);
 assert.deepEqual(plain(catalog.reconcileSelection(JSON.stringify(retired), sites)), plain(catalog.defaults(sites)));
 assert.deepEqual(plain(catalog.reconcileSelection(JSON.stringify([...retired, 'bfzy', 'custom_0']), sites, [{}])), ['bfzy', 'custom_0']);
@@ -30,13 +30,13 @@ for (const raw of [null, 'invalid', '{}', 'null', '["removed-source"]']) {
   assert.equal(catalog.reconcileSelection(raw, sites).length, 6);
 }
 assert.deepEqual(plain(catalog.reconcileSelection('[]', sites)), []);
-assert.deepEqual(plain(catalog.reconcileSelection('["baidu","bfzy","jisu","baidu","removed"]', sites)), ['baidu','bfzy','jisu']);
+assert.deepEqual(plain(catalog.reconcileSelection('["lzi","bfzy","jisu","lzi","removed"]', sites)), ['lzi','bfzy','jisu']);
 assert.deepEqual(plain(catalog.reconcileSelection('["custom_0","custom_9"]', sites, [{}])), ['custom_0']);
 const now = Date.now();
 assert.deepEqual(plain(catalog.freshQualities('null', now)), {});
-assert.deepEqual(plain(catalog.freshQualities('{"baidu":{"score":0}}', now - 31 * 60000)), {});
-assert.deepEqual(plain(catalog.freshQualities('{"baidu":{"score":95}}', now - 25 * 3600000)), {});
-assert.equal(catalog.freshQualities('{"baidu":{"score":95}}', now).baidu.score, 95);
+assert.deepEqual(plain(catalog.freshQualities('{"lzi":{"score":0}}', now - 31 * 60000)), {});
+assert.deepEqual(plain(catalog.freshQualities('{"lzi":{"score":95}}', now - 25 * 3600000)), {});
+assert.equal(catalog.freshQualities('{"lzi":{"score":95}}', now).lzi.score, 95);
 
 class Element {
   children = [];
@@ -58,7 +58,7 @@ context.document = {
   createElement: () => new Element()
 };
 Object.assign(context, {
-  apiLatencies: {}, apiQualities: {}, selectedAPIs: ['baidu', 'bfzy', 'jisu'],
+  apiLatencies: {}, apiQualities: {}, selectedAPIs: ['lzi', 'bfzy', 'jisu'],
   addAdultAPI() {}, checkAdultAPIsSelected() {},
   cancelPassiveQualitySampling() {}, renderCustomAPIsList() {},
   updateLatencyTimeDisplay() {}, showToast() {}, qualityStateGeneration: 0
@@ -68,7 +68,7 @@ vm.runInContext(app.slice(app.indexOf('function initAPICheckboxes()'), app.index
 vm.runInContext(app.slice(app.indexOf('function updateSelectedApiCount()'), app.indexOf('// 全选或取消全选API')), context);
 const getRows = () => elements.get('apiCheckboxes').children[0].children.filter(item => item.input);
 for (const scenario of ['fresh', 'three-selected', 'all-zero', 'old-hide-setting']) {
-  context.selectedAPIs = scenario === 'fresh' ? Array.from(catalog.defaults(sites)) : ['baidu','bfzy','jisu'];
+  context.selectedAPIs = scenario === 'fresh' ? Array.from(catalog.defaults(sites)) : ['lzi','bfzy','jisu'];
   context.apiQualities = scenario === 'all-zero' || scenario === 'old-hide-setting'
     ? Object.fromEntries(ordinary.map(key => [key, { score: 0 }])) : {};
   storage.set('hideZombieApis', 'true');
@@ -79,10 +79,10 @@ for (const scenario of ['fresh', 'three-selected', 'all-zero', 'old-hide-setting
 storage.set('viewingHistory', '[{"title":"keep"}]');
 storage.set('customAPIs', '[{"name":"keep"}]');
 vm.runInContext(read('js/source-health.js'), context);
-context.OpenStreamSourceHealth.recordSourceEvent('baidu', { status: 'unplayable' });
-assert.equal(context.OpenStreamSourceHealth.getSearchPlan(['baidu']).length, 0);
+context.OpenStreamSourceHealth.recordSourceEvent('lzi', { status: 'unplayable' });
+assert.equal(context.OpenStreamSourceHealth.getSearchPlan(['lzi']).length, 0);
 context.restoreSourceDefaults();
-assert.equal(context.OpenStreamSourceHealth.getSearchPlan(['baidu']).length, 1);
+assert.equal(context.OpenStreamSourceHealth.getSearchPlan(['lzi']).length, 1);
 assert.equal(context.selectedAPIs.length, 6);
 assert.equal(getRows().length, ordinary.length);
 assert.equal(storage.get('viewingHistory'), '[{"title":"keep"}]');
@@ -123,3 +123,23 @@ const livePath360 = await context.searchByAPIAndKeyWord('zy360', '飞驰人生2'
 assert.equal(livePath360.length, 1);
 assert.equal(livePath360[0].vod_name, '飞驰人生2');
 console.log(JSON.stringify({ ok: true, catalogue: ordinary.length, defaults: 6, scenarios: 4, staleCacheExpires: true, resetPreservesPersonalData: true }));
+
+storage.delete('openstreamCatalogSnapshot');
+storage.set('selectedAPIs', '["bfzy","lzi","jisu","custom_0"]');
+storage.set('customAPIs', '[{"name":"keep"}]');
+storage.set('password', 'fixture-preserve');
+storage.set('apiQualities', '{"bfzy":{"score":0}}');
+assert.equal(catalog.migrateCatalog(sites, context.localStorage), true);
+assert.ok(JSON.parse(storage.get('selectedAPIs')).includes('hongniu'));
+assert.ok(JSON.parse(storage.get('selectedAPIs')).includes('custom_0'));
+assert.equal(storage.get('apiQualities'), undefined);
+assert.equal(storage.get('password'), 'fixture-preserve');
+assert.equal(storage.get('viewingHistory'), '[{"title":"keep"}]');
+storage.set('selectedAPIs', '["bfzy"]');
+assert.equal(catalog.migrateCatalog(sites, context.localStorage), false);
+assert.equal(storage.get('selectedAPIs'), '["bfzy"]');
+const changedSites = {...sites, bfzy: {...sites.bfzy, api:'https://fixture.test/v2'}};
+assert.equal(catalog.migrateCatalog(changedSites, context.localStorage), true);
+assert.equal(storage.get('selectedAPIs'), '["bfzy"]');
+assert.equal(catalog.migrateCatalog(sites, {getItem(){throw new Error('blocked')}}), false);
+console.log('catalog migration: repair, idempotency, privacy preservation, endpoint changes passed');

@@ -293,5 +293,222 @@ window.OpenStreamAdRules = [
                 "sha256": "750df460b8560c7cda1d54455281c97cfe3db6ad12fc4708adb86bbfb8a0137b"
             }
         ]
+    },
+    {
+        "id": "reviewed-39f494fdb62e25726a8b40b9",
+        "reviewedAt": "2026-09-22T06:07:32.364Z",
+        "expiresAt": "2026-10-22T06:07:32.364Z",
+        "segments": [
+            {
+                "duration": 5,
+                "sha256": "c50a42f22eca4fb2c871f704c227c9387fdf68de5e3e5164c20f89f7152f68c8"
+            },
+            {
+                "duration": 5,
+                "sha256": "5fcfe7e3653578768d6bd53e7bf8dca1015f90fd7197f3ae9a01076a263f9050"
+            },
+            {
+                "duration": 5,
+                "sha256": "d280b4195674cb9b4550efc822688a224369fbcc37c9c7f49690382eb4636565"
+            },
+            {
+                "duration": 2.567,
+                "sha256": "1175c2ecdc1ff694f88087b46d2b01f22201ad500af9a3b5772133ed06377674"
+            }
+        ]
+    },
+    {
+        "id": "reviewed-088617ee9bb294353d0dc2fc",
+        "reviewedAt": "2026-09-22T06:07:32.446Z",
+        "expiresAt": "2026-10-22T06:07:32.446Z",
+        "segments": [
+            {
+                "duration": 7.933333,
+                "sha256": "08327f655e95dddda31aa9783dcfed301035bee8a8f972e03eb3ec0761f3981c"
+            },
+            {
+                "duration": 8.333333,
+                "sha256": "ed8679b902b34ee668a8a0ca18e3c30f1b7b22c65fc7132711bd095f92bb6ba9"
+            },
+            {
+                "duration": 1.3,
+                "sha256": "7988a5a30168366b0d1da5d7c7475844489007f3fbde92e1248a9caafbf26a46"
+            }
+        ]
+    },
+    {
+        "id": "reviewed-7cf3d98296c89cea371fc3db",
+        "reviewedAt": "2026-09-22T06:56:51.365Z",
+        "expiresAt": "2026-10-22T06:56:51.365Z",
+        "segments": [
+            {
+                "duration": 3.333,
+                "sha256": "0590f5a31a77bbda81420100df91f40b172a5dcddbcc38620512da0409bda58c"
+            },
+            {
+                "duration": 1.667,
+                "sha256": "6b91d2a34fc3e142dd4d2d4962d6f14837f4b1e0862093678124c9a515c235c7"
+            },
+            {
+                "duration": 1.667,
+                "sha256": "469bead0a8c736562cf3a3164cec3f62e4337529562b044a0988a80c8adf0585"
+            },
+            {
+                "duration": 2.933,
+                "sha256": "e0ad58fe48cf821b37cc4d1f9b5940cc6203458171a0e253e608c53a1ff992b2"
+            },
+            {
+                "duration": 1.667,
+                "sha256": "1e54ae33953aad607ba3387e0ebc5b290a6bd0959f4f2728341d4b275f1ffd60"
+            },
+            {
+                "duration": 1.667,
+                "sha256": "ab84dbb3dba161d1b9dfa0f15e4ef183467c082ebe7cdaf07adf159d0387b57d"
+            },
+            {
+                "duration": 1.667,
+                "sha256": "900f1f4a55685023510fd7d15938bf7cf7c43135903d603b72839ffe03b76a9d"
+            },
+            {
+                "duration": 1.667,
+                "sha256": "d496d1669704693a0e6b8e8352cd17e393efcca263aea98dc1bee42a9b5c4ea5"
+            },
+            {
+                "duration": 1.3,
+                "sha256": "dd9980776a30adc7fb23c164a7f2cb693d4f32a0788adf92645321cf531c8baf"
+            }
+        ]
+    }
+];
+
+// Programme-containing overlays: quality signals only, never skip intervals.
+window.OpenStreamOverlayRules = [
+    {
+        "id": "overlay-f2418990cc365c8f80ee59a5",
+        "action": "report_overlay",
+        "reviewedAt": "2026-09-22T06:42:07.883Z",
+        "expiresAt": "2026-10-22T06:42:07.883Z",
+        "segments": [
+            {
+                "duration": 7.333333,
+                "sha256": "7067cfda084cbaf6005f2f071bcfa5592c358f824f0c4e317b3ce72096aa6758"
+            },
+            {
+                "duration": 10.416667,
+                "sha256": "bf6748a2995ac7808f892ac23406aeb653c916eeec9b607506b88f1743320514"
+            }
+        ]
+    },
+    {
+        "id": "overlay-1ce031f9c05ef5d0133829de",
+        "action": "report_overlay",
+        "reviewedAt": "2026-09-22T06:42:07.883Z",
+        "expiresAt": "2026-10-22T06:42:07.883Z",
+        "segments": [
+            {
+                "duration": 10.416667,
+                "sha256": "79956569174a4a75b5d3c5d4835d8259cc635ac9f2c95d6f3f9fa74aaf9d5715"
+            },
+            {
+                "duration": 10.416667,
+                "sha256": "905f3b9c2cdb4a181b392556d9c80f28afca4890835813f6d7170a51c7e0b4e9"
+            }
+        ]
+    },
+    {
+        "id": "overlay-6e983232d44ca2f508a5d3c7",
+        "action": "report_overlay",
+        "reviewedAt": "2026-09-22T06:42:07.883Z",
+        "expiresAt": "2026-10-22T06:42:07.883Z",
+        "segments": [
+            {
+                "duration": 4.875,
+                "sha256": "9a0bfae4a3c21a0e06a7089cf5bbdec451ddbdd25d1ac1ff03febe267e6f4e68"
+            },
+            {
+                "duration": 10.416667,
+                "sha256": "f0694220820a000937df4a2f1c33d33de5fb6329e74fafa5ebc6124ff1e29a77"
+            }
+        ]
+    },
+    {
+        "id": "overlay-51e9f62fb733acdd3c264d30",
+        "action": "report_overlay",
+        "reviewedAt": "2026-09-22T06:42:07.883Z",
+        "expiresAt": "2026-10-22T06:42:07.883Z",
+        "segments": [
+            {
+                "duration": 10.416667,
+                "sha256": "7cb87219f2e61b4a3de2fb1088890430a1128b3fc06a184802c906c9bd98b65a"
+            },
+            {
+                "duration": 8.458333,
+                "sha256": "94a72c707d41885a5cdf476437620e0141fb102d5071dc28be343d2345930d2a"
+            }
+        ]
+    },
+    {
+        "id": "overlay-0e833d57ff417530efa10fa0",
+        "action": "report_overlay",
+        "reviewedAt": "2026-09-22T06:42:07.883Z",
+        "expiresAt": "2026-10-22T06:42:07.883Z",
+        "segments": [
+            {
+                "duration": 10.416667,
+                "sha256": "78320361ac80065b572bd9799593458aac20c208b69bba7c7d5f946d51546639"
+            },
+            {
+                "duration": 10.416667,
+                "sha256": "c5ec3035146b79ec0afc893d86a0ee7495e5d28b4f0735e1043872c327a6f0a5"
+            }
+        ]
+    },
+    {
+        "id": "overlay-aac9c734ad598712e2f0216f",
+        "action": "report_overlay",
+        "reviewedAt": "2026-09-22T06:42:07.883Z",
+        "expiresAt": "2026-10-22T06:42:07.883Z",
+        "segments": [
+            {
+                "duration": 10.416667,
+                "sha256": "b1631a209067bb3843a550cf90fa2a641340703f75560b7f27e91d11df23f561"
+            },
+            {
+                "duration": 2.125,
+                "sha256": "9684a3b8ce590745cf6114c7b22c73f0930073a3251e86c6726061fa039cab93"
+            }
+        ]
+    },
+    {
+        "id": "overlay-c41b7d8cf25bcabb08badeb4",
+        "action": "report_overlay",
+        "reviewedAt": "2026-09-22T06:42:07.883Z",
+        "expiresAt": "2026-10-22T06:42:07.883Z",
+        "segments": [
+            {
+                "duration": 10.416667,
+                "sha256": "70165acc43aa0011bb1597f8a502dcf946f80b4ae995b422d06a06ed64e66709"
+            },
+            {
+                "duration": 8.416667,
+                "sha256": "e096180f6e275392a6731706fc69bf012bbeb62878e3fec615d2f716991462e5"
+            }
+        ]
+    },
+    {
+        "id": "overlay-2598ed46a2c9bf244f626b03",
+        "action": "report_overlay",
+        "reviewedAt": "2026-09-22T06:42:07.883Z",
+        "expiresAt": "2026-10-22T06:42:07.883Z",
+        "segments": [
+            {
+                "duration": 10.416667,
+                "sha256": "9bf83fae0dd9d319666c90ae1f5edc04daf7547b4ae6633c64b6a26cc6740dcb"
+            },
+            {
+                "duration": 10.416667,
+                "sha256": "e06c1820b7186b931cc62eff412bee80decf5a2b94eb606ab2bbec077a4e3149"
+            }
+        ]
     }
 ];

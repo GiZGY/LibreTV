@@ -7,6 +7,7 @@ import {
   isRequestAuthenticated,
   verifyPassword
 } from '../../server/auth-session.mjs';
+import {humanCookie} from '../../server/human-access.mjs';
 
 const attempts = new Map();
 const ATTEMPT_WINDOW_MS = 15 * 60 * 1000;
@@ -84,9 +85,10 @@ export default async function handler(req, res) {
   const configured = isPasswordConfigured(process.env);
 
   if (action === 'status' && req.method === 'GET') {
-    const authenticated = configured && isRequestAuthenticated(req, process.env);
+    const authenticated = isRequestAuthenticated(req, process.env);
     return writeJson(res, 200, {
       configured,
+      accessMode: configured ? 'password' : 'public',
       authenticated,
       proxy: authenticated ? createProxyToken(process.env) : null
     });
@@ -132,7 +134,7 @@ export default async function handler(req, res) {
   }
 
   if (action === 'logout' && req.method === 'POST') {
-    res.setHeader('Set-Cookie', createClearedSessionCookie(req));
+    res.setHeader('Set-Cookie', [createClearedSessionCookie(req), humanCookie(req, process.env, Date.now(), true)]);
     return writeJson(res, 200, { configured, authenticated: false });
   }
 

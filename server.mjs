@@ -6,14 +6,8 @@ import dotenv from 'dotenv';
 import express from 'express';
 import authHandler from './api/auth/[action].mjs';
 import proxyHandler from './api/proxy/[...path].mjs';
-import {
-  isPasswordConfigured,
-  isRequestAuthenticated
-} from './server/auth-session.mjs';
-import {
-  proxyTvboxBridgeRequest,
-  writeBridgeJsonResponse
-} from './server/tvbox-bridge-proxy.mjs';
+import tvboxHandler from './api/tvbox/[action].mjs';
+import { isPasswordConfigured } from './server/auth-session.mjs';
 
 dotenv.config();
 
@@ -78,24 +72,7 @@ for (const [route, config] of staticFileRoutes) {
 
 app.all('/api/auth/:action', (req, res) => authHandler(req, res));
 
-app.get('/api/tvbox/:action', async (req, res) => {
-  if (!isPasswordConfigured(process.env)) {
-    res.setHeader('Cache-Control', 'private, no-store');
-    return res.status(503).json({ status: 'unsupported', message: 'PASSWORD is not configured' });
-  }
-  if (!isRequestAuthenticated(req, process.env)) {
-    res.setHeader('Cache-Control', 'private, no-store');
-    return res.status(401).json({ status: 'unsupported', message: 'Authentication required' });
-  }
-
-  const result = await proxyTvboxBridgeRequest({
-    action: req.params.action,
-    query: req.query,
-    env: process.env,
-    fetchImpl: globalThis.fetch
-  });
-  return writeBridgeJsonResponse(res, result);
-});
+app.get('/api/tvbox/:action', tvboxHandler);
 
 app.all('/proxy/:encodedUrl', (req, res) => proxyHandler(req, res));
 
@@ -127,6 +104,6 @@ app.listen(port, () => {
   console.log(`服务器运行在 http://localhost:${port}`);
   console.log(isPasswordConfigured(process.env)
     ? '用户登录密码已设置'
-    : '警告: 未设置 PASSWORD 环境变量，受保护功能将保持关闭');
+    : '免登录模式：代理仅允许访问站点目录内的资源');
   if (debug) console.log('调试模式已启用');
 });

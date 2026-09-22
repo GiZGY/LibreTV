@@ -6,9 +6,13 @@ import { Agent, fetch as undiciFetch } from 'undici';
 import {
   createResourceProxyToken,
   isRequestAuthenticated,
+  isPublicAccess,
   verifyProxyToken,
   verifyResourceProxyToken
 } from '../../server/auth-session.mjs';
+import { isPublicTarget, publicRequestStatus } from '../../server/public-access.mjs';
+import { enforceHuman, humanConfig } from '../../server/human-access.mjs';
+import { nativeInspectionResource, inspectionHash } from '../../server/native-inspection.mjs';
 
 const DEBUG_ENABLED = process.env.DEBUG === 'true';
 const BINARY_CACHE_TTL = readPositiveInt(process.env.CACHE_TTL, 86_400);
@@ -160,6 +164,7 @@ function extractTargetUrl(req) {
 }
 
 function authorizationMode(req, targetUrl, env, now) {
+  if (isPublicAccess(env)) return isPublicTarget(targetUrl) ? 'public' : '';
   if (verifyProxyToken(queryValue(req.query?.auth), queryValue(req.query?.t), env, now)) {
     return 'token';
   }
@@ -358,8 +363,14 @@ function setSecurityHeaders(res) {
   res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
 }
 
-function setCacheHeaders(res, mode, maxAge) {
-  if (!['token', 'resource'].includes(mode)) {
+function setCacheHeaders(res, mode, maxAge, env) {
+  // Shared caches must not bypass the visitor verification gate.
+  if (humanConfig(env).enabled) {
+    res.setHeader('Cache-Control', `private, max-age=${maxAge}`);
+    res.setHeader('Vercel-CDN-Cache-Control', 'no-store');
+    return;
+  }
+  if (!['token', 'resource', 'public'].includes(mode)) {
     res.setHeader('Cache-Control', 'private, no-store');
     return;
   }
@@ -386,6 +397,7 @@ function publicError(status) {
   if (status === 401) return '代理访问未授权';
   if (status === 413) return '上游响应过大';
   if (status === 415) return '不支持的上游内容类型';
+  if (status === 429) return '上游暂时限制访问，请稍后重试';
   if (status === 499) return '请求已取消';
   if (status === 504) return '上游请求超时';
   return '上游资源暂时不可用';
@@ -394,10 +406,13 @@ function publicError(status) {
 export function createProxyHandler({
   fetchImpl = secureFetch,
   env = process.env,
+  inspectionRegistry,
   now = () => Date.now()
 } = {}) {
   return async function proxyHandler(req, res) {
     setSecurityHeaders(res);
+
+    if (!enforceHuman(req, res, env)) return;
 
     if (req.method === 'OPTIONS') {
       res.setHeader('Allow', 'GET, HEAD, OPTIONS');
@@ -412,12 +427,28 @@ export function createProxyHandler({
     if (!targetUrl) return writeJsonError(res, 400, publicError(400));
 
     const requestNow = now();
-    const mode = authorizationMode(req, targetUrl, env, requestNow);
-    if (!mode) return writeJsonError(res, 401, publicError(401));
+    const inspection = env.NATIVE_AD_INSPECTION_DISABLED !== '1' && req.method === 'GET' && queryValue(req.query?.inspect) === 'manifest'
+      ? nativeInspectionResource(targetUrl, requestNow, inspectionRegistry) : null;
+    const mode = isPublicAccess(env) && inspection ? 'native-inspection' : authorizationMode(req, targetUrl, env, requestNow);
+    if (!mode) return isPublicAccess(env)
+      ? writeJsonError(res, 403, '此资源不在允许访问的目录中')
+      : writeJsonError(res, 401, publicError(401));
+    if (mode === 'public' || mode === 'native-inspection') {
+      const status = publicRequestStatus(req, env, requestNow);
+      if (status !== 200) return writeJsonError(res, status, status === 429 ? '请求过于频繁，请稍后重试' : '请求不允许');
+    }
 
     const abortContext = createAbortContext(req, res, UPSTREAM_TIMEOUT_MS);
     try {
-      const { response, finalUrl } = await fetchWithValidatedRedirects(fetchImpl, targetUrl, {
+      const guardedFetch = mode === 'native-inspection' ? (url, options) => {
+        // Exact reviewed resources only; redirects cannot expand this capability.
+        if (url !== targetUrl || req.headers?.range) throw createHttpError(403, 'Inspection target changed');
+        return fetchImpl(url, options);
+      } : mode === 'public' ? (url, options) => {
+        if (!isPublicTarget(url)) throw createHttpError(403, 'Public proxy target is not allowed');
+        return fetchImpl(url, options);
+      } : fetchImpl;
+      const { response, finalUrl } = await fetchWithValidatedRedirects(guardedFetch, targetUrl, {
         method: req.method,
         headers: createRequestHeaders(targetUrl, req.headers),
         signal: abortContext.controller.signal
@@ -429,6 +460,14 @@ export function createProxyHandler({
       }
 
       const upstreamType = response.headers.get('content-type') || '';
+      if (mode === 'native-inspection') {
+        const body = await readBodyLimited(response, inspection.maxBytes);
+        if (finalUrl !== targetUrl || inspectionHash(body) !== inspection.bodySha256) throw createHttpError(409, 'Reviewed resource changed');
+        res.setHeader('Content-Type', 'application/octet-stream');
+        res.setHeader('Cache-Control', 'private, no-store');
+        res.setHeader('Vercel-CDN-Cache-Control', 'no-store');
+        return res.status(200).send(body);
+      }
       copySafeResponseHeaders(response.headers, res);
 
       if (req.method === 'HEAD') {
@@ -438,14 +477,14 @@ export function createProxyHandler({
             ? baseContentType(upstreamType)
             : 'application/octet-stream';
         res.setHeader('Content-Type', safeType);
-        setCacheHeaders(res, mode, isM3u8Type(upstreamType) ? PLAYLIST_CACHE_TTL : BINARY_CACHE_TTL);
+        setCacheHeaders(res, mode, isM3u8Type(upstreamType) ? PLAYLIST_CACHE_TTL : BINARY_CACHE_TTL, env);
         await response.body?.cancel?.().catch(() => {});
         return res.status(response.status).end();
       }
 
       if (isBinaryType(upstreamType) && !isM3u8Type(upstreamType)) {
         res.setHeader('Content-Type', baseContentType(upstreamType));
-        setCacheHeaders(res, mode, BINARY_CACHE_TTL);
+        setCacheHeaders(res, mode, BINARY_CACHE_TTL, env);
         res.status(response.status);
         if (!response.body) return res.end();
         await pipeline(Readable.fromWeb(response.body), res, { signal: abortContext.controller.signal });
@@ -461,22 +500,38 @@ export function createProxyHandler({
       const text = body.toString('utf8');
       const m3u8 = isM3u8Type(upstreamType) || text.trimStart().startsWith('#EXTM3U');
       if (m3u8) {
+        if (queryValue(req.query?.inspect) === 'manifest') {
+          // Evidence hashes must cover the original bytes, not expiring signed URLs.
+          // Never guess the base for relative segments after an upstream redirect.
+          if (finalUrl !== targetUrl) throw createHttpError(409, 'Playlist identity changed');
+          res.setHeader('Content-Type', 'application/vnd.apple.mpegurl; charset=utf-8');
+          res.setHeader('Cache-Control', 'private, no-store');
+          res.setHeader('Vercel-CDN-Cache-Control', 'no-store');
+          return res.status(response.status).send(body);
+        }
         const rewritten = rewriteM3u8(text, finalUrl, env, requestNow);
         res.setHeader('Content-Type', 'application/vnd.apple.mpegurl; charset=utf-8');
-        setCacheHeaders(res, mode, PLAYLIST_CACHE_TTL);
+        setCacheHeaders(res, mode, PLAYLIST_CACHE_TTL, env);
         return res.status(response.status).send(rewritten);
       }
 
       const json = looksLikeJson(text);
       const type = baseContentType(upstreamType);
       if (json) {
+        // Douban reports throttling in a 200 response. Never cache it as catalog data.
+        if (new URL(finalUrl).hostname === 'movie.douban.com') {
+          const payload = JSON.parse(text.trim());
+          if (payload?.r && /异常请求|登录|频繁|限制/.test(String(payload.msg))) {
+            throw createHttpError(429, 'Upstream catalog is rate limited');
+          }
+        }
         res.setHeader('Content-Type', 'application/json; charset=utf-8');
       } else if (type === 'text/plain' && !looksLikeHtmlOrScript(text)) {
         res.setHeader('Content-Type', 'text/plain; charset=utf-8');
       } else {
         throw createHttpError(415, 'Unsupported upstream text content');
       }
-      setCacheHeaders(res, mode, Math.min(BINARY_CACHE_TTL, 300));
+      setCacheHeaders(res, mode, Math.min(BINARY_CACHE_TTL, 300), env);
       return res.status(response.status).send(body);
     } catch (error) {
       const aborted = abortContext.controller.signal.aborted;

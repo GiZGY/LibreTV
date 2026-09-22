@@ -1,0 +1,59 @@
+<!doctype html><meta charset="utf-8"><title>Native HLS silent acceptance</title>
+<style>body{font:16px system-ui;max-width:900px;margin:24px auto}video{width:400px}pre{white-space:pre-wrap}</style>
+<h1>Native HLS silent acceptance</h1><p>Local synthetic/captured fixture only. No production rules are created. Audio is disabled before loading.</p>
+<button id="run">Run native checks</button><div id="host"><video muted playsinline controls></video></div><textarea id="result" aria-label="Native test results" rows="24" cols="90" readonly>Ready</textarea>
+<script src="/ad-guard.js"></script><script src="/native-ad-evidence.js"></script><script src="/native-ad-verifier.js"></script><script src="/native-ad-guard.js"></script>
+<script>
+const config=__CONFIG__;
+const video=document.querySelector('video');video.muted=true;video.defaultMuted=true;video.volume=0;
+const output=document.querySelector('#result'),results=[];let guard,timer;
+const report=()=>output.value=JSON.stringify({engine:'native src; no Hls.js loaded',muted:video.muted,volume:video.volume,results},null,2);
+const check=(name,pass)=>{results.push({name,pass:!!pass,time:video.currentTime,duration:video.duration});report();if(!pass)throw Error(name);};
+const until=(test,label,limit=15000)=>new Promise((resolve,reject)=>{const start=performance.now();const poll=()=>{if(test())return resolve();if(performance.now()-start>limit)return reject(Error('timeout '+label));timer=setTimeout(poll,40);};poll();});
+async function hash(bytes){return Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes)),x=>x.toString(16).padStart(2,'0')).join('');}
+async function read(url,{signal,maxBytes}){const response=await fetch(url,{signal});if(!response.ok)throw Error('fixture response');const bytes=new Uint8Array(await response.arrayBuffer());if(bytes.length>maxBytes)throw Error('fixture bound');return bytes;}
+document.querySelector('#run').onclick=async function(){
+ this.disabled=true;results.length=0;
+ try{
+  check('native HLS capability',!!video.canPlayType('application/vnd.apple.mpegurl'));
+  check('silent before source assignment',video.muted&&video.volume===0);
+  const url=new URL('/video.m3u8',location.href).href;video.src=url;await video.play();
+  await until(()=>video.readyState>=3&&video.seekable.length&&Number.isFinite(video.duration),'metadata');
+  const duration=video.duration,start=video.seekable.start(0);
+  check('baseline native duration',Math.abs(duration-config.duration)<.2);
+  video.playbackRate=1;await until(()=>video.ended,'unfiltered ending',35000);
+  check('unfiltered ending reached',Math.abs(video.currentTime-duration)<.2);
+  const manifest=await read(url,{maxBytes:1024*1024});
+  const parts=OpenStreamNativeAdVerifier.parse(new TextDecoder().decode(manifest),url);
+  const selected=parts.filter(part=>part.start>=config.adStart-.01&&part.start<config.adEnd-.01);
+  check('fixture complete interval',selected.length===config.rules[0].segments.length);
+  const evidence={schema:1,mediaUrlSha256:await hash(new TextEncoder().encode(url)),manifestSha256:await hash(manifest),reviewedAt:new Date(Date.now()-1000).toISOString(),expiresAt:new Date(Date.now()+3600000).toISOString(),timeline:{engine:'webkit-native',duration,start},ranges:[{ruleId:config.rules[0].id,start:config.adStart,end:config.adEnd,segments:await Promise.all(selected.map(async part=>({index:part.index,identity:await OpenStreamNativeAdVerifier.identity(part)})))}]};
+  const result=await OpenStreamNativeAdVerifier.verify({mediaUrl:url,evidence,rules:config.rules,read});
+  check('full local evidence verification',result.status==='verified');
+  video.currentTime=0;video.playbackRate=1;
+  guard=OpenStreamNativeAdGuard.attach({video,host:document.querySelector('#host'),getVerification:()=>result.verification});
+  await video.play();video.currentTime=config.adStart+.2;
+  await until(()=>guard.getStatus().skips===1,'skip');
+  check('native skip reached boundary',video.currentTime>=config.adEnd-.1&&video.currentTime<config.adEnd+1);
+  await until(()=>video.currentTime>config.adEnd+.5,'programme continues');
+  check('duration after skip',Math.abs(video.duration-duration)<.05);
+  const undo=document.querySelector('.ad-skip-notice button');check('undo visible',!!undo);undo.click();
+  await until(()=>!video.seeking&&video.currentTime<config.adStart+2,'undo returns');
+  const resumed=video.currentTime;await until(()=>video.currentTime>resumed+.4,'undo continues');
+  check('undo no repeated skip',guard.getStatus().skips===1&&video.currentTime<config.adEnd);
+  video.playbackRate=1;await until(()=>video.ended,'filtered ending',35000);
+  check('all remaining content to ending',Math.abs(video.currentTime-duration)<.2&&!guard.getStatus().suspended);
+  guard();check('disposed',guard.getStatus().disposed);
+  video.currentTime=0;
+  guard=OpenStreamNativeAdGuard.attach({video,host:document.querySelector('#host'),getVerification:()=>result.verification});
+  await video.play();video.currentTime=config.adStart+.2;
+  await until(()=>guard.getStatus().skips===1,'second independent skip');
+  await until(()=>video.ended,'skipped playback ending without undo',35000);
+  check('skip without undo preserves ending',Math.abs(video.currentTime-duration)<.2&&!guard.getStatus().suspended&&guard.getStatus().skips===1);
+  guard();check('silent throughout',video.muted&&video.volume===0);
+  results.push({name:'complete',pass:results.every(item=>item.pass)});report();
+ }catch(error){results.push({name:error.message,pass:false});report();}
+ finally{video.pause();guard?.();clearTimeout(timer);this.disabled=false;}
+};
+window.addEventListener('pagehide',()=>{video.pause();guard?.();clearTimeout(timer);});
+</script>

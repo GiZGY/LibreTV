@@ -105,7 +105,12 @@ export function verifySessionToken(token, env = process.env, now = Date.now()) {
   }
 }
 
+export function isPublicAccess(env = process.env) {
+  return !isPasswordConfigured(env);
+}
+
 export function isRequestAuthenticated(req, env = process.env, now = Date.now()) {
+  if (isPublicAccess(env)) return true;
   const cookieHeader = req?.headers?.cookie || req?.headers?.Cookie || '';
   const token = parseCookies(cookieHeader)[AUTH_COOKIE_NAME];
   return verifySessionToken(token, env, now);
