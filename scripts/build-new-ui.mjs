@@ -24,10 +24,13 @@ await fs.copyFile(path.join(root,'libs/hls.min.js'),path.join(output,'libs/hls.m
 const revision=crypto.createHash('sha256');
 for(const name of [...ui,...core.map(n=>'core/'+n)])revision.update(await fs.readFile(path.join(output,name)));
 const version=revision.digest('hex').slice(0,16);
+const assetRoot=`static/${version}`;
+await fs.mkdir(path.join(output,assetRoot),{recursive:true});
+for(const name of [...ui,'core'])await fs.rename(path.join(output,name),path.join(output,assetRoot,name));
 const scripts=['core/config.js','live-mode.js','human-access.js',...core.slice(1).map(n=>'core/'+n),'app.js','film-metadata.js','live-data.js','live-ui.js','player-preview.js'];
 let html=await fs.readFile(path.join(root,'web/index.html'),'utf8');
-html=html.replace(/<script defer src="(?:app|player-preview)\.js"><\/script>/g,'').replace(/styles\.css\?[^" ]+/g,'styles.css?v='+version);
-html=html.replace('</head>',scripts.map(src=>`<script defer src="${src}?v=${version}"></script>`).join('')+'</head>');
+html=html.replace(/<script defer src="(?:app|player-preview)\.js"><\/script>/g,'').replace(/styles\.css\?[^" ]+/g,assetRoot+'/styles.css?v='+version);
+html=html.replace('</head>','<link rel="preconnect" href="https://image.tmdb.org">'+scripts.map(src=>`<script defer src="${assetRoot}/${src}?v=${version}"></script>`).join('')+'</head>');
 await fs.writeFile(path.join(output,'index.html'),html);
 await fs.copyFile(path.join(root,'VERSION.txt'),path.join(output,'VERSION.txt'));
 await fs.copyFile(path.join(root,'robots.txt'),path.join(output,'robots.txt'));
