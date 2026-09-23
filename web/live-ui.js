@@ -134,7 +134,7 @@
     const featured=featuredFilms(), rest=homeRecommendations();
     // The featured strip and the recommendation grid use disjoint lists.
     const group=copy=>`<div class="film-ribbon-group" ${copy?'aria-hidden="true"':''}>${[...featured,...featured].map((f,i)=>{
-      let html=card(f).replace('loading="lazy"','loading="eager" decoding="async"');
+      let html=card(f,true);
       if(copy||i>=featured.length)html=html.replace('<a ','<a tabindex="-1" ').replace('<button ','<button tabindex="-1" ');
       if(i>=featured.length)html=html.replace('<article ','<article data-loop-copy="true" ');
       return html;
