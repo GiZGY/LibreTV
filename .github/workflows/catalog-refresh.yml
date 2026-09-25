@@ -1,0 +1,31 @@
+name: Refresh film catalogue
+
+on:
+  schedule:
+    - cron: '19 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: catalog-refresh-production
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    if: github.repository == 'GiZGY/LibreTV' && github.ref == 'refs/heads/main' && vars.CATALOG_REFRESH_ENABLED == '1'
+    runs-on: ubuntu-latest
+    timeout-minutes: 130
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --omit=dev
+      - name: Refresh and publish only a complete snapshot
+        env:
+          CATALOG_DATABASE_URL: ${{ secrets.CATALOG_DATABASE_URL }}
+          TMDB_READ_ACCESS_TOKEN: ${{ secrets.TMDB_READ_ACCESS_TOKEN }}
+        run: node scripts/catalog-index.mjs refresh batches=10000 requests=200 minutes=120

@@ -231,11 +231,13 @@
     const key=JSON.stringify([type,genre,year,sort,region,minRating,pageSize]);
     const hour=Math.floor(Date.now()/3600000);
     let snapshot=discoveryGenerations.get(key);
-    if(!snapshot||snapshot.generation<hour-1){snapshot={generation:hour,id:crypto.randomUUID()};discoveryGenerations.set(key,snapshot);}
+    if(!snapshot||snapshot.generation<hour-1){snapshot={generation:hour,id:'shared'};discoveryGenerations.set(key,snapshot);}
     while(discoveryGenerations.size>40)discoveryGenerations.delete(discoveryGenerations.keys().next().value);
     const params={type,genre,year,sort,region,...(minRating?{minRating}:{})};
     const result=await catalogRequest({kind:'discover',filtered:'1',...params,
-      page:String(page),pageSize:String(pageSize),generation:String(snapshot.generation),snapshot:snapshot.id},signal);
+      page:String(page),pageSize:String(pageSize),generation:String(snapshot.generation),snapshot:snapshot.id,
+      ...(snapshot.revision?{revision:snapshot.revision}:{})},signal);
+    if(result.indexed&&result.revision)snapshot.revision=result.revision;
     if(result.filtered)return result;
     // An already-running preview or older deployment may still serve raw pages.
     const start=(page-1)*pageSize,batches=[];

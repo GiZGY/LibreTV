@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 import { webcrypto } from 'node:crypto';
 const source=fs.readFileSync(new URL('../live-data.js',import.meta.url),'utf8');
+const ui=fs.readFileSync(new URL('../live-ui.js',import.meta.url),'utf8');
 const fn=source.slice(source.indexOf('  async function discoverTMDB'),source.indexOf('  async function discover({'));
 function fixture(total){
  const context=vm.createContext({crypto:webcrypto,discoveryGenerations:new Map(),allowed:()=>true,catalogRequest:async({page,pageSize,filtered})=>{
@@ -36,4 +37,8 @@ test('catalog fills the available width with fixed gutters and divisors of 40',(
 test('catalog policy changes invalidate browser URLs without clearing user storage',()=>{
  assert.match(source,/new URLSearchParams\(\{\.\.\.params,policy:'2026-09-22-latest-v1'\}\)/);
  assert.doesNotMatch(source,/localStorage\.clear\(/);
+});
+test('year filter covers exactly the indexed catalogue range from 1990 onward',()=>{
+ assert.match(ui,/currentYear-1990\+1/);
+ assert.doesNotMatch(ui,/length:40/);
 });

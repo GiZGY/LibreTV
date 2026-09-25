@@ -164,7 +164,8 @@
     finally{if(!signal.aborted&&container.isConnected){container.removeAttribute('aria-busy');restoreShelves();}}
   }
   function discoveryControls() {
-    const years=['全部',...Array.from({length:40},(_,i)=>String(new Date().getFullYear()-i))];
+    const currentYear=new Date().getFullYear();
+    const years=['全部',...Array.from({length:Math.max(0,currentYear-1990+1)},(_,i)=>String(currentYear-i))];
     return `<div class="discovery-heading"><h1>探索影片</h1><button class="text-button" data-action="reset">重置筛选</button></div><div class="discovery-filters">${filterStrip('分类','type',['电影','电视剧','动漫','综艺','纪录片'])}${filterStrip('题材','genre',!['电影','纪录片'].includes(filters.type)?['全部','剧情','喜剧','悬疑','犯罪','动画','家庭']:['全部','剧情','爱情','喜剧','动作','科幻','悬疑','惊悚','犯罪','冒险','动画','战争','历史','奇幻','家庭'])}${filterStrip('地区','region',['全部','中国大陆','中国香港','中国台湾','美国','英国','法国','德国','日本','韩国','印度','泰国'])}${filterStrip('年份','year',years)}</div><div class="results-head"><span id="discovery-count"></span><div class="sort-options">${chips(['精选','最新上映','评分最高'],filters.sort,'sort','',{'精选':'热门优先','评分最高':'高分佳作'})}</div></div><div id="discovery-cards">${status('正在寻找影片…',false)}</div><div class="pagination"><button data-live-page="-1" ${discoverPage===1?'disabled':''}>上一页</button><span>第 ${discoverPage} 页</span><button data-live-page="1" disabled>下一页</button></div>`;
   }
   async function fetchDiscovery(signal,token) {
@@ -183,8 +184,8 @@
       discovered=result.items.map(item=>{const film=register(item,true);film.type=filters.type;if(!film.year&&filters.year!=='全部')film.year=filters.year;if(!film.genre&&filters.genre!=='全部'){film.genre=filters.genre;film.genres=[filters.genre];}return film;});
       discoveryHasNext=result.hasNext;$('#discovery-cards').removeAttribute('aria-busy');document.querySelector('[data-live-page="-1"]').disabled=page===1;
       $('#discovery-cards').innerHTML=discovered.length?grid(discovered):status(result.rawCount?'本页影片已被内容过滤，可继续浏览下一页。':'没有找到符合条件的影片，试试其他年份或题材。',false);
-      $('#discovery-count').textContent='本页 '+discovered.length+' 部影片'+(' · TMDB 评分 · '+result.total+' 部（筛选前）'+(filters.sort==='评分最高'?' · 6.5分起 · 至少50人评分':'')+(result.capped?' · 请收窄筛选':''))+(result.stale?' · 已显示上次更新的内容':'');
-      lastDiscoveryView={condition,page,html:$('#discovery-cards').innerHTML,count:discovered.length,hasNext:result.hasNext};
+      $('#discovery-count').textContent=(result.indexed?'共 '+result.total+' 部影片':'本页 '+discovered.length+' 部影片')+(result.stale?' · 已显示上次更新的内容':'');
+      lastDiscoveryView={condition,page,html:$('#discovery-cards').innerHTML,count:discovered.length,hasNext:result.hasNext,totalPages:result.totalPages};
       const end=result.totalPages;
       const pagination=document.querySelector('.pagination');
       pagination.querySelector('span').textContent=end?'第 '+page+' / '+end+' 页':'第 '+page+' 页';
@@ -199,6 +200,8 @@
         $('#main').innerHTML=discoveryControls();
         $('#discovery-cards').innerHTML=previous.html;
         $('#discovery-count').textContent='本页 '+previous.count+' 部影片 · 暂未加载新页，已保留当前内容';
+        document.querySelector('.pagination span').textContent=previous.totalPages?'第 '+previous.page+' / '+previous.totalPages+' 页':'第 '+previous.page+' 页';
+        document.querySelector('[data-live-page="-1"]').disabled=previous.page===1;
         document.querySelector('[data-live-page="1"]').disabled=!previous.hasNext;
         toast(error.message);
       }else{discoveryHasNext=false;$('#discovery-cards').innerHTML=status(error.message);}

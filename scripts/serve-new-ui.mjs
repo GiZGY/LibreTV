@@ -12,6 +12,7 @@ import { createHumanHandler } from '../api/security/human.mjs';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const ui = path.resolve(root, 'web');
 dotenv.config({ path: path.join(root, '.env.local') });
+dotenv.config({ path: path.join(root, '.env.catalog.local') });
 // Local Node fetch does not automatically honor the desktop proxy environment.
 const catalogProxy = process.env.HTTPS_PROXY || process.env.https_proxy;
 let catalogFetch = globalThis.fetch;

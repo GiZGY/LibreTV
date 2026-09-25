@@ -36,6 +36,9 @@ jobs:
       - name: Verify new UI production build
         run: npm run quality:new-ui && npm run smoke:native-ads
 
+      - name: Verify catalogue database and incremental refresh
+        run: npm run test:catalog-index
+
       - name: Install bridge dependencies
         working-directory: bridge/tvbox-bridge
         run: npm ci

@@ -20,8 +20,10 @@
     const dialog = document.createElement('dialog');
     dialog.className = 'human-dialog';
     dialog.setAttribute('aria-label', '安全验证');
-    dialog.innerHTML = '<h2>安全验证</h2><p>验证后即可继续浏览。</p><div class="human-widget"></div><p role="status" class="human-message"></p><button class="secondary" type="button">取消</button>';
+    dialog.innerHTML = '<h2 class="human-title" tabindex="-1" autofocus>安全验证</h2><button class="human-close" type="button" aria-label="关闭安全验证"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button><p>验证后即可继续浏览。</p><div class="human-widget"></div><p role="status" class="human-message"></p>';
     document.body.append(dialog);dialog.showModal();
+    // Focus the dialog context, not an action the user has not selected.
+    dialog.querySelector('.human-title').focus({preventScroll:true});
     let widget, disposed = false;
     const cancelled = new Promise((_, reject) => {
       const cancel = event => {event?.preventDefault();reject(new Error('验证已取消，可以点击重试继续'));};

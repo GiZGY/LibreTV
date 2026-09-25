@@ -1,0 +1,23 @@
+// Local-only browser acceptance, with an isolated in-memory PostgreSQL catalogue.
+import express from 'express';
+import {readFile} from 'node:fs/promises';
+import {fileURLToPath} from 'node:url';
+import {PGlite} from '@electric-sql/pglite';
+import {createIndexReader} from '../server/catalog-index.mjs';
+import {createSyncStore,indexEntry} from '../server/catalog-sync.mjs';
+const db=new PGlite();
+await db.exec(await readFile(new URL('../server/catalog-schema.sql',import.meta.url),'utf8'));
+const query=async(text,values)=>(await db.query(text,values)).rows;
+const store=createSyncStore(query),year=new Date().getUTCFullYear();
+let state=await store.begin({from:2005,to:year});
+const entries=Array.from({length:85},(_,i)=>indexEntry({id:i+1,title:['星际旅行','远方来信','夏日时光'][i%3]+' '+(i+1),release_date:(i<42?year:2005)+'-01-02',genre_ids:[878],origin_country:['US'],vote_average:7.5,vote_count:100,popularity:100-i},'movie'));
+state=await store.checkpoint(state,{...state.cursor,queue:[],items:[],complete:true},entries);
+await store.publish(state);
+const read=createIndexReader({query});
+const app=express();
+app.get('/api/catalog/tmdb',async(req,res)=>{try{res.json(await read(req.query));}catch(error){res.status(error.status||500).json({message:'目录暂时不可用'});}});
+app.get('/api/auth/:action',(_req,res)=>res.json({authenticated:true,configured:false,public:true}));
+app.get('/api/security/human',(_req,res)=>res.json({enabled:false,verified:true}));
+app.use(express.static(fileURLToPath(new URL('../public',import.meta.url))));
+const server=app.listen(18449,'127.0.0.1',()=>console.log('Isolated catalogue fixture: http://127.0.0.1:18449/#discover'));
+for(const signal of ['SIGTERM','SIGINT'])process.on(signal,()=>server.close(async()=>{await db.close();process.exit(0);}));
