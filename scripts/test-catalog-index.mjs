@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {PGlite} from '@electric-sql/pglite';
-import {createIndexReader,indexQuery} from '../server/catalog-index.mjs';
+import {catalogDatabase,createIndexReader,indexQuery} from '../server/catalog-index.mjs';
 import {createSyncStore,syncBatch,initialCursor,splitWindow,indexEntry,tmdbSyncRequest} from '../server/catalog-sync.mjs';
 import {createCatalogHandler} from '../api/catalog/tmdb.mjs';
 
@@ -12,6 +12,12 @@ const query=async(text,values)=>(await db.query(text,values)).rows;
 const store=createSyncStore(query);
 const raw=(id,year=2005,extra={})=>({id,title:'测试电影'+id,release_date:year+'-01-02',genre_ids:[878],origin_country:['US'],vote_average:7.2,vote_count:100,popularity:100-id,poster_path:'/test.jpg',...extra});
 test.after(()=>db.close());
+
+test('Neon database resolves explicit and Vercel integration connection variables',()=>{
+  assert.doesNotThrow(()=>catalogDatabase({CATALOG_DATABASE_URL:'postgresql://user:pass@db.example/test'}));
+  assert.doesNotThrow(()=>catalogDatabase({CATALOG_POSTGRES_URL_NON_POOLING:'postgresql://user:pass@db.example/test'}));
+  assert.doesNotThrow(()=>catalogDatabase({CATALOG_POSTGRES_URL:'postgresql://user:pass@db.example/test'}));
+});
 
 test('default coverage starts in 1990; narrowing preserves progress and rejects stale writers',async()=>{
   assert.equal(initialCursor({to:2026,today:'2026-09-24'}).queue.length,74);

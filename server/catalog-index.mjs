@@ -5,7 +5,7 @@ import {catalogQuery, catalogRegions} from './tmdb-catalog.mjs';
 const fail=(status,message)=>Object.assign(new Error(message),{status});
 let connection;
 export function catalogDatabase(env=process.env){
-  const url=env.CATALOG_DATABASE_URL;
+  const url=env.CATALOG_DATABASE_URL||env.CATALOG_POSTGRES_URL_NON_POOLING||env.CATALOG_POSTGRES_URL;
   if(!url)throw fail(503,'影片目录暂未就绪');
   if(!connection||connection.url!==url)connection={url,sql:neon(url)};
   const sql=connection.sql;
