@@ -29,6 +29,20 @@ test('refresh capacity guard stops before creating a new revision',async()=>{
   assert.equal(calls.some(sql=>sql.includes('INSERT')),false);
 });
 
+test('two stored snapshots can safely create the next bounded daily revision',async()=>{
+  const query=async(sql,values=[])=>{
+    if(sql.includes('WITH draft AS'))return [{id:'12',version:12,cursor:JSON.parse(values[1]),coverage:JSON.parse(values[0])}];
+    if(sql.includes("WHERE status='draft'"))return [];
+    if(sql.includes("WHERE status='ready'"))return [{id:'11',coverage:{from:1990,to:2026,through:'2026-09-24'}}];
+    if(sql.includes('mod(tmdb_id'))return [];
+    if(sql.includes('pg_database_size'))return [{used:221.5*1024*1024,entries:221.5*1024*1024,total_rows:300000,base_rows:150000}];
+    throw Error('Unexpected query');
+  };
+  const draft=await createRefreshStore(query).beginRefresh('2026-09-25');
+  assert.equal(draft.id,'12');
+  assert.equal(draft.cursor.mode,'delta');
+});
+
 test('real PostgreSQL refresh is atomic, rechecks exclusions, preserves pins and prunes safely',async()=>{
   const db=new PGlite();const q=async(sql,v)=>(await db.query(sql,v)).rows;
   try{
@@ -60,13 +74,13 @@ test('real PostgreSQL refresh is atomic, rechecks exclusions, preserves pins and
     assert.equal((await createIndexReader({query:q})({revision:base.id})).total,3);
     assert.equal(await store.beginRefresh('2026-09-24'),null);
     await assert.rejects(store.publishRefresh(state),{status:409});
-    // Retain the latest three snapshots, recent readers, and the draft's base.
+    // Retain two recent generations for active readers and rollback.
     for(let i=0;i<4;i++){
       const [r]=await q(`INSERT INTO catalog_revisions(status,coverage,cursor,published_at) VALUES('ready',$1::jsonb,'{}',now()-interval '4 days') RETURNING id::text`,[JSON.stringify(base.coverage)]);
       await q('INSERT INTO catalog_entries SELECT $1::bigint,media,tmdb_id,year,release_date,genres,countries,score,votes,popularity,payload FROM catalog_entries WHERE revision=$2::bigint',[r.id,base.id]);
     }
-    const removed=await store.prune();assert.equal(removed.length,1);
+    const removed=await store.prune();assert.equal(removed.length,2);
     assert.equal((await q('SELECT count(*)::int n FROM catalog_entries WHERE revision=$1',[removed[0].id]))[0].n,0);
-    assert.equal((await q('SELECT count(*)::int n FROM catalog_revisions'))[0].n,5);
+    assert.equal((await q('SELECT count(*)::int n FROM catalog_revisions'))[0].n,4);
   }finally{await db.close();}
 });
