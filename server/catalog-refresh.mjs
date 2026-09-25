@@ -29,7 +29,8 @@ export function createRefreshStore(query){
         pg_total_relation_size('catalog_entries')::float8 AS entries,
         (SELECT count(*)::float8 FROM catalog_entries) AS total_rows,
         (SELECT count(*)::float8 FROM catalog_entries WHERE revision=$1::bigint) AS base_rows`,[base.id]);
-      const copyEstimate=Number(size.entries)*Number(size.base_rows)/Math.max(1,Number(size.total_rows))*1.25;
+      // Measured Neon snapshots grew about 1.04x the estimated base relation; retain headroom.
+      const copyEstimate=Number(size.entries)*Number(size.base_rows)/Math.max(1,Number(size.total_rows))*1.08;
       if(Number(size.used)+copyEstimate>350*1024*1024)throw fail(507,'没有足够空间安全创建更新快照');
       const coverage={...base.coverage,to:Number(today.slice(0,4)),through:cursor.through};
       const rows=await query(`WITH draft AS (
@@ -46,10 +47,10 @@ export function createRefreshStore(query){
       return store.publish(state);
     },
     async prune(){
-      // Keep three rollback generations and at least 72h, well beyond browser pins.
+      // Keep the active snapshot and one rollback generation; page pins expire after two hours.
       return query(`WITH candidates AS (
-        SELECT id FROM catalog_revisions WHERE status='ready' AND published_at<now()-interval '72 hours'
-        AND id NOT IN(SELECT id FROM catalog_revisions WHERE status='ready' ORDER BY id DESC LIMIT 3)
+        SELECT id FROM catalog_revisions WHERE status='ready' AND published_at<now()-interval '2 hours'
+        AND id NOT IN(SELECT id FROM catalog_revisions WHERE status='ready' ORDER BY id DESC LIMIT 2)
         AND id NOT IN(SELECT (cursor->>'base')::bigint FROM catalog_revisions WHERE status='draft' AND cursor ? 'base')
       ), removed AS (
         DELETE FROM catalog_entries WHERE revision IN(SELECT id FROM candidates) RETURNING revision
