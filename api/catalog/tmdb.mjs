@@ -3,9 +3,11 @@ import {isRequestAuthenticated,isPublicAccess} from '../../server/auth-session.m
 import {publicRequestStatus} from '../../server/public-access.mjs';
 import {enforceHuman, humanConfig} from '../../server/human-access.mjs';
 import {getCache} from '@vercel/functions';
+import {createIndexReader} from '../../server/catalog-index.mjs';
 export function createCatalogHandler(options){
 const sharedCache=process.env.VERCEL==='1'?getCache({namespace:'openstream-tmdb-v2'}):null;
 const discover=createCatalogService({sharedCache,...options});
+const indexed=options?.indexReader||createIndexReader({sharedCache});
 return async function handler(req,res){
   res.setHeader('Cache-Control','private, no-store');
   res.setHeader('X-Content-Type-Options','nosniff');
@@ -15,7 +17,9 @@ return async function handler(req,res){
   const publicAccess=isPublicAccess(process.env);
   if(publicAccess){const status=publicRequestStatus(req);if(status!==200)return res.status(status).json({message:'请求暂时不可用'});}
   try{
-    const data=await discover(req.query||{});
+    const params=req.query||{};
+    const useIndex=process.env.CATALOG_INDEX_ENABLED==='1'&&(!params.kind||['discover','browse'].includes(params.kind));
+    const data=await (useIndex?indexed:discover)(params);
     if(humanConfig().enabled){res.setHeader('Cache-Control','private, max-age=300');res.setHeader('Vercel-CDN-Cache-Control','no-store');}
     if(publicAccess&&!humanConfig().enabled){res.setHeader('Cache-Control','public, max-age=300');res.setHeader('Vercel-CDN-Cache-Control','public, s-maxage=3600, stale-while-revalidate=86400');}
     return res.status(200).json(data);

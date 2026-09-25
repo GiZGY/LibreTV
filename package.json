@@ -10,6 +10,12 @@
   "author": "bestZwei",
   "license": "Apache-2.0",
   "scripts": {
+    "catalog:migrate": "node scripts/catalog-index.mjs migrate",
+    "catalog:status": "node scripts/catalog-index.mjs status",
+    "catalog:sync": "node scripts/catalog-index.mjs sync",
+    "catalog:publish": "node scripts/catalog-index.mjs publish",
+    "catalog:refresh": "node scripts/catalog-index.mjs refresh",
+    "test:catalog-index": "node --test scripts/test-catalog-index.mjs scripts/test-catalog-refresh.mjs",
     "dev": "nodemon server.mjs",
     "start": "node server.mjs",
     "build:css": "tailwindcss -c tailwind.config.cjs -i css/tailwind.input.css -o css/tailwind.generated.css --minify",
@@ -58,6 +64,7 @@
     "quality:new-ui": "npm run test:new-ui && npm run build:new-ui && npm run smoke:new-ui-build"
   },
   "dependencies": {
+    "@neondatabase/serverless": "^1.1.0",
     "@vercel/functions": "^3.9.9",
     "compression": "^1.8.1",
     "cors": "^2.8.5",
@@ -67,6 +74,7 @@
     "undici": "^6.28.0"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.8",
     "esbuild": "^0.25.12",
     "nodemon": "^3.1.10",
     "tailwindcss": "^3.4.17"
