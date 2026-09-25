@@ -3,7 +3,7 @@
 ## State and boundaries
 
 - The index path is opt-in with `CATALOG_INDEX_ENABLED=1`. Keep it unset until a complete snapshot has been imported and accepted.
-- Neon connection: `CATALOG_DATABASE_URL`, server-only. Local configuration belongs in ignored `.env.catalog.local`. Never copy it into a browser bundle, test fixture, log or commit.
+- Neon connection: `CATALOG_DATABASE_URL` (preferred), with Vercel Neon integration fallbacks `CATALOG_POSTGRES_URL_NON_POOLING` and `CATALOG_POSTGRES_URL`; server-only. Local configuration belongs in ignored `.env.catalog.local`. Never copy it into a browser bundle, log or commit.
 - Only public film metadata is stored. Video streams, login credentials, playback history and user collections are not stored here.
 - Detail, related films, playback-source lookup and Turnstile retain their existing endpoints and protections.
 - Exact totals describe the published, policy-filtered OpenStream catalogue, not every record held by TMDB and not guaranteed playable sources.
