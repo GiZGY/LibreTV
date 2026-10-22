@@ -197,7 +197,8 @@
     const key=new URLSearchParams({...params,policy:'2026-09-22-latest-v1'}).toString(),hit=tmdbCache.get(key);
     if(hit&&hit.until>Date.now())return hit.data;
     if(!tmdbPending.has(key)){
-      const task=json('/api/catalog/tmdb?'+key,AbortSignal.timeout(params.filtered==='1'?22000:9000)).then(result=>{
+      // A user completing verification must not consume the catalogue network budget.
+      const task=Promise.resolve().then(()=>window.HumanAccess?.ensure()).then(()=>json('/api/catalog/tmdb?'+key,AbortSignal.timeout(params.filtered==='1'?22000:9000))).then(result=>{
         if(params.kind==='detail'?!result.item:!Array.isArray(result.items))throw new Error('影片资料暂不可用');
         tmdbCache.delete(key);tmdbCache.set(key,{until:Date.now()+3600000,data:result});
         while(tmdbCache.size>40)tmdbCache.delete(tmdbCache.keys().next().value);

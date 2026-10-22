@@ -10,7 +10,7 @@ function harness(resolveFilm){
   const element=()=>({dataset:{},textContent:'',children:[],setAttribute(){},append(...children){this.children.push(...children)},remove(){},addEventListener(_name,callback){this.retry=callback}});
   const attrs=new Map([['href','#player/test']]);
   const button={innerHTML:'立即观看',textContent:'',getAttribute:k=>attrs.get(k),setAttribute:(k,v)=>attrs.set(k,v),removeAttribute:k=>attrs.delete(k),closest:()=>({after:note=>notes.push(note)})};
-  const context=vm.createContext({document:{querySelector:()=>button,createElement:element},load:(key,fallback)=>storage[key]||fallback,save:(key,value)=>storage[key]=value,generation:1,newEpisode:()=>0,historyMetadata:{},resolveFilm,refreshDetailText(){},AbortController,AbortSignal,setTimeout,clearTimeout});
+  const context=vm.createContext({window:{},document:{querySelector:()=>button,createElement:element},load:(key,fallback)=>storage[key]||fallback,save:(key,value)=>storage[key]=value,generation:1,newEpisode:()=>0,historyMetadata:{},resolveFilm,refreshDetailText(){},AbortController,AbortSignal,setTimeout,clearTimeout});
   vm.runInContext(fn,context);
   return {context,button,attrs,notes,storage};
 }
@@ -18,19 +18,19 @@ test('detail checks sources before enabling playback',async()=>{
   let finish;const h=harness(()=>new Promise(resolve=>{finish=resolve}));
   const task=h.context.checkAvailability({catalogProvider:'tmdb',lines:[{}]},new AbortController().signal,1);
   assert.equal(h.attrs.has('href'),false);assert.equal(h.button.textContent,'正在查找来源…');
-  finish();await task;
+  await Promise.resolve();finish();await task;
   assert.equal(h.attrs.get('href'),'#player/test');assert.match(h.notes[0].textContent,/已找到 1 条/);
 });
 test('source failure leaves playback disabled and offers recovery',async()=>{
   const h=harness(async()=>{throw Error('network')});
   await h.context.checkAvailability({},new AbortController().signal,1);
-  assert.equal(h.attrs.has('href'),false);assert.equal(h.button.textContent,'暂无片源');
+  assert.equal(h.attrs.has('href'),false);assert.equal(h.button.textContent,'查询未完成');
   assert.equal(h.notes[0].children[1].textContent,'重新查找');
 });
 test('navigation cancellation cannot enable the old playback link',async()=>{
   let finish;const h=harness(()=>new Promise(resolve=>{finish=resolve}));const controller=new AbortController();
   const task=h.context.checkAvailability({lines:[{}]},controller.signal,1);
-  controller.abort();finish();await task;
+  await Promise.resolve();controller.abort();finish();await task;
   assert.equal(h.attrs.has('href'),false);
 });
 test('confirmed missing source has only a short label',async()=>{
@@ -53,4 +53,13 @@ test('manual retry is consumed once per film and bypasses negative cache',async(
  assert.equal(h.notes[2].children[1].disabled,true);
  h.storage.sourceRetryDays.a='2000-1-1';
  assert.equal(h.context.sourceRetryUsed(film),false);
+});
+
+test('verification failure is not missing media and does not consume daily retry',async()=>{
+ let calls=0;const h=harness(async()=>{calls++;});
+ h.context.window.HumanAccess={ensure:async()=>{throw Error('verification');}};
+ await h.context.checkAvailability({id:'a'},new AbortController().signal,1);
+ assert.equal(calls,0);assert.equal(h.button.textContent,'查询未完成');
+ h.notes[0].children[1].retry();await new Promise(resolve=>setTimeout(resolve,0));
+ assert.equal(h.context.sourceRetryUsed({id:'a'}),false);
 });
