@@ -5,6 +5,7 @@
         firstPageBudget: 1,
         enrichPageBudget: 3,
         totalBudgetMs: 5200,
+        recoveryTimeoutMs: 12000,
         sourceConcurrency: 4,
         sourceMaxConcurrency: 7,
         sourceHedgeDelayMs: 350,
@@ -195,6 +196,7 @@
         const completed = new Set();
         const successful = new Set();
         const enriched = new Set();
+        const transientFailures = [];
         const callbacks = {
             onStart: options?.onStart || function () {},
             onUpdate: options?.onUpdate || function () {},
@@ -259,9 +261,22 @@
                 successful.add(source.sourceKey);
                 allRawResults.splice(0, allRawResults.length, ...mergeUnique(allRawResults, result.results));
             }
+            if (['timeout','error'].includes(result.status)) transientFailures.push(source);
             callbacks.onSourceDone(result);
             emitUpdate(`tier_${source.tier}`);
         }, shouldContinue);
+
+        // A slow first connection must not make every source look permanently dead.
+        if (!allRawResults.length && transientFailures.length && !options?.signal?.aborted && config.recoveryTimeoutMs > 0) {
+            const recoveryActive = () => !options?.signal?.aborted && (!options?.isActive || options.isActive());
+            await runPool(transientFailures.slice(0, 2), 2, async source => {
+                if (!recoveryActive()) return;
+                const result = await fetchSource(source, context, 1, config.recoveryTimeoutMs, options?.signal);
+                if (result.results.length) allRawResults.splice(0, allRawResults.length, ...mergeUnique(allRawResults, result.results));
+                callbacks.onSourceDone(result);
+                emitUpdate('recovery');
+            }, recoveryActive);
+        }
 
         // Enrich only successful high-value sources. This runs after first paint
         // and keeps adding lines without blocking the user.
