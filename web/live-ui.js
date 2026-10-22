@@ -208,6 +208,9 @@
     }
   }
   async function searchFilms(query,signal,onUpdate) {
+    await window.HumanAccess?.ensure();
+    if(signal?.aborted)throw signal.reason;
+    window.OpenStreamSourceHealth?.recoverSearchFailures(data.sources());
     const statuses=[];
     const result=await OpenStreamStreamingSearch.runStreamingSearch({sources:data.sources(),query,filters:{},signal,
       onSourceDone: result=>statuses.push(result.status),

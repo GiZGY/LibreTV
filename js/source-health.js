@@ -192,6 +192,22 @@
         return !!delay && Date.now() - Number(metrics.updatedAt || 0) >= delay;
     }
 
+    function recoverSearchFailures(sourceKeys) {
+        const keys = (sourceKeys || []).filter(key => !looksLikeLoginSource(key));
+        if (!keys.length || getSearchPlan(keys).length) return;
+        const now = Date.now();
+        if (now - Number(state.lastRecoveryAt || 0) < 60000) return;
+        const retry = keys.filter(key => {
+            const item = state.sources[key];
+            return item?.status === SOURCE_STATUS.DEAD && (item.consecutiveFailure >= 8 || item.consecutiveTimeout >= 5);
+        }).sort((a,b) => Number(state.sources[a].updatedAt)-Number(state.sources[b].updatedAt)).slice(0,2);
+        if (!retry.length) return;
+        state.lastRecoveryAt = now;
+        // Keep the failure evidence; only allow a bounded probe after verification.
+        for (const key of retry) state.sources[key].updatedAt = now - STATUS_RETRY_DELAY.dead;
+        persistHealthState();
+    }
+
     function getSearchPlan(sourceKeys) {
         const sources = (Array.isArray(sourceKeys) ? sourceKeys : [])
             .filter(Boolean)
@@ -341,6 +357,7 @@
     window.OpenStreamSourceHealth = {
         SOURCE_STATUS,
         getSearchPlan,
+        recoverSearchFailures,
         getSourceStatus,
         recordSourceEvent,
         refreshStoredMetrics,
