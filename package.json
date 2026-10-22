@@ -16,9 +16,9 @@
     "catalog:publish": "node scripts/catalog-index.mjs publish",
     "catalog:refresh": "node scripts/catalog-index.mjs refresh",
     "test:catalog-index": "node --test scripts/test-catalog-index.mjs scripts/test-catalog-refresh.mjs",
-    "dev": "nodemon server.mjs",
+    "dev": "node --watch server.mjs",
     "start": "node server.mjs",
-    "build:css": "tailwindcss -c tailwind.config.cjs -i css/tailwind.input.css -o css/tailwind.generated.css --minify",
+    "build:css": "tailwindcss -i css/tailwind.input.css -o css/tailwind.generated.css --minify",
     "build:assets": "node scripts/build-static-assets.mjs",
     "build": "npm run build:css && npm run build:assets",
     "smoke:streaming": "node scripts/smoke-streaming-pipeline.mjs",
@@ -75,8 +75,11 @@
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.5.8",
+    "@tailwindcss/cli": "^4.3.3",
     "esbuild": "^0.25.12",
-    "nodemon": "^3.1.10",
-    "tailwindcss": "^3.4.17"
+    "tailwindcss": "^4.3.3"
+  },
+  "overrides": {
+    "@parcel/watcher": "^2.6.0"
   }
 }
