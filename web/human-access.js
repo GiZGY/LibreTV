@@ -47,6 +47,9 @@
       for (;;) {
       const currentAttempt = ++attempt;
       try {
+      config = await configuration();
+      if (!config.enabled || config.verified) break;
+      if (!config.ready) throw new Error('安全验证暂不可用，请稍后重试');
       await loadWidget();
       await new Promise((resolve, reject) => {
         watchdog = setTimeout(() => reject(new Error('验证连接较慢，请重试')), 45000);
@@ -86,7 +89,7 @@
         const retry = document.createElement('button');
         retry.type = 'button';retry.className = 'secondary';retry.textContent = '重新验证';
         message.append(retry);
-        await new Promise(resolve => {retry.onclick = resolve;});
+        await new Promise(resolve => {retry.onclick = () => {configTask = null;resolve();};});
         message.textContent = '正在连接验证服务…';
       }
       }
@@ -99,9 +102,9 @@
   }
   function ensure(force = false) {
     if (!pending) pending = (async () => {
-      const config = await configuration(force);
-      if (!config.enabled || config.verified) return;
-      if (!config.ready) throw new Error('安全验证暂不可用，请稍后重试');
+      let config;
+      try {config = await configuration(force);} catch {}
+      if (config && (!config.enabled || config.verified)) return;
       await challenge(config);
     })().finally(() => {pending = null;});
     return pending;

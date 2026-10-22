@@ -4,13 +4,13 @@ import vm from 'node:vm';
 import fs from 'node:fs';
 const source=fs.readFileSync(new URL('../human-access.js',import.meta.url),'utf8');
 const flush=()=>new Promise(resolve=>setImmediate(resolve));
-function fixture({retainCookie=true}={}){
+function fixture({retainCookie=true,configUnavailable=false}={}){
  const dialogs=[],callbacks=[],timers=new Map();let seq=0,verified=false,posts=0;
  const element=()=>({children:[],textContent:'',focus(){},append(x){this.children.push(x);}});
  const document={activeElement:{focus(){}},documentElement:{dataset:{}},head:{append(){}},body:{append(d){dialogs.push(d);}},createElement(tag){if(tag!=='dialog')return element();const parts={'.human-title':element(),'.human-widget':element(),'.human-message':element(),button:element()};return {parts,setAttribute(){},addEventListener(n,f){this[n]=f;},querySelector:k=>parts[k],showModal(){this.open=true;},close(){this.open=false;},remove(){this.removed=true;}};}};
- const window={OPENSTREAM_LIVE:true,matchMedia:()=>({matches:true}),turnstile:{render(el,opts){callbacks.push(opts);return callbacks.length;},remove(){},reset(){}},fetch:async(url,opts)=>{if(opts?.method==='POST'){posts++;verified=retainCookie;return {ok:true,json:async()=>({verified:true})};}return {ok:true,json:async()=>({enabled:true,ready:true,siteKey:'fixture',verified})};}};
+ const window={OPENSTREAM_LIVE:true,matchMedia:()=>({matches:true}),turnstile:{render(el,opts){callbacks.push(opts);return callbacks.length;},remove(){},reset(){}},fetch:async(url,opts)=>{if(opts?.method==='POST'){posts++;verified=retainCookie;return {ok:true,json:async()=>({verified:true})};}if(configUnavailable)throw new Error('fixture offline');return {ok:true,json:async()=>({enabled:true,ready:true,siteKey:'fixture',verified})};}};
  vm.runInNewContext(source,{window,document,location:{href:'https://fixture.test/',origin:'https://fixture.test'},URL,AbortSignal,setTimeout:(f,ms)=>{timers.set(++seq,{f,ms});return seq;},clearTimeout:id=>timers.delete(id)});
- return {window,dialogs,callbacks,timers,posts:()=>posts};
+ return {window,dialogs,callbacks,timers,posts:()=>posts,restoreNetwork(){configUnavailable=false;}};
 }
 test('hung widget stays open and explicit retry restores verification',async()=>{
  const f=fixture(),p=f.window.HumanAccess.ensure();await flush();
@@ -51,4 +51,13 @@ test('legacy negative cache migration is one-time and preserves personal records
  store.set('missingSources',{confirmed:123});vm.runInContext('recoverLegacyAvailability()',context);
  assert.deepEqual(store.get('missingSources'),{confirmed:123});
  assert.match(ui,/if \(authenticated\) \{ ProxyAuth.setSession\(session\); recoverLegacyAvailability\(\);/);
+});
+
+test('initial config failure stays gated and recovers after network returns',async()=>{
+ const f=fixture({configUnavailable:true});let released=false;
+ const task=f.window.HumanAccess.ensure().then(()=>{released=true;});await flush();
+ assert.equal(f.dialogs.length,1);assert.equal(f.dialogs[0].open,true);assert.equal(released,false);
+ f.restoreNetwork();f.dialogs[0].parts['.human-message'].children[0].onclick();await flush();
+ await f.callbacks[0].callback('fresh');await task;
+ assert.equal(released,true);assert.equal(f.dialogs[0].open,false);
 });
