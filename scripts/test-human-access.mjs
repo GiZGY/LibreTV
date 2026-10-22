@@ -46,3 +46,16 @@ test('Siteverify failures cannot issue a session',async()=>{
  const res=response();await handler({...req,socket:{remoteAddress:'127.0.0.98'},method:'POST',body:{token:'x'}},res);
  assert.equal(res.code,503);assert.equal(res.headers['Set-Cookie'],undefined);
 });
+
+test('browser search headers preserve the verified browser identity',async()=>{
+ const {readFileSync}=await import('node:fs');
+ const vm=await import('node:vm');
+ const context={window:{},localStorage:{getItem(){return null;}}};
+ vm.createContext(context);
+ vm.runInContext(readFileSync(new URL('../js/config.js',import.meta.url),'utf8')+';window.testHeaders=API_CONFIG.search.headers;',context);
+ const cookie=humanCookie(req,env).split(';')[0];
+ const headers={...req.headers,cookie};
+ for(const [key,value] of Object.entries(context.window.testHeaders))headers[key.toLowerCase()]=value;
+ assert.equal(humanStatus({headers},env),200);
+ assert.equal(Object.keys(context.window.testHeaders).some(k=>k.toLowerCase()==='user-agent'),false);
+});
