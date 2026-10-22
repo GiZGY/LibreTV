@@ -17,7 +17,7 @@
     const key='home-genre:'+genre,hit=recommendations.get(key);
     if(hit&&Date.now()-hit.time<300000)return hit;
     if(!homeGenreTasks.has(genre)){
-      const task=data.discoverTMDB({type:'电影',genre,year:'全部',sort:'精选',minRating:6.5,page:1,pageSize:40,signal:AbortSignal.timeout(10000)})
+      const task=data.discoverTMDB({type:'电影',genre,year:'全部',sort:'精选',minRating:6.5,page:1,pageSize:40})
         .then(result=>{const entry={time:Date.now(),items:result.items.map(item=>register(item,true))};recommendations.set(key,entry);return entry;})
         .finally(()=>homeGenreTasks.delete(genre));
       homeGenreTasks.set(genre,task);
@@ -341,8 +341,11 @@
     const href=button.getAttribute('href'),label=button.innerHTML;
     button.removeAttribute('href');button.setAttribute('aria-disabled','true');button.textContent='正在查找来源…';
     const note=document.createElement('p');note.className='availability-note';note.setAttribute('role','status');button.closest('.actions').after(note);
-    const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),20000);
+    const controller=new AbortController();let timer;
     try{
+      await window.HumanAccess?.ensure();
+      if(signal.aborted||token!==generation)return;
+      timer=setTimeout(()=>controller.abort(),20000);
       await resolveFilm(f,AbortSignal.any([signal,controller.signal]),force);
       if(signal.aborted||token!==generation)return;
       button.setAttribute('href',href);button.removeAttribute('aria-disabled');button.innerHTML=label;
@@ -354,13 +357,14 @@
       if(f.catalogProvider!=='tmdb')refreshDetailText(f);
     }catch(error){
       if(signal.aborted||token!==generation)return;
-      button.textContent='暂无片源';
+      const missing=error.code==='no_result';
+      button.textContent=missing?'暂无片源':'查询未完成';
       button.title=error.code==='no_result'?'未找到匹配片源':'本次查询未成功，可稍后再试';
       note.textContent='';
-      const retry=document.createElement('button');retry.className='text-button';retry.disabled=sourceRetryUsed(f);retry.textContent=retry.disabled?'今日已重查':'重新查找';retry.title=retry.disabled?'明天可再次检查':'每部影片每天可重新查找一次';note.append(' ',retry);
+      const retry=document.createElement('button');retry.className='text-button';retry.disabled=missing&&sourceRetryUsed(f);retry.textContent=retry.disabled?'今日已重查':'重新查找';retry.title=retry.disabled?'明天可再次检查':'每部影片每天可重新查找一次';note.append(' ',retry);
       const alternatives=document.createElement('button');alternatives.className='text-button';alternatives.textContent='看看其他影片';alternatives.dataset.browseRelated='true';note.append(' ',alternatives);
       retry.addEventListener('click',()=>{
-        if(signal.aborted||token!==generation||!consumeSourceRetry(f)){retry.disabled=true;retry.textContent='今日已重查';return;}
+        if(signal.aborted||token!==generation||(missing&&!consumeSourceRetry(f))){retry.disabled=true;retry.textContent='今日已重查';return;}
         retry.disabled=true;note.remove();button.setAttribute('href',href);button.innerHTML=label;
         void checkAvailability(f,signal,token,true);
       },{once:true});

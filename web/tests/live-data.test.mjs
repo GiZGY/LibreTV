@@ -14,8 +14,20 @@ test('TMDB consumers share a request and cancellation does not cancel other cons
  const params={type:'电影',genre:'全部',year:'2024',sort:'精选',page:1};
  const first=ctx.window.LiveData.discoverTMDB({...params,signal:controller.signal});
  const second=ctx.window.LiveData.discoverTMDB(params);
+ await new Promise(resolve=>setImmediate(resolve));
  const rejected=assert.rejects(first);controller.abort();release();await rejected;await second;
  await ctx.window.LiveData.discoverTMDB(params);assert.equal(calls,1);
+});
+test('catalogue timeout starts only after human verification finishes',async()=>{
+ let verified,requests=0,budgets=0;
+ const gate=new Promise(resolve=>verified=resolve);
+ const ctx={...context,URLSearchParams,window:{HumanAccess:{ensure:()=>gate}},AbortSignal:{timeout(ms){budgets++;return AbortSignal.timeout(ms);}},fetch:async()=>{requests++;return{ok:true,status:200,json:async()=>({filtered:true,items:[],total:0})};}};
+ vm.runInNewContext(readFileSync(new URL('../live-data.js',import.meta.url),'utf8'),ctx);
+ const result=ctx.window.LiveData.discoverTMDB({type:'电影',page:1});
+ await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(requests,0);assert.equal(budgets,0);
+ verified();await result;
+ assert.equal(requests,1);assert.equal(budgets,1);
 });
 test('CMS detail retains independent flags and episode labels',()=>{
  const lines=data.parseLines({vod_id:10,vod_play_from:'HD$$$SD',vod_play_url:'第一集$https://media.example/a.m3u8#第二集$https://media.example/b.m3u8$$$正片$https://media.example/a.mp4'},'good');
