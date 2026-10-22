@@ -32,22 +32,23 @@
     const dialog = document.createElement('dialog');
     dialog.className = 'human-dialog';
     dialog.setAttribute('aria-label', '安全验证');
-    dialog.innerHTML = '<h2 class="human-title" tabindex="-1" autofocus>安全验证</h2><button class="human-close" type="button" aria-label="关闭安全验证"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button><p>验证后即可继续浏览。</p><div class="human-widget"></div><p role="status" class="human-message"></p>';
+    dialog.setAttribute('closedby', 'none');
+    dialog.innerHTML = '<h2 class="human-title" tabindex="-1" autofocus>安全验证</h2><p>验证后即可继续浏览。</p><div class="human-widget"></div><p role="status" class="human-message"></p>';
     document.body.append(dialog);dialog.showModal();
     // Focus the dialog context, not an action the user has not selected.
     dialog.querySelector('.human-title').focus({preventScroll:true});
     let widget, watchdog, attempt = 0, disposed = false;
-    const cancelled = new Promise((_, reject) => {
-      const cancel = event => {event?.preventDefault();reject(new Error('验证已取消，可以点击重试继续'));};
-      dialog.addEventListener('cancel', cancel, {once:true});
-      dialog.querySelector('button').onclick = cancel;
+    // A failed challenge must not expose a seemingly usable protected application.
+    dialog.addEventListener('cancel', event => event.preventDefault());
+    dialog.addEventListener('keydown', event => {
+      if (event.key === 'Escape') {event.preventDefault();event.stopPropagation();}
     });
     try {
       for (;;) {
       const currentAttempt = ++attempt;
       try {
-      await Promise.race([loadWidget(), cancelled]);
-      await Promise.race([new Promise((resolve, reject) => {
+      await loadWidget();
+      await new Promise((resolve, reject) => {
         watchdog = setTimeout(() => reject(new Error('验证连接较慢，请重试')), 45000);
         widget = window.turnstile.render(dialog.querySelector('.human-widget'), {
           sitekey:config.siteKey, action:'browse', theme:document.documentElement.dataset.theme === 'dark' ? 'dark' : 'auto',
@@ -61,7 +62,11 @@
               const result = await response.json();
               if (!response.ok || !result.verified) throw new Error(result.message || '验证未通过，请重试');
               if (disposed || currentAttempt !== attempt) return;
-              configTask = Promise.resolve({...config, verified:true});
+              // Verify that this browser actually retained the session cookie.
+              const session = await configuration(true);
+              if (!session.verified) throw new Error('验证尚未生效，请重试');
+              if (disposed || currentAttempt !== attempt) return;
+              configTask = Promise.resolve(session);
               configUntil = Date.now() + 60000;
               resolve();
             } catch (error) {if (!disposed && currentAttempt === attempt) reject(error);}
@@ -70,11 +75,10 @@
           'timeout-callback':() => reject(new Error('验证已超时，请重试')),
           'expired-callback':() => window.turnstile.reset(widget)
         });
-      }), cancelled]);
+      });
       break;
       } catch (error) {
         attempt++;
-        if (error.message.startsWith('验证已取消')) throw error;
         clearTimeout(watchdog);
         if (widget !== undefined) {window.turnstile?.remove(widget);widget = undefined;}
         const message = dialog.querySelector('.human-message');
@@ -82,7 +86,7 @@
         const retry = document.createElement('button');
         retry.type = 'button';retry.className = 'secondary';retry.textContent = '重新验证';
         message.append(retry);
-        await Promise.race([new Promise(resolve => {retry.onclick = resolve;}), cancelled]);
+        await new Promise(resolve => {retry.onclick = resolve;});
         message.textContent = '正在连接验证服务…';
       }
       }

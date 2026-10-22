@@ -109,11 +109,18 @@
     document.querySelector('#source-count').textContent=data.sources().length+' 个';
     container.innerHTML = data.sources().map(key=>`<li><span>${esc(API_SITES[key].name)}</span><small>自动优选</small></li>`).join('');
   }
+  function recoverLegacyAvailability() {
+    if(load('availabilityRecoveryV1',false))return;
+    // Older clients could persist failed access as a negative search result.
+    save('missingSources',{});
+    save('sourceRetryDays',{});
+    save('availabilityRecoveryV1',true);
+  }
   async function authorize() {
     await window.HumanAccess?.ensure();
     const session = await data.json('/api/auth/status');
     authenticated = session.authenticated;
-    if (authenticated) { ProxyAuth.setSession(session); return true; }
+    if (authenticated) { ProxyAuth.setSession(session); recoverLegacyAvailability(); return true; }
     $('#main').innerHTML = session.configured
       ? '<section class="empty"><h1>欢迎回来</h1><form id="live-login"><label for="instance-password">访问密码</label><input id="instance-password" name="password" type="password" autocomplete="current-password" required><button class="primary" type="submit">进入</button><p role="alert" id="login-error"></p></form></section>'
       : status('当前站点暂未完成访问配置，请联系管理员。');
