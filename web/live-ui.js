@@ -510,13 +510,19 @@
           if(isSeries(film)&&Date.now()-(film.linesCheckedAt||0)>1800000){delete film.lines;delete film.candidates;film.candidatesComplete=false;}
           activePlayback=null;$('#main').innerHTML=detail(film);void hydrateDetail(film,signal,token);void checkAvailability(film,signal,token).then(()=>{if(!signal.aborted&&token===generation&&film.lines?.length)void addOtherLines(film,signal,token);});return;
         }
-        $('#main').innerHTML=status('正在获取播放线路…',false);
+        const retainedPlayer=activePlayback?.filmId===film.id&&document.querySelector('#watch-player');
+        if(!retainedPlayer)$('#main').innerHTML=status('正在获取播放线路…',false);
         await resolveFilm(film,signal);if(token!==generation)return;
         if(!episodeState[film.id]&&historyMetadata[film.id])episodeState[film.id]={season:1,episode:Math.max(1,Math.min(film.episodes,historyMetadata[film.id].episode||1))};
         if(page==='detail'){activePlayback=null;$('#main').innerHTML=detail(film);}
         else{
           if(!film.manualLine&&!activePlayback){film.lineIndex=rankedLines(film).find(({line})=>line.episodes[['电影','纪录片'].includes(film.type)?0:episodeFor(film).episode-1])?.i||0;}
-          activePlayback=await playback(film,signal);if(token!==generation)return;$('#main').innerHTML=player(film);
+          const nextPlayback=await playback(film,signal);if(token!==generation)return;activePlayback=nextPlayback;
+          if(retainedPlayer?.isConnected){
+            const fragment=document.createRange().createContextualFragment(player(film));
+            document.querySelector('.watch-side-column').replaceWith(fragment.querySelector('.watch-side-column'));
+          }else $('#main').innerHTML=player(film);
+          document.dispatchEvent(new Event('playback-ready'));
           document.querySelector('.watch-routes').replaceWith(document.createRange().createContextualFragment(routeButtons(film)));
           if(!activePlayback)$('#route-status').textContent='这条线路没有当前集，请选择其他线路。';
         }
@@ -524,7 +530,12 @@
       } else {activePlayback=null;previewRender();
         if(page==='about')$('#main').innerHTML='<article class="article"><div class="page-title"><h1>关于 OpenStream</h1></div><p>搜索影片、发现好故事，选择适合自己的播放线路。</p><h2>隐私</h2><p>收藏、观看历史和偏好保存在当前浏览器。搜索与播放会向相关内容来源发起请求。</p><h2>影片资料</h2><p>TMDB: This product uses the TMDB API but is not endorsed or certified by TMDB.</p><h2>内容与版权</h2><p>影片资料和播放内容由第三方来源提供，版权归各自权利方所有。</p></article>';
       }
-    }catch(error){if(token===generation&&!signal.aborted)$('#main').innerHTML=status(error.message||'暂时无法加载，请重试');}
+    }catch(error){if(token===generation&&!signal.aborted){
+      if(page==='player'&&activePlayback?.filmId===encoded&&document.querySelector('#watch-player')){
+        const film=films.find(f=>f.id===encoded);episodeFor(film).episode=activePlayback.episode;
+        document.dispatchEvent(new Event('playback-error'));toast(error.message||'暂时无法加载，请重试');
+      }else $('#main').innerHTML=status(error.message||'暂时无法加载，请重试');
+    }}
   };
   searchAll = function () {
     const query=commandInput.value.trim();if(!query)return;

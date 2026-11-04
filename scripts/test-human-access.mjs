@@ -16,7 +16,12 @@ test('signed human session rejects tampering, expiry and another agent',()=>{
  const request={...req,headers:{...req.headers,cookie}};
  assert.equal(humanStatus(request,env,now),200);
  assert.equal(humanStatus({...request,headers:{...request.headers,cookie:cookie+'x'}},env,now),428);
- assert.equal(humanStatus(request,env,now+7*3600000),428);
+ assert.equal(humanStatus(request,env,now+7*3600000),200);
+ assert.equal(humanStatus(request,env,now+7*24*3600000-1),200);
+ assert.equal(humanStatus(request,env,now+7*24*3600000),428);
+ assert.match(humanCookie(req,env,now),/Max-Age=604800(?:;|$)/);
+ assert.equal(humanStatus({...request,socket:{remoteAddress:'127.0.0.100'}},env,now+86400000),200);
+ assert.match(humanCookie(req,env,now,true),/Max-Age=0(?:;|$)/);
  assert.equal(humanStatus({...request,headers:{...request.headers,'user-agent':'other'}},env,now),428);
  assert.match(humanCookie(req,{...env,VERCEL:'1'}),/HttpOnly; SameSite=Lax;.*Secure/);
 });

@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 
 const COOKIE = 'openstream_human';
-const TTL = 6 * 60 * 60;
+const TTL = 7 * 24 * 60 * 60;
 const attempts = new Map();
 export function humanConfig(env = process.env) {
   const enabled = env.TURNSTILE_ENABLED === 'true' || !!(env.TURNSTILE_SITE_KEY || env.TURNSTILE_SECRET_KEY);
