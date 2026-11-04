@@ -28,7 +28,7 @@ test('resume maps relative position once and restart clears the saved position',
  const block=source.slice(source.indexOf('   let restored=false;'),source.indexOf("   instance.on('video:timeupdate',()=>{\n    const duration"));
  const events={},messages=[],buttons=[];let saved;
  const instance={duration:1200,currentTime:0,on:(name,fn)=>events[name]=fn};
- const context=vm.createContext({instance,skip:{intro:0,outro:0},media:{filmId:'a',resume:100,resumeRatio:.5,switched:true},load:()=>1,toast:s=>messages.push(s),playbackTime:String,document:{createElement:()=>{const b={};buttons.push(b);return b;},querySelector:()=>({append(){}})},window:{LivePlayback:{progress:(...args)=>saved=args}},clearTimeout(){},setTimeout(){return 1;},toastTimer:null});
+ const context=vm.createContext({instance,syncRate(){},skip:{intro:0,outro:0},media:{filmId:'a',resume:100,resumeRatio:.5,switched:true},load:()=>1,toast:s=>messages.push(s),playbackTime:String,document:{createElement:()=>{const b={};buttons.push(b);return b;},querySelector:()=>({append(){}})},window:{LivePlayback:{progress:(...args)=>saved=args}},clearTimeout(){},setTimeout(){return 1;},toastTimer:null});
  vm.runInContext(block,context);events['video:loadedmetadata']();
  assert.equal(instance.currentTime,600);
  instance.currentTime=650;events['video:durationchange']();assert.equal(instance.currentTime,650);

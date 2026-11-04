@@ -120,9 +120,17 @@
    const panel=next.querySelector('.fine-speed');
    const slider=panel.querySelector('input');
    const format=rate=>Number(rate.toFixed(2))+'×';
-   function updateRate(value){
-    const rate=Math.max(.5,Math.min(2,Math.round(Number(value)*20)/20));
-    instance.playbackRate=rate;save('playbackRate',rate);
+   const normalizeRate=value=>{const rate=Number(value);return Number.isFinite(rate)&&rate>0?Math.max(.5,Math.min(2,Math.round(rate*20)/20)):1;};
+   let preferredRate=normalizeRate(load('playbackRate',1));
+   let holdTimer=null,holding=false;
+   function syncRate(){
+    if(instance.isDestroy)return;
+    const video=instance.video;
+    // A media reload resets playbackRate to defaultPlaybackRate, including HLS recovery.
+    if(video.defaultPlaybackRate!==preferredRate)video.defaultPlaybackRate=preferredRate;
+    const target=holding?2:preferredRate;
+    if(video.playbackRate!==target)instance.playbackRate=target;
+    const rate=video.playbackRate;
     slider.value=String(rate);slider.setAttribute('aria-valuetext',format(rate));
     slider.style.setProperty('--rate-fill',((rate-.5)/1.5*100)+'%');
     panel.querySelector('summary').textContent=format(rate);
@@ -130,6 +138,9 @@
     panel.querySelector('[data-step="-0.05"]').disabled=rate<=.5;panel.querySelector('[data-step="0.05"]').disabled=rate>=2;
     panel.querySelectorAll('[data-rate]').forEach(button=>button.setAttribute('aria-pressed',String(Number(button.dataset.rate)===rate)));
    }
+   function updateRate(value){preferredRate=normalizeRate(value);save('playbackRate',preferredRate);syncRate();}
+   // Position restoration is one-shot; speed must survive every media lifecycle/recovery.
+   for(const event of ['video:loadstart','video:loadedmetadata','video:canplay','video:play','video:playing','video:ratechange'])instance.on(event,syncRate);
    panel.addEventListener('click',event=>{event.stopPropagation();instance.setting.show=false;const button=event.target.closest('[data-rate]');if(button)updateRate(button.dataset.rate);const step=event.target.closest('[data-step]');if(step)updateRate(Number(slider.value)+Number(step.dataset.step));});
    panel.addEventListener('toggle',()=>{if(panel.open)instance.setting.show=false;});
    instance.on('setting',visible=>{if(visible)panel.open=false;});
@@ -165,19 +176,17 @@
    panel.addEventListener('keydown',event=>{event.stopPropagation();if(event.key==='Escape'){panel.open=false;panel.querySelector('summary').focus();}});
    panel.addEventListener('focusout',event=>{if(!panel.contains(event.relatedTarget))panel.open=false;});
    slider.addEventListener('input',()=>updateRate(slider.value));
-   updateRate(Number(load('playbackRate',1))||1);
-   let holdTimer=null,holding=false,heldRate=1;
+   syncRate();
    function endHold(seek=false){
     clearTimeout(holdTimer);holdTimer=null;
-    if(holding){instance.playbackRate=heldRate;holding=false;}
+    if(holding){holding=false;syncRate();}
     else if(seek&&Number.isFinite(instance.duration))instance.currentTime=Math.min(instance.duration,instance.currentTime+5);
    }
    function startHold(event){
     if(event.key!=='ArrowRight'||event.altKey||event.ctrlKey||event.metaKey||/INPUT|TEXTAREA|SELECT/.test(event.target.tagName)||document.querySelector('dialog[open]'))return;
     event.preventDefault();event.stopImmediatePropagation();
     if(event.repeat||holdTimer)return;
-    heldRate=instance.playbackRate;
-    holdTimer=setTimeout(()=>{holding=true;instance.playbackRate=2;},400);
+    holdTimer=setTimeout(()=>{holding=true;syncRate();},400);
    }
    function releaseHold(event){if(event.key==='ArrowRight'&&holdTimer){event.preventDefault();event.stopImmediatePropagation();endHold(true);}}
    const blurHold=()=>endHold(false);
@@ -211,7 +220,7 @@
     const position=Number.isFinite(ratio)?duration*ratio:(media?.resume||0);
     const target=Math.max(intro,Math.min(position,duration-.5));
     if(target>0)instance.currentTime=target;
-    instance.playbackRate=Number(load('playbackRate',1))||1;
+    syncRate();
     if(media?.switched)toast('已切线 · 进度已对齐');
     else if(position>0){
       toast('已续播至 '+playbackTime(target));
