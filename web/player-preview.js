@@ -1,6 +1,10 @@
 (() => {
+ const style=document.createElement('style');
+ style.textContent='#watch-player:fullscreen{width:100vw;height:100vh;background:#000}#watch-player:fullscreen .art-video-player{width:100%;height:100%}.player-next-episode{display:grid;place-items:center;width:32px;height:32px;padding:4px;border:0;background:none;color:inherit;cursor:pointer}.player-next-episode:disabled{opacity:.35;cursor:default}.player-next-episode:focus-visible{outline:2px solid #ef692e;outline-offset:-2px;border-radius:4px}';
+ document.head.append(style);
  let art=null;
  let host=null;
+ let mountedMedia=null;
  let libraryPromise;
  let hlsPromise;
  function loadHls(){
@@ -21,11 +25,13 @@
  }
  async function mount(){
   const next=document.querySelector('#watch-player');
-  if(next===host)return;
+  const currentMedia=window.LivePlayback?.current();
+  if(next===host&&currentMedia===mountedMedia)return;
+  const webFullscreen=!!art?.fullscreenWeb;
   if(art){art.destroy(false);art=null;}
-  host=next;if(!host)return;
+  host=next;mountedMedia=currentMedia;if(!host)return;
   try{
-   await loadPlayer();if(host!==next||!next.isConnected)return;
+   await loadPlayer();if(host!==next||currentMedia!==mountedMedia||!next.isConnected)return;
    const film=films.find(f=>f.id===location.hash.split('/')[1]);
    const media=window.LivePlayback?.current();
    const mediaUrl=media?.url||'';
@@ -34,7 +40,7 @@
     try{await loadHls();}catch(error){
      if(!document.createElement('video').canPlayType('application/vnd.apple.mpegurl'))throw error;
     }
-    if(host!==next||!next.isConnected)return;
+    if(host!==next||currentMedia!==mountedMedia||!next.isConnected)return;
    }
    let hls=null,guard=null,recoveries=0,failed=false,nativePlayback=false,overlayNotice=null,overlayTimer;
    const reportHealth=health=>{if(media)document.dispatchEvent(new CustomEvent('playback-health',{detail:{filmId:media.filmId,lineKey:media.lineKey,health}}));};
@@ -86,14 +92,14 @@
     volume:.8,setting:true,airplay:true,aspectRatio:true,pip:true,fullscreen:true,fullscreenWeb:true,playsInline:true,
     hotkey:true,fastForward:false,playbackRate:false,autoPlayback:false,
     settings:[...(isSeries(film)?[{html:'自动连播',switch:load('autoplay',true),onSwitch(item){const enabled=!item.switch;save('autoplay',enabled);document.querySelectorAll('#autoplay,[data-watch-autoplay]').forEach(el=>el.checked=enabled);return enabled;}}]:[]),skipSetting('intro','跳过片头'),skipSetting('outro','跳过片尾')],
-    controls:[{name:'fine-speed',position:'right',html:'<details class="fine-speed"><summary aria-label="调整播放速度">1×</summary><div class="fine-speed-panel"><div class="fine-speed-heading"><span>播放速度</span><div class="rate-stepper"><button type="button" data-step="-0.05" aria-label="减慢 0.05 倍">−</button><output>1×</output><button type="button" data-step="0.05" aria-label="加快 0.05 倍">＋</button></div></div><input type="range" min="0.5" max="2" step="0.05" value="1" aria-label="播放速度" aria-valuetext="1 倍"><div class="fine-speed-presets">'+[.5,.75,1,1.25,1.5,1.75,2].map(n=>'<button type="button" style="--tick:'+((n-.5)/1.5*100)+'%" data-rate="'+n+'">'+n+'×</button>').join('')+'</div></div></details>'}],
+    controls:[...(isSeries(film)?[{name:'next-episode',position:'left',index:11,html:'<button type="button" class="player-next-episode" aria-label="下一集" title="下一集" '+(episodeFor(film).episode>=film.episodes?'disabled':'')+'><svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor" aria-hidden="true"><path d="M5 4v16l11-8L5 4zm12 0h3v16h-3z"/></svg></button>',click:()=>advance(true)}]:[]),{name:'fine-speed',position:'right',html:'<details class="fine-speed"><summary aria-label="调整播放速度">1×</summary><div class="fine-speed-panel"><div class="fine-speed-heading"><span>播放速度</span><div class="rate-stepper"><button type="button" data-step="-0.05" aria-label="减慢 0.05 倍">−</button><output>1×</output><button type="button" data-step="0.05" aria-label="加快 0.05 倍">＋</button></div></div><input type="range" min="0.5" max="2" step="0.05" value="1" aria-label="播放速度" aria-valuetext="1 倍"><div class="fine-speed-presets">'+[.5,.75,1,1.25,1.5,1.75,2].map(n=>'<button type="button" style="--tick:'+((n-.5)/1.5*100)+'%" data-rate="'+n+'">'+n+'×</button>').join('')+'</div></div></details>'}],
     layers:mediaUrl?[]:[{name:'empty-media',html:'<div class="watch-empty"><span>暂未获取到播放地址</span><p>请选择其他线路，或返回影片详情</p></div>',style:{inset:'0',display:'grid',placeItems:'center',pointerEvents:'none'}}]
    });
    const instance=art;
    instance.on('destroy',()=>{clearTimeout(overlayTimer);overlayNotice?.remove();guard?.();hls?.destroy();});
    let progressAt=0;
-   instance.on('video:timeupdate',()=>{if(media&&restored&&Date.now()-progressAt>5000&&!instance.video.paused){progressAt=Date.now();window.LivePlayback?.progress(instance.currentTime,instance.duration,media.filmId);}});
-   instance.on('video:pause',()=>{if(media&&restored)window.LivePlayback?.progress(instance.currentTime,instance.duration,media.filmId);});
+   instance.on('video:timeupdate',()=>{if(media===window.LivePlayback?.current()&&media&&restored&&Date.now()-progressAt>5000&&!instance.video.paused){progressAt=Date.now();window.LivePlayback?.progress(instance.currentTime,instance.duration,media.filmId);}});
+   instance.on('video:pause',()=>{if(media===window.LivePlayback?.current()&&media&&restored)window.LivePlayback?.progress(instance.currentTime,instance.duration,media.filmId);});
    instance.on('video:error',()=>{if(media&&(!isHls||nativePlayback))fail();});
    let waitingAt=0,stallTimer=null;
    instance.on('video:waiting',()=>{
@@ -128,7 +134,9 @@
    panel.addEventListener('toggle',()=>{if(panel.open)instance.setting.show=false;});
    instance.on('setting',visible=>{if(visible)panel.open=false;});
    const playerElement=instance.template.$player;
-   let restoreWebFullscreen=false;
+   // Keep native fullscreen on the host, including Artplayer double-click entry.
+   if(next.requestFullscreen)playerElement.requestFullscreen=()=>next.requestFullscreen();
+   let restoreWebFullscreen=webFullscreen&&!!document.fullscreenElement;
    let webScroll=[0,0];
    instance.on('fullscreenWeb',active=>{
     if(active)webScroll=[window.scrollX,window.scrollY];
@@ -136,11 +144,12 @@
     if(!active)window.scrollTo({left:webScroll[0],top:webScroll[1],behavior:'instant'});
    });
    const enterNativeFullscreen=event=>{
-    if(!event.target.closest('.art-control-fullscreen')||!instance.fullscreenWeb||!playerElement.requestFullscreen)return;
+    if(!event.target.closest('.art-control-fullscreen')||!next.requestFullscreen)return;
     event.preventDefault();event.stopImmediatePropagation();
-    restoreWebFullscreen=true;
+    if(document.fullscreenElement){document.exitFullscreen();return;}
+    restoreWebFullscreen=instance.fullscreenWeb;
     playerElement.classList.add('fullscreen-transfer');
-    playerElement.requestFullscreen().catch(()=>{
+    next.requestFullscreen().catch(()=>{
      restoreWebFullscreen=false;playerElement.classList.remove('fullscreen-transfer');
      instance.notice.show='当前浏览器无法进入全屏';
     });
@@ -152,6 +161,7 @@
     requestAnimationFrame(()=>playerElement.classList.remove('fullscreen-transfer'));
    });
    instance.on('destroy',()=>{playerElement.removeEventListener('click',enterNativeFullscreen,true);document.documentElement.classList.remove('video-web-fullscreen');});
+   if(webFullscreen){instance.fullscreenWeb=true;document.documentElement.classList.add('video-web-fullscreen');}
    panel.addEventListener('keydown',event=>{event.stopPropagation();if(event.key==='Escape'){panel.open=false;panel.querySelector('summary').focus();}});
    panel.addEventListener('focusout',event=>{if(!panel.contains(event.relatedTarget))panel.open=false;});
    slider.addEventListener('input',()=>updateRate(slider.value));
@@ -174,10 +184,22 @@
    document.addEventListener('keydown',startHold,true);document.addEventListener('keyup',releaseHold,true);window.addEventListener('blur',blurHold);
    instance.on('destroy',()=>{endHold();document.removeEventListener('keydown',startHold,true);document.removeEventListener('keyup',releaseHold,true);window.removeEventListener('blur',blurHold);});
    let advancing=false;
-   function advance(){
-    if(advancing||!(isSeries(film))||!load('autoplay',true))return false;
+   const resetAdvance=()=>{advancing=false;instance.notice.show='切集失败，请重试';};
+   document.addEventListener('playback-error',resetAdvance);
+   instance.on('destroy',()=>document.removeEventListener('playback-error',resetAdvance));
+   function advance(manual=false){
+    if(advancing||!(isSeries(film))||(!manual&&!load('autoplay',true)))return false;
     const state=episodeFor(film);if(state.episode>=film.episodes)return false;
-    advancing=true;state.episode++;window.LivePlayback?.continue();render();return true;
+    advancing=true;
+    window.LivePlayback?.progress(instance.currentTime,instance.duration,film.id);
+    state.episode++;window.LivePlayback?.continue();
+    if(window.LivePlayback)render();
+    else{
+     const fragment=document.createRange().createContextualFragment(player(film));
+     document.querySelector('.watch-side-column')?.replaceWith(fragment.querySelector('.watch-side-column'));
+     mountedMedia=null;host=null;mount();
+    }
+    return true;
    }
    let restored=false;
    const restorePosition=()=>{
@@ -209,6 +231,7 @@
    instance.on('video:ended',()=>{if(media)window.LivePlayback?.progress(instance.duration,instance.duration,media.filmId);advance();});
   }catch{if(next.isConnected)next.innerHTML='<div class="watch-empty" role="alert">播放器加载失败，请刷新重试</div>';}
  }
+ document.addEventListener('playback-ready',mount);
  new MutationObserver(mount).observe(document.querySelector('#main'),{childList:true});
  mount();
 })();
