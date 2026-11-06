@@ -50,7 +50,7 @@
   const savedDiscovery=load('discovery',null);
   if(savedDiscovery){Object.assign(filters,savedDiscovery.filters);discoverPage=Math.max(1,Number(savedDiscovery.page)||1);}
   const savedFilms = load('filmRecords', []);
-  films.splice(0, films.length, ...(Array.isArray(savedFilms) ? savedFilms.filter(f => f && /^film-[a-z0-9]+$/.test(f.id)) : []));
+  films.splice(0, films.length, ...(Array.isArray(savedFilms) ? savedFilms.filter(f => f && /^[a-z0-9][a-z0-9_-]{0,79}$/i.test(f.id)) : []));
   // Missing cached metadata must not delete the underlying collection or history.
   const status = (message, retry = true) => `<div class="empty" role="status"><p>${esc(message)}</p>${retry?'<button class="secondary" data-live-retry>重试</button>':''}</div>`;
   function persist() {
