@@ -44,6 +44,23 @@ test('fullscreen transition retains the player node and recovers after rejection
   events.destroy();assert.equal(listeners.click,undefined);
 });
 
+test('remounted controls reconcile only a live native fullscreen host without requesting or exiting fullscreen',()=>{
+  const start=source.indexOf('   const retainedNativeHost=');assert.ok(start>=0);
+  const block=source.slice(start,source.indexOf('   if(webFullscreen)',start));
+  for(const api of ['fullscreenElement','webkitFullscreenElement']){
+    const next={},classes=new Set(),events=[];
+    const document={[api]:next,exitFullscreen(){throw Error('must not exit fullscreen');}};
+    next.requestFullscreen=()=>{throw Error('must not request fullscreen');};
+    vm.runInNewContext(block,{document,next,playerElement:{classList:{add:value=>classes.add(value)}},instance:{isDestroy:false,emit:(name,active)=>events.push([name,active])}});
+    assert.deepEqual([...classes],['art-fullscreen']);assert.deepEqual(events,[['fullscreen',true]]);
+  }
+  for(const scenario of ['normal','other-host','disposed']){
+    const next={},classes=[],events=[],document={fullscreenElement:scenario==='disposed'?next:scenario==='other-host'?{}:null};
+    vm.runInNewContext(block,{document,next,playerElement:{classList:{add:value=>classes.push(value)}},instance:{isDestroy:scenario==='disposed',emit:(...args)=>events.push(args)}});
+    assert.deepEqual(classes,[],scenario);assert.deepEqual(events,[],scenario);
+  }
+});
+
 test('manual next ignores autoplay, saves progress once, and stops at the final episode',()=>{
   const start=source.indexOf('   let advancing=false;');
   const end=source.indexOf('   let restored=false;',start);

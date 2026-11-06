@@ -216,6 +216,12 @@
     requestAnimationFrame(()=>playerElement.classList.remove('fullscreen-transfer'));
    });
    instance.on('destroy',()=>{playerElement.removeEventListener('click',enterNativeFullscreen,true);document.documentElement.classList.remove('video-web-fullscreen');});
+   // A retained native host has no new fullscreenchange when its player is replaced.
+   const retainedNativeHost=document.fullscreenElement||document.webkitFullscreenElement;
+   if(!instance.isDestroy&&retainedNativeHost===next){
+    playerElement.classList.add('art-fullscreen');
+    instance.emit('fullscreen',true);
+   }
    if(webFullscreen){instance.fullscreenWeb=true;document.documentElement.classList.add('video-web-fullscreen');}
    panel.addEventListener('keydown',event=>{
     event.stopPropagation();const summary=panel.querySelector('summary');
