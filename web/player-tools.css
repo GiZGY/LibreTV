@@ -1,6 +1,6 @@
 #watch-player{--player-accent:var(--accent,#ef692e);--player-surface:#15191f;--player-panel:#15191ff7;--player-ink:#f8f9fa;--player-muted:#c5cbd3;--player-focus:#ffbd8d;--player-speed-bg:#65432d;--player-speed-ink:#ffcd9d;--player-speed-line:#ffcd9d66}
 #watch-player .player-next-episode{width:44px;height:44px;padding:8px}
-#watch-player .art-control{min-width:44px;min-height:44px}
+#watch-player .art-controls .art-control{min-width:44px;min-height:44px}
 #watch-player .player-tools-ui{position:absolute;inset:0;z-index:45;pointer-events:none;--player-selection:color-mix(in srgb,var(--player-accent) 70%,#000);color:#fff;font:14px/1.5 "Avenir Next","PingFang SC",sans-serif}
 #watch-player .player-tools-ui button,#watch-player .player-tools-ui input,#watch-player .player-tools-ui a{pointer-events:auto;min-height:44px}
 #watch-player .player-tools-ui button{border:1px solid #ffffff30;border-radius:6px;padding:8px 12px;background:#ffffff0d;color:inherit;font:inherit;cursor:pointer}

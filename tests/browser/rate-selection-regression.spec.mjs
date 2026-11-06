@@ -10,6 +10,9 @@ test('pointer-selected speed reaches real media while popup focus and keyboard d
   addEventListener('DOMContentLoaded',()=>{mute();new MutationObserver(mute).observe(document.body,{childList:true,subtree:true});});
  });
  await page.goto('/#player/film-rateselect');await expectMediaFrame(page);
+ const track=page.locator('.art-control-progress-inner'),height=()=>track.evaluate(el=>el.getBoundingClientRect().height);
+ const nativeHeight=await track.evaluate(el=>parseFloat(getComputedStyle(el).getPropertyValue('--art-progress-height')));
+ await expect.poll(height).toBe(nativeHeight/2);await track.hover();await expect.poll(height).toBe(nativeHeight);
  const panel=page.locator('.fine-speed'),summary=panel.locator('summary');
  await summary.click();
  const ticks=await panel.locator('[data-rate]').evaluateAll(nodes=>nodes.map(node=>{const rect=node.getBoundingClientRect();return {top:rect.top,x:rect.left+rect.width/2,rate:Number(node.dataset.rate)};}));
