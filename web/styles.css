@@ -461,3 +461,7 @@ html.video-web-fullscreen{overflow:hidden}
 .switch-target{display:grid;place-items:center;min-width:44px;min-height:44px;flex:none;cursor:pointer}dialog .icon-button{min-width:44px;min-height:44px}
 @media(pointer:coarse){.filter-strip .chip,.sort-options .chip{min-height:44px}.strip-arrow{min-width:44px;min-height:44px}.filter-tabs .chip{min-height:44px}}
 @media(hover:none),(pointer:coarse){.poster-art img{transition:none}.watch-play:hover{transform:none}.quick-favorite{min-width:44px;min-height:44px}}
+
+#command-search-all[hidden],#command-results:empty{display:none}
+#command-search-all{border-radius:0;padding:12px 18px}
+#command-search-all span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}

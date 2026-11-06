@@ -181,7 +181,7 @@
     {name:'sleep-cancel',html:'取消定时',disable:true,onClick(){if(!disposed)sleep.cancel();return '';}},
     {name:'sleep-resume',html:'继续播放',disable:true,onClick(){if(!disposed){sleep.cancel();instance.play=true;instance.setting.show=false;}return '';}}
    ]},
-   {name:'local-subtitle',html:'字幕',tooltip:subtitle.enabled?'已开启':'关闭',selector:[
+   {name:'local-subtitle',html:'外挂字幕',tooltip:subtitle.enabled?'已开启':'关闭',selector:[
     {name:'subtitle-file',html:'选择 SRT / VTT',tooltip:escape(subtitle.name||'尚未选择字幕'),onClick(){if(!disposed)root.querySelector('[data-subtitle-file]').click();return escape(subtitle.name||'尚未选择字幕');}},
     {name:'subtitle-toggle',html:'显示字幕',switch:subtitle.enabled,onSwitch(row){if(disposed)return row.switch;if(!subtitle.cues.length){notify('请先选择字幕');return false;}subtitle.enabled=!row.switch;renderSubtitle();updateSubtitle();return subtitle.enabled;}},
     {name:'subtitle-size',html:'字号',onClick:()=>''},

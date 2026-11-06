@@ -208,6 +208,10 @@
     }
     return waitFor(tmdbPending.get(key),signal);
   }
+  async function suggestTitles(title,signal){
+    const replies=await Promise.allSettled(['电影','电视剧'].map(type=>catalogRequest({kind:'lookup',title,type},signal)));
+    return replies.flatMap(reply=>reply.status==='fulfilled'?reply.value.items.filter(allowed).slice(0,6):[]);
+  }
   async function lookupTMDB(f,signal){
     const result=await catalogRequest({kind:'lookup',title:f.name,type:f.type},signal);
     const clean=s=>text(s).replace(/[\s·:：]/g,'');
@@ -271,5 +275,5 @@
     const state=catalogState.get(url.href)||{};
     return {items,rawCount:data.data.length,hasNext:data.data.length===20,total:null,...state};
   }
-  window.LiveData = { json, proxied, image, sources, detail, firstDetail, recommend, discover, discoverTMDB, lookupTMDB, detailTMDB, relatedTMDB, subjectMetadata, resolveEpisode, parseLines, safeURL, text, allowed };
+  window.LiveData = { json, proxied, image, sources, detail, firstDetail, recommend, discover, discoverTMDB, suggestTitles, lookupTMDB, detailTMDB, relatedTMDB, subjectMetadata, resolveEpisode, parseLines, safeURL, text, allowed };
 })();

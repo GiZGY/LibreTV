@@ -138,7 +138,7 @@ function discover(){
   return `<div class="discovery-heading"><h1>探索影片</h1><button class="text-button" data-action="reset" ${active?'':'disabled'}>重置筛选</button></div><div class="discovery-filters">${filterStrip('分类','type',['电影','电视剧','动漫','综艺','纪录片'])}${filterStrip('题材','genre',['全部','科幻','悬疑','剧情','传记','喜剧','爱情','动作','冒险','惊悚','犯罪','动画','战争','历史','奇幻','家庭','美食','旅行'])}${filterStrip('年份','year',years)}</div><div class="results-head discovery-results"><span>${list.length} 部影片</span><div class="sort-options" role="group" aria-label="排序">${chips(['精选','最新上映','评分最高'],filters.sort,'sort')}</div></div>${grid(list.slice((discoverPage-1)*6,discoverPage*6))}<div class="pagination"><button data-action="page" data-value="-1" ${discoverPage===1?'disabled':''}>上一页</button><span>第 ${discoverPage} / ${pages} 页</span><button data-action="page" data-value="1" ${discoverPage===pages?'disabled':''}>下一页</button></div>`;
 }
 
-function detail(f){return `<a class="back" href="${listOrigin}">← 返回列表</a><div class="detail-layout"><img class="detail-poster" ${posterAttributes(f,'(max-width:700px) 44vw, 300px')} alt="${esc(f.name)}海报"><div class="detail-content"><h1>${esc(f.name)}</h1><p class="english">${esc(f.en)}</p><div class="meta"><span class="score ${scoreClass(f.rating)}" title="${esc(f.ratingSource||'评分')}">${f.ratingSource==='TMDB'?'TMDB ':''}★ ${esc(f.rating)}</span>${certificationMarkup(f)}<span data-detail-year>${esc(f.year||'年份未收录')}</span><span data-detail-genre>${esc(f.genre||f.type)}</span><span>${esc(f.length)}</span></div><p class="synopsis">${esc(f.description)}</p><p class="credits">导演　${esc(f.director)}<br>主演　${esc(f.cast)}</p><div class="actions"><a href="#player/${f.id}" class="primary" ${history.includes(f.id)?`data-action="resume-history" data-id="${f.id}"`:""}>${icon('play')}${history.includes(f.id)?historyLabel(f.id):'立即观看'}</a><button class="secondary favorite-button" aria-pressed="${favorites.has(f.id)}" data-action="favorite" data-id="${f.id}">${icon('bookmark')}${favorites.has(f.id)?'已收藏':'加入收藏'}</button></div>${window.OpenStreamLibrary?.availability.markup(f.id)||''}</div></div>${episodePicker(f)}<div class="section-head"><h2>相关推荐</h2></div><div id="related-films">${window.OPENSTREAM_LIVE?'<p class="related-empty">正在寻找相关影片…</p>':grid(window.FilmMetadata?.related(f,films)||[])}</div>`}
+function detail(f){return `<a class="back" href="${listOrigin}">← 返回列表</a><div class="detail-layout"><img class="detail-poster" ${posterAttributes(f,'(max-width:700px) 44vw, 300px')} alt="${esc(f.name)}海报"><div class="detail-content"><h1>${esc(f.name)}</h1><p class="english">${esc(f.en)}</p><div class="meta"><span class="score ${scoreClass(f.rating)}" title="${esc(f.ratingSource||'评分')}">${f.ratingSource==='TMDB'?'TMDB ':''}★ ${esc(f.rating)}</span>${certificationMarkup(f)}<span data-detail-year>${esc(f.year||'年份未收录')}</span><span data-detail-genre>${esc(f.genre||f.type)}</span><span>${esc(f.length)}</span></div><p class="synopsis">${esc(f.description)}</p><p class="credits">导演　${esc(f.director)}<br>主演　${esc(f.cast)}</p><div class="actions"><a href="#player/${f.id}" class="primary" ${history.includes(f.id)?`data-action="resume-history" data-id="${f.id}"`:""}>${icon('play')}${history.includes(f.id)?historyLabel(f.id):'立即观看'}</a><button class="secondary favorite-button" aria-pressed="${favorites.has(f.id)}" data-action="favorite" data-id="${f.id}">${icon('bookmark')}${favorites.has(f.id)?'已收藏':'加入收藏'}</button></div>${window.OPENSTREAM_LIVE?'':window.OpenStreamLibrary?.availability.markup(f.id)||''}</div></div>${episodePicker(f)}<div class="section-head"><h2>相关推荐</h2></div><div id="related-films">${window.OPENSTREAM_LIVE?'<p class="related-empty">正在寻找相关影片…</p>':grid(window.FilmMetadata?.related(f,films)||[])}</div>`}
 function player(f){
  const state=episodeFor(f),serial=isSeries(f);
  const episode=episodeDescription(f,state),next=window.OpenStreamEpisodes?OpenStreamEpisodes.nextOrdinal(f,state):state.episode<f.episodes?state.episode+1:null;
@@ -194,16 +194,48 @@ function openCommand() {
   renderCommand();
   commandInput.focus();
 }
+let suggestionTimer, suggestionRequest, registerSuggestion, composingQuery=false;
+function cancelSuggestions(){
+  clearTimeout(suggestionTimer);suggestionRequest?.abort();suggestionRequest=null;
+}
 function renderCommand() {
-  const query = commandInput.value.trim();
-  commandItems = query ? films.filter(f => (f.name + f.en + f.director).toLowerCase().includes(query.toLowerCase())).map(f => ({label:f.name, film:f})) : recentQueries.map(label => ({label}));
-  commandIndex = -1;
+  cancelSuggestions();
+  const query=commandInput.value.trim(),term=query.toLowerCase();
+  const local=query?films.filter(f=>[f.name,f.en,f.director].some(value=>String(value||'').toLowerCase().includes(term)))
+    .sort((a,b)=>Number(b.name.toLowerCase()===term)-Number(a.name.toLowerCase()===term))
+    .slice(0,6).map(f=>({label:f.name,film:f,meta:[f.year,f.genre].filter(Boolean).join(' · ')})):recentQueries.map(label=>({label}));
+  commandIndex=-1;
   commandInput.removeAttribute('aria-activedescendant');
-  $('#command-results').innerHTML = commandItems.length ? `${!query?'<div class="command-label">最近搜索</div>':''}${commandItems.map((item,i)=>`<button class="command-result" role="option" aria-selected="false" id="suggestion-${i}" data-suggestion="${i}">${item.film?`<img src="${img(item.film)}" alt=""><span>${esc(item.label)}<small>${item.film.year} · ${item.film.genre}</small></span>`:`<span>${esc(item.label)}</span>`}<span class="result-arrow">↵</span></button>`).join('')}` : `<p class="command-empty">${query?'没有找到相关影片':'输入片名开始搜索'}</p>${query?'<button class="primary full" data-action="search-all">搜索全部片源</button>':''}`;
+  function paint(items){
+    commandItems=items;
+    $('#command-results').innerHTML=(!query&&items.length?'<div class="command-label">最近搜索</div>':'')+
+      items.map((item,i)=>`<button class="command-result" role="option" aria-selected="false" id="suggestion-${i}" data-suggestion="${i}">${item.film?`<img src="${esc(img(item.film))}" alt="">`:''}<span>${esc(item.label)}${item.meta?`<small>${esc(item.meta)}</small>`:''}</span><span class="result-arrow" aria-hidden="true">↵</span></button>`).join('')+
+      (!items.length&&(!query||!window.OPENSTREAM_LIVE)?`<p class="command-empty">${query?'暂无片名建议':'输入片名开始搜索'}</p>`:'');
+  }
+  const action=$('#command-search-all');
+  action.hidden=!query||!window.OPENSTREAM_LIVE;
+  action.querySelector('span').textContent='搜索全部片源：'+query;
+  paint(local);
+  if(!window.LiveData?.suggestTitles||composingQuery||query.length<2||query.length>120)return;
+  const controller=suggestionRequest=new AbortController();
+  suggestionTimer=setTimeout(async()=>{
+    try{
+      const titles=await window.LiveData.suggestTitles(query,controller.signal);
+      if(controller.signal.aborted||!command.open||commandInput.value.trim()!==query||commandIndex>=0||document.activeElement!==commandInput)return;
+      const items=[...local],key=(name,year,type)=>JSON.stringify([name,String(year||''),type]),seen=new Set(local.map(i=>key(i.label,i.film.year,i.film.type)));
+      for(const t of titles){
+        const k=key(t.title,t.year,t.type_name);if(seen.has(k))continue;seen.add(k);
+        items.push({label:t.title,meta:[t.year,t.type_name].filter(Boolean).join(' · '),catalog:t});
+      }
+      items.sort((a,b)=>Number(b.label.toLowerCase()===term)-Number(a.label.toLowerCase()===term));
+      paint(items.slice(0,6));
+    }catch{/* Full source search remains available without the catalogue. */}
+  },350);
 }
 function selectCommand(index) {
   const item = commandItems[index];
   if (!item) return;
+  if(item.catalog)item.film=registerSuggestion(item.catalog);
   if (!item.film) {commandInput.value=item.label;renderCommand();commandInput.focus();return;}
   const query = commandInput.value.trim();
   recentQueries = [query,...recentQueries.filter(q=>q!==query)].slice(0,6);
@@ -213,12 +245,15 @@ function selectCommand(index) {
 }
 $('#search').addEventListener('click',openCommand);
 commandInput.addEventListener('input',renderCommand);
+commandInput.addEventListener('compositionstart',()=>{composingQuery=true;cancelSuggestions();});
+commandInput.addEventListener('compositionend',()=>{composingQuery=false;renderCommand();});
 $('#command-close').addEventListener('click',()=>command.close());
-command.addEventListener('close',()=>commandOpener?.focus());
+command.addEventListener('close',()=>{cancelSuggestions();composingQuery=false;commandOpener?.focus();});
 command.addEventListener('click',e=>{const option=e.target.closest('[data-suggestion]');if(option)selectCommand(Number(option.dataset.suggestion));if(e.target===command){const r=command.getBoundingClientRect();if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)command.close();}});
 commandInput.addEventListener('keydown',e=>{
+  if(composingQuery||e.isComposing||e.keyCode===229)return;
   if(['ArrowDown','ArrowUp'].includes(e.key)&&commandItems.length){e.preventDefault();commandIndex=(commandIndex+(e.key==='ArrowDown'?1:-1)+commandItems.length)%commandItems.length;command.querySelectorAll('[role="option"]').forEach((el,i)=>el.setAttribute('aria-selected',String(i===commandIndex)));commandInput.setAttribute('aria-activedescendant','suggestion-'+commandIndex);$('#suggestion-'+commandIndex).scrollIntoView({block:'nearest'});}
-  if(e.key==='Enter'){e.preventDefault();if(!commandItems.length&&commandInput.value.trim()){searchAll();return;}selectCommand(commandIndex<0?0:commandIndex);}
+  if(e.key==='Enter'){e.preventDefault();if(commandInput.value.trim()&&commandIndex<0&&window.OPENSTREAM_LIVE){searchAll();return;}selectCommand(commandIndex<0?0:commandIndex);}
 });
 // Keep each list's position separate from detail and playback routes.
 const routeScroll = new Map();

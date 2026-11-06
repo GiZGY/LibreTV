@@ -19,6 +19,7 @@ async function subtitles(page){await page.locator('[data-subtitle-file]').setInp
 
 test('default and explicit aspect ratios apply to the real video, persist across reload and survive episode remount',async({page})=>{
  await open(page);await settings(page);const ratio=value=>current(page).locator(`button[data-aspect-ratio="${value}"]`);
+ await expect(current(page).locator('[data-name="local-subtitle"]')).toContainText('外挂字幕');
  await expect(ratio('default')).toHaveText('默认');await expect(ratio('default')).toHaveAttribute('aria-pressed','true');await expect(current(page).locator('button[data-aspect-ratio]')).toHaveCount(3);
  await page.locator('.art-settings').screenshot({path:test.info().outputPath('settings-root.png')});
  await ratio('4:3').click();expect(await page.evaluate(()=>Artplayer.instances[0].aspectRatio)).toBe('4:3');expect(await page.locator('video').evaluate(v=>Math.abs(v.clientWidth/v.clientHeight-4/3))).toBeLessThan(.01);
