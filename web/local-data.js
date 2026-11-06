@@ -58,19 +58,33 @@
   const watchlist={...current.watchlist};for(const[key,value]of Object.entries(incoming.watchlist))if(!watchlist[key]||Date.parse(value.updatedAt)>=Date.parse(watchlist[key].updatedAt))watchlist[key]=value;
   return{films:[...byId.values()],favorites:[...new Set([...current.favorites,...incoming.favorites])],history:[...new Set([...incoming.history,...current.history])].sort((a,b)=>Date.parse(progress[b]?.watchedAt||0)-Date.parse(progress[a]?.watchedAt||0)),progress,watchlist,preferences:{...current.preferences,...incoming.preferences},skip:{...current.skip,...incoming.skip}};
  }
+ function writeRaw(writes){
+  const original=new Map(Object.keys(writes).map(key=>[key,localStorage.getItem(key)]));
+  try{for(const[key,value]of Object.entries(writes)){if(value===null)localStorage.removeItem(key);else localStorage.setItem(key,value);}}catch{for(const[key,value]of original)try{if(value===null)localStorage.removeItem(key);else localStorage.setItem(key,value);}catch{}throw Error('浏览器保存空间不足，已保留原有数据');}
+ }
+ function updateMemory(data){
+  applying=true;try{favorites=new Set(data.favorites);history=data.history;for(const key of Object.keys(historyMetadata))delete historyMetadata[key];Object.assign(historyMetadata,data.progress);const currentId=location.hash.split('/')[1],currentFilm=films.find(f=>f.id===currentId),existing=new Map(films.map(f=>[f.id,f]));films.splice(0,films.length,...data.films.map(f=>Object.assign(existing.get(f.id)||{},f)));if(currentFilm&&!films.some(f=>f.id===currentId))films.push(currentFilm);}finally{applying=false;}
+ }
+ function notifyRestored(fromSync){document.dispatchEvent(new CustomEvent('openstream:data-restored',{detail:{fromSync}}));if(!fromSync)document.dispatchEvent(new CustomEvent('openstream:data-change',{detail:{key:'all',origin:'import'}}));}
  function applyBackup(raw,{mode='merge',fromSync=false,recovery=false}={}){
   if(!['merge','replace'].includes(mode))throw Error('请选择合并或替换');
-  const incoming=validateBackup(raw),before=snapshot(),next=validateBackup({...incoming,data:mode==='merge'?mergeData(before.data,incoming.data):incoming.data}),p=prefix();
-  const writes={favorites:next.data.favorites,history:next.data.history,filmRecords:next.data.films,historyMetadataV2:next.data.progress,watchlist:next.data.watchlist,...next.data.preferences};
-  for(const f of before.data.films)writes['skip_'+f.id]=next.data.skip[f.id]||{intro:0,outro:0};for(const[key,value]of Object.entries(next.data.skip))writes['skip_'+key]=value;
-  if(!fromSync&&!recovery)writes.localDataRecovery=before;
-  const original=new Map(Object.keys(writes).map(key=>[p+key,localStorage.getItem(p+key)]));
-  try{for(const[key,value]of Object.entries(writes))localStorage.setItem(p+key,JSON.stringify(value));}catch(error){for(const[key,value]of original)try{if(value===null)localStorage.removeItem(key);else localStorage.setItem(key,value);}catch{}throw Error('浏览器保存空间不足，已保留原有数据');}
-  applying=true;try{favorites=new Set(next.data.favorites);history=next.data.history;for(const key of Object.keys(historyMetadata))delete historyMetadata[key];Object.assign(historyMetadata,next.data.progress);const currentId=location.hash.split('/')[1],currentFilm=films.find(f=>f.id===currentId);const existing=new Map(films.map(f=>[f.id,f]));films.splice(0,films.length,...next.data.films.map(f=>Object.assign(existing.get(f.id)||{},f)));if(currentFilm&&!films.some(f=>f.id===currentId))films.push(currentFilm);}finally{applying=false;}
-  document.dispatchEvent(new CustomEvent('openstream:data-restored',{detail:{fromSync}}));
-  if(!fromSync)document.dispatchEvent(new CustomEvent('openstream:data-change',{detail:{key:'all',origin:'import'}}));
-  return next;
+  const incoming=validateBackup(raw),before=mode==='merge'||fromSync?snapshot():null,next=validateBackup({...incoming,data:mode==='merge'?mergeData(before.data,incoming.data):incoming.data}),p=prefix();
+  const values={favorites:next.data.favorites,history:next.data.history,filmRecords:next.data.films,historyMetadataV2:next.data.progress,watchlist:next.data.watchlist,...next.data.preferences};
+  for(const f of films)if(id(f.id))values['skip_'+f.id]=next.data.skip[f.id]||{intro:0,outro:0};for(const[key,value]of Object.entries(next.data.skip))values['skip_'+key]=value;
+  const writes=Object.fromEntries(Object.entries(values).map(([key,value])=>[p+key,JSON.stringify(value)]));
+  if(!fromSync&&!recovery){const previous=Object.fromEntries(Object.keys(writes).map(key=>[key,localStorage.getItem(key)]));writes[p+'localDataRecovery']=JSON.stringify({format:'openstream-local-recovery',version:1,values:previous});}
+  writeRaw(writes);updateMemory(next.data);notifyRestored(fromSync);return next;
  }
- function restore(){const value=load('localDataRecovery',null);if(!value)throw Error('还没有可恢复的数据');return applyBackup(value,{mode:'replace',recovery:true});}
+ function restore(){
+  const value=load('localDataRecovery',null);if(!value)throw Error('还没有可恢复的数据');
+  if(value.format!=='openstream-local-recovery')return applyBackup(value,{mode:'replace',recovery:true});
+  if(value.version!==1||!object(value.values))throw Error('恢复点格式不正确');
+  const p=prefix(),allowed=new Set(['favorites','history','filmRecords','historyMetadataV2','watchlist',...Object.keys(preferences)]),writes={};
+  for(const[key,raw]of Object.entries(value.values)){if(!key.startsWith(p))throw Error('恢复点格式不正确');const name=key.slice(p.length);if(!allowed.has(name)&&!(name.startsWith('skip_')&&id(name.slice(5))))throw Error('恢复点格式不正确');if(raw!==null&&typeof raw!=='string')throw Error('恢复点格式不正确');writes[key]=raw;}
+  const read=(name,fallback)=>{const raw=writes[p+name];if(raw==null)return fallback;try{return JSON.parse(raw);}catch{throw Error('恢复点格式不正确');}};
+  const data={favorites:read('favorites',[]),history:read('history',[]),films:read('filmRecords',[]),progress:read('historyMetadataV2',{})};
+  if(!Array.isArray(data.favorites)||!Array.isArray(data.history)||!Array.isArray(data.films)||!object(data.progress))throw Error('恢复点格式不正确');
+  writeRaw(writes);updateMemory(data);notifyRestored(false);return value;
+ }
  window.OpenStreamLocalData={snapshot,validateBackup,applyBackup,validate:validateBackup,apply:applyBackup,preview,restore,get applying(){return applying;},MAX_BYTES};
 })();
