@@ -21,8 +21,9 @@
  try{const stored=JSON.parse(sessionStorage.getItem(DISMISS_KEY)||'[]');if(Array.isArray(stored))dismissed=new Set(stored.filter(key=>typeof key==='string').slice(-100));}catch{}
  function continueWatching(){
   const after=(f,r)=>f.lines?.length&&window.OpenStreamEpisodes?OpenStreamEpisodes.nextOrdinal(f,{episodeKey:OpenStreamEpisodes.display(f,r).key}):((r?.episode||1)<(f.episodes||1)?true:null);
-  const rows=history.map(id=>({f:films.find(f=>f.id===id),r:historyMetadata[id]})).filter(({f,r})=>{
-   if(!f||!r||load('watchlist',{})[f.id]?.status==='completed'||window.OPENSTREAM_LIVE&&window.LiveData&&!LiveData.allowed(f))return false;
+  const watchlist=load('watchlist',{}),byId=new Map(films.map(f=>[f.id,f]));
+  const rows=history.map(id=>({f:byId.get(id),r:historyMetadata[id]})).filter(({f,r})=>{
+   if(!f||!r||watchlist[f.id]?.status==='completed'||window.OPENSTREAM_LIVE&&window.LiveData&&!LiveData.allowed(f))return false;
    const stamp=Date.parse(r.watchedAt);if(!Number.isFinite(stamp))return false;
    if(!Number.isFinite(r.position)||!Number.isFinite(r.duration)||r.position<=0||r.duration<=0||r.position>r.duration)return false;
    return !watchedComplete(r)||isSeries(f)&&after(f,r);
