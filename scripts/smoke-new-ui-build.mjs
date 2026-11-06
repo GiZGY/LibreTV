@@ -10,7 +10,13 @@ for(const m of html.matchAll(/(?:src|href)="([^"#?]+)(?:\?[^" ]*)?"/g)){
 }
 const assetRoot=html.match(/src="(static\/[a-f0-9]{16})\/live-mode\.js/)[1];
 const player=await fs.readFile(`public/${assetRoot}/player-preview.js`,'utf8');
-assert.doesNotMatch(player,/video\.defaultMuted=true|volume:0,muted:true|__qa\/native-status/);
+assert.doesNotMatch(player,/volume:0,muted:true|__qa\/native-status/);
+const mainMount=player.indexOf('async function mount(');
+assert.ok(mainMount>player.indexOf('function verifyMedia('));
+// Only the hidden alternative probe is always muted; the main player keeps the user's sound preference.
+assert.match(player.slice(0,mainMount),/video\.dataset\.playbackProbe/);
+assert.match(player.slice(0,mainMount),/video\.muted=true;video\.defaultMuted=true;video\.volume=0/);
+assert.doesNotMatch(player.slice(mainMount),/video\.defaultMuted=true/);
 assert.match(player,/volume:previousSound\?\.volume\?\?load\(["']volume["'],(?:0)?\.8\),muted:previousSound\?\.muted\?\?load\(["']muted["'],false\),setting:true/);
 for(const name of ['.env.local','.env.turnstile.local','package.json','server','tests']){
  await assert.rejects(fs.access('public/'+name));
