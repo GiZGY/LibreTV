@@ -70,7 +70,7 @@
   if(!['merge','replace'].includes(mode))throw Error('请选择合并或替换');
   const incoming=validateBackup(raw),before=mode==='merge'||fromSync?snapshot():null,next=validateBackup({...incoming,data:mode==='merge'?mergeData(before.data,incoming.data):incoming.data}),p=prefix();
   const values={favorites:next.data.favorites,history:next.data.history,filmRecords:next.data.films,historyMetadataV2:next.data.progress,watchlist:next.data.watchlist,...next.data.preferences};
-  for(const f of films)if(id(f.id))values['skip_'+f.id]=next.data.skip[f.id]||{intro:0,outro:0};for(const[key,value]of Object.entries(next.data.skip))values['skip_'+key]=value;
+  for(const f of films)if(id(f.id)&&localStorage.getItem(p+'skip_'+f.id)!==null)values['skip_'+f.id]=next.data.skip[f.id]||{intro:0,outro:0};for(const[key,value]of Object.entries(next.data.skip))values['skip_'+key]=value;
   const writes=Object.fromEntries(Object.entries(values).map(([key,value])=>[p+key,JSON.stringify(value)]));
   if(!fromSync&&!recovery){const previous=Object.fromEntries(Object.keys(writes).map(key=>[key,localStorage.getItem(key)]));writes[p+'localDataRecovery']=JSON.stringify({format:'openstream-local-recovery',version:1,values:previous});}
   writeRaw(writes);updateMemory(next.data);notifyRestored(fromSync);return next;
