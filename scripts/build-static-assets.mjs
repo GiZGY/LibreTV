@@ -107,7 +107,11 @@ const bundles = {
 
 async function readCombined(files, preamble = '', separator = '\n;\n') {
   const chunks = await Promise.all(files.map(async (relativePath) => {
-    const source = await fs.readFile(path.join(root, relativePath), 'utf8');
+    let source = await fs.readFile(path.join(root, relativePath), 'utf8');
+    // This IIFE exports only a named window API; its local identifiers are private.
+    if (relativePath === 'js/result-aggregator.js') source = (await transform(source, {
+      loader: 'js', target: 'es2020', minify: true, legalComments: 'none'
+    })).code;
     return `\n/* ${relativePath} */\n${source}\n`;
   }));
   return `${preamble}\n${chunks.join(separator)}`;
