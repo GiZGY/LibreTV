@@ -23,7 +23,7 @@
   };active=session;return session;
  }
  function diagnostic(){const current=active?.snapshot()||null,all=[...samples,current].filter(Boolean),transitions=all.filter(s=>s.transition!=='open'),recoveries=all.reduce((n,s)=>n+s.recoveryCount,0),frames=[...samples,current].filter(s=>s?.firstFrameMs!==null&&s?.firstFrameMs!==undefined).map(s=>s.firstFrameMs).sort((a,b)=>a-b);return{schema:1,current,recent:samples.slice(-3),summary:{sessions:all.length,manualLineChanges:all.filter(s=>s.transition==='line'&&s.trigger==='manual').length,transitionAttempts:transitions.length,transitionSuccesses:transitions.filter(s=>s.progressSamples>0).length,recoveryAttempts:recoveries,recoverySuccesses:all.reduce((n,s)=>n+s.recoverySuccessCount,0),firstFrameP50:frames.length?frames[Math.ceil(frames.length*.5)-1]:null,firstFrameP95:frames.length?frames[Math.ceil(frames.length*.95)-1]:null}};}
- async function copy(){const value=JSON.stringify(diagnostic(),null,2);try{await navigator.clipboard.writeText(value);toast('诊断信息已复制');}catch{toast('复制未完成，请允许剪贴板访问后重试');}}
+ async function copy(){const value=JSON.stringify(diagnostic(),null,2),status=document.querySelector('[data-diagnostics-status]');const report=message=>{if(status)status.textContent=message;else toast(message);};try{await navigator.clipboard.writeText(value);report('诊断信息已复制');}catch{report('复制未完成，请允许剪贴板访问后重试');}}
  window.OpenStreamPlayback={createSession,diagnostic,copy};
  document.addEventListener('click',event=>{if(event.target.closest('[data-copy-diagnostics]'))void copy();});
 })();
