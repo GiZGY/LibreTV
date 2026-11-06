@@ -24,7 +24,15 @@ async function speed(page){
  expect(reading.stalls).toBe(0);expect(reading.ratio).toBeGreaterThan(1.65);expect(reading.ratio).toBeLessThan(1.85);expect(reading.rate).toBe(1.75);expect(reading.defaultRate).toBe(1.75);expect(reading.muted).toBe(true);
  await expect(page.locator('.fine-speed summary')).toHaveText('1.75×');
 }
-async function nextReady(page,episode){await expect(page.locator('.episodes .active')).toHaveText(String(episode));await expect(page.locator('video')).toHaveJSProperty('readyState',4);}
+async function nextReady(page,episode){
+ await expect(page.locator('.episodes .active')).toHaveText(String(episode));
+ const video=page.locator('video');
+ try{
+  await expect(video).toHaveJSProperty('paused',false);
+  const start=await video.evaluate(v=>v.currentTime);await expect.poll(()=>video.evaluate(v=>v.currentTime),{timeout:10000}).toBeGreaterThan(start+.15);
+  await expect(video).toHaveJSProperty('readyState',4);
+ }catch(error){console.log(JSON.stringify({episode,media:await video.evaluate(v=>({time:v.currentTime,duration:v.duration,paused:v.paused,seeking:v.seeking,ended:v.ended,ready:v.readyState,network:v.networkState,rate:v.playbackRate,muted:v.muted,error:v.error?.code,buffered:Array.from({length:v.buffered.length},(_,i)=>[v.buffered.start(i),v.buffered.end(i)])}))}));throw error;}
+}
 test('full UI: manual, natural-ended, outro and line switch inherit real speed',async({page})=>{
  await openPlayer(page);
  await page.getByRole('checkbox',{name:'自动连播',exact:true}).uncheck();

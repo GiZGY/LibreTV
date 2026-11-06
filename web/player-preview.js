@@ -42,7 +42,7 @@
     }
     if(host!==next||currentMedia!==mountedMedia||!next.isConnected)return;
    }
-   let hls=null,guard=null,recoveries=0,failed=false,nativePlayback=false,overlayNotice=null,overlayTimer;
+   let hls=null,guard=null,recoveries=0,failed=false,nativePlayback=false,overlayNotice=null,overlayTimer,session=null;
    const reportHealth=health=>{if(media)document.dispatchEvent(new CustomEvent('playback-health',{detail:{filmId:media.filmId,lineKey:media.lineKey,health}}));};
    const fail=()=>{if(failed||media!==window.LivePlayback?.current())return;failed=true;reportHealth('slow');window.LivePlayback?.failed(media);};
    const skipKey='skip_'+film.id;
@@ -96,8 +96,22 @@
     layers:mediaUrl?[]:[{name:'empty-media',html:'<div class="watch-empty"><span>暂未获取到播放地址</span><p>请选择其他线路，或返回影片详情</p></div>',style:{inset:'0',display:'grid',placeItems:'center',pointerEvents:'none'}}]
    });
    const instance=art;
-   const session=window.OpenStreamPlayback?.createSession({resolveMs:media?.resolveMs||0,sourceMs:media?.sourceMs||0,accessMs:media?.accessMs||0,addressMs:media?.addressMs||0,transition:media?.switched?'line':media?.autoplay?'episode':'open'});
+   session=window.OpenStreamPlayback?.createSession({resolveMs:media?.resolveMs||0,sourceMs:media?.sourceMs||0,accessMs:media?.accessMs||0,addressMs:media?.addressMs||0,transition:media?.switched?'line':media?.autoplay?'episode':'open'});
    instance.on('destroy',()=>session?.dispose());
+   let playIntent=!!media?.autoplay,playAttempt=false,playAttempts=0,playTimer=null;
+   function resumePlayIntent(){
+    if(!playIntent||playAttempt||instance.isDestroy||media!==window.LivePlayback?.current())return;
+    playAttempt=true;playAttempts++;
+    Promise.resolve().then(()=>instance.video.play()).catch(error=>{
+     if(!playIntent||instance.isDestroy)return;
+     if(error?.name==='AbortError'&&playAttempts<5){clearTimeout(playTimer);playTimer=setTimeout(resumePlayIntent,250);}
+     else{playIntent=false;instance.controls.show=true;instance.mask.show=true;instance.notice.show='点击播放继续观看';}
+    }).finally(()=>{playAttempt=false;});
+   }
+   // Intro seeking can abort the constructor's autoplay promise on WebKit.
+   for(const event of ['video:loadedmetadata','video:canplay','video:seeked'])instance.on(event,()=>queueMicrotask(resumePlayIntent));
+   instance.on('video:playing',()=>{playIntent=false;clearTimeout(playTimer);});
+   instance.on('destroy',()=>{playIntent=false;clearTimeout(playTimer);});
    instance.on('video:waiting',()=>{if(!instance.video.paused&&!instance.video.seeking)session?.waiting();});
    instance.on('video:playing',()=>session?.playing());
    instance.on('video:pause',()=>session?.phase('paused'));

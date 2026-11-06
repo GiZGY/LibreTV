@@ -55,6 +55,15 @@ jobs:
       - name: Real media browser regression
         run: npm run test:browser -- --no-build
 
+      - name: Retain failing synthetic media trace
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: synthetic-browser-failure
+          path: test-results/
+          if-no-files-found: ignore
+          retention-days: 3
+
       - name: Verify catalogue database and incremental refresh
         run: npm run test:catalog-index
 
