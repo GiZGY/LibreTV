@@ -27,6 +27,13 @@
     }).catch(error => {scriptTask = null;throw error;});
     return scriptTask;
   }
+  function challengeErrorMessage(code) {
+    const value = typeof code === 'string' ? code : Number.isInteger(code) ? String(code) : '';
+    // Provider rejection is not a failed connection; only the documented iframe error implies loading trouble.
+    if (/^(?:300|600)\d{3}$/.test(value)) return '本次验证未通过，请换用其他浏览器或稍后再试';
+    if (value === '200500') return '安全验证加载失败，请检查网络后重试';
+    return '安全验证暂时未完成，请稍后重试';
+  }
   async function challenge(config) {
     const previous = document.activeElement;
     const dialog = document.createElement('dialog');
@@ -74,7 +81,7 @@
               resolve();
             } catch (error) {if (!disposed && currentAttempt === attempt) reject(error);}
           },
-          'error-callback':() => {reject(new Error('验证连接失败，请重试'));},
+          'error-callback':code => {reject(new Error(challengeErrorMessage(code)));},
           'timeout-callback':() => reject(new Error('验证已超时，请重试')),
           'expired-callback':() => window.turnstile.reset(widget)
         });
@@ -85,7 +92,7 @@
         clearTimeout(watchdog);
         if (widget !== undefined) {window.turnstile?.remove(widget);widget = undefined;}
         const message = dialog.querySelector('.human-message');
-        message.textContent = error.message || '验证连接失败，请重试';
+        message.textContent = error.message || '安全验证暂时未完成，请稍后重试';
         const retry = document.createElement('button');
         retry.type = 'button';retry.className = 'secondary';retry.textContent = '重新验证';
         message.append(retry);

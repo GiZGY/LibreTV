@@ -61,3 +61,16 @@ test('initial config failure stays gated and recovers after network returns',asy
  await f.callbacks[0].callback('fresh');await task;
  assert.equal(released,true);assert.equal(f.dialogs[0].open,false);
 });
+
+test('provider rejection, iframe loading and unknown errors have distinct copy without releasing protection',async()=>{
+ for(const [code,message]of [['600010',/本次验证未通过/],[300001,/本次验证未通过/],['200500',/加载失败.*检查网络/],['110100',/暂时未完成/],[undefined,/暂时未完成/],['untrusted-provider-detail',/暂时未完成/]]){
+  const f=fixture();let released=false;const task=f.window.HumanAccess.ensure().then(()=>{released=true;});await flush();
+  f.callbacks[0]['error-callback'](code);await flush();
+  const dialog=f.dialogs[0],text=dialog.parts['.human-message'].textContent;
+  assert.match(text,message);assert.doesNotMatch(text,/600010|300001|200500|110100|untrusted-provider-detail/);assert.equal(released,false);assert.equal(dialog.open,true);assert.equal(f.posts(),0);
+  dialog.parts['.human-message'].children.at(-1).onclick();await flush();f.callbacks[1]['error-callback'](code);await flush();
+  assert.equal(released,false);assert.equal(dialog.open,true);assert.equal(f.posts(),0);
+  dialog.parts['.human-message'].children.at(-1).onclick();await flush();await f.callbacks[2].callback('fixture-success');await task;
+  assert.equal(released,true);assert.equal(f.posts(),1);assert.equal(dialog.open,false);
+ }
+});
