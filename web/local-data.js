@@ -45,16 +45,18 @@
   return{format:FORMAT,version:VERSION,createdAt:stamp(raw.createdAt),data};
  }
  function snapshot(){
-  const ids=new Set([...favorites,...history]),kept=films.filter(f=>ids.has(f.id)).slice(0,MAX_RECORDS),skip={};
+  const ids=new Set([...favorites,...history]),kept=films.filter(f=>ids.has(f.id)),skip={};
+  if(kept.length>MAX_RECORDS)throw Error('本机记录超过 500 部，未更改现有数据');
+  if([...ids].some(key=>!kept.some(f=>f.id===key)))throw Error('部分收藏或历史缺少影片资料，未更改现有数据');
   for(const f of kept){const value=load('skip_'+f.id,null);if(value)skip[f.id]=value;}
-  return validateBackup({format:FORMAT,version:VERSION,createdAt:new Date().toISOString(),data:{films:kept,favorites:[...favorites],history,progress:Object.fromEntries(Object.entries(historyMetadata).filter(([key])=>ids.has(key))),watchlist:Object.fromEntries(Object.entries(load('watchlist',{})).filter(([key])=>ids.has(key))),preferences:Object.fromEntries(Object.keys(preferences).map(key=>[key,load(key,key==='playbackRate'?1:['autoplay','mobileAutoTheme'].includes(key))])),skip}});
+  return validateBackup({format:FORMAT,version:VERSION,createdAt:new Date().toISOString(),data:{films:kept.map(cleanFilm),favorites:[...favorites],history,progress:Object.fromEntries(Object.entries(historyMetadata).filter(([key])=>ids.has(key))),watchlist:Object.fromEntries(Object.entries(load('watchlist',{})).filter(([key])=>ids.has(key))),preferences:Object.fromEntries(Object.keys(preferences).map(key=>[key,load(key,key==='playbackRate'?1:['autoplay','mobileAutoTheme'].includes(key))])),skip}});
  }
  function preview(raw){const backup=validateBackup(raw),current=snapshot();return{backup,counts:{favorites:backup.data.favorites.length,history:backup.data.history.length,films:backup.data.films.length,newFavorites:backup.data.favorites.filter(key=>!current.data.favorites.includes(key)).length}};}
  function mergeData(current,incoming){
   const byId=new Map(current.films.map(f=>[f.id,f]));for(const f of incoming.films)byId.set(f.id,{...byId.get(f.id),...f});
   const progress={...current.progress};for(const[key,value]of Object.entries(incoming.progress)){const previous=progress[key],completedEpisodes=[...new Set([...(previous?.completedEpisodes||[]),...(value.completedEpisodes||[])])].slice(-1000);if(!previous||Date.parse(value.watchedAt)>=Date.parse(previous.watchedAt))progress[key]={...value,...(completedEpisodes.length?{completedEpisodes}:{})};else if(completedEpisodes.length)progress[key]={...previous,completedEpisodes};}
   const watchlist={...current.watchlist};for(const[key,value]of Object.entries(incoming.watchlist))if(!watchlist[key]||Date.parse(value.updatedAt)>=Date.parse(watchlist[key].updatedAt))watchlist[key]=value;
-  return{films:[...byId.values()].slice(-MAX_RECORDS),favorites:[...new Set([...current.favorites,...incoming.favorites])],history:[...new Set([...incoming.history,...current.history])].sort((a,b)=>Date.parse(progress[b]?.watchedAt||0)-Date.parse(progress[a]?.watchedAt||0)),progress,watchlist,preferences:{...current.preferences,...incoming.preferences},skip:{...current.skip,...incoming.skip}};
+  return{films:[...byId.values()],favorites:[...new Set([...current.favorites,...incoming.favorites])],history:[...new Set([...incoming.history,...current.history])].sort((a,b)=>Date.parse(progress[b]?.watchedAt||0)-Date.parse(progress[a]?.watchedAt||0)),progress,watchlist,preferences:{...current.preferences,...incoming.preferences},skip:{...current.skip,...incoming.skip}};
  }
  function applyBackup(raw,{mode='merge',fromSync=false,recovery=false}={}){
   if(!['merge','replace'].includes(mode))throw Error('请选择合并或替换');

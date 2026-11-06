@@ -51,12 +51,12 @@
   if(savedDiscovery){Object.assign(filters,savedDiscovery.filters);discoverPage=Math.max(1,Number(savedDiscovery.page)||1);}
   const savedFilms = load('filmRecords', []);
   films.splice(0, films.length, ...(Array.isArray(savedFilms) ? savedFilms.filter(f => f && /^film-[a-z0-9]+$/.test(f.id)) : []));
-  favorites = new Set([...favorites].filter(id => films.some(f => f.id === id)));
-  history = history.filter(id => films.some(f => f.id === id));
+  // Missing cached metadata must not delete the underlying collection or history.
   const status = (message, retry = true) => `<div class="empty" role="status"><p>${esc(message)}</p>${retry?'<button class="secondary" data-live-retry>重试</button>':''}</div>`;
   function persist() {
     const currentId=location.hash.split('/')[1];
-    const keep = films.filter(f => favorites.has(f.id) || history.includes(f.id) || f.id===currentId).slice(-300);
+    const required=new Set([...favorites,...history]),saved=films.filter(f=>required.has(f.id)),cached=films.filter(f=>!required.has(f.id)&&f.id===currentId).slice(-300);
+    const keep=[...new Map([...saved,...cached].map(f=>[f.id,f])).values()];
     save('filmRecords', keep.map(({lines, ...film}) => film));
   }
   function identity(value) {
