@@ -10,6 +10,7 @@ const key=value=>typeof value==='string'&&/^[\p{L}\p{N}_.:-]{1,160}$/u.test(valu
 const integer=(value,max)=>Number.isSafeInteger(value)&&value>=0&&value<=max;
 const plain=value=>value&&typeof value==='object'&&!Array.isArray(value)&&Object.getPrototypeOf(value)===Object.prototype;
 const text=(value,max)=>typeof value==='string'?value.replace(/<[^>]*>/g,'').replace(/[\x00-\x1f]/g,'').slice(0,max):undefined;
+const validName=value=>typeof value==='string'&&value.length<=40&&!!text(value.trim(),40).trim();
 const stamp=value=>typeof value==='string'&&Number.isFinite(Date.parse(value))?new Date(value).toISOString():undefined;
 const object=entries=>Object.fromEntries(entries.filter(([,value])=>value!==undefined));
 function film(value){
@@ -25,6 +26,7 @@ function film(value){
 export function syncRecordValue(bucket,value){
   if(!plain(value))throw failure(400,'同步内容无效');
   if(bucket==='favorite'){
+    if(value.updatedAt!==undefined&&!stamp(value.updatedAt))throw failure(400,'收藏时间无效');
     if(!['watching','planned','completed'].includes(value.status))throw failure(400,'收藏分类无效');
     return object([['film',film(value.film)],['status',value.status],['updatedAt',stamp(value.updatedAt)||new Date(0).toISOString()]]);
   }
@@ -88,7 +90,7 @@ export function createDeviceSyncStore({query=(...args)=>catalogDatabase()(...arg
     return device;
   }
   function credentials(input){
-    if(!secret(input.credential)||!secret(input.recoveryCode)||typeof input.name!=='string'||!input.name.trim()||input.name.length>40)throw failure(400,'设备信息无效');
+    if(!secret(input.credential)||!secret(input.recoveryCode)||!validName(input.name))throw failure(400,'设备信息无效');
   }
   async function create(input){
     credentials(input);const old=await query(activeSQL,[hash(input.credential)]);if(old.length)return {deviceId:old[0].id};
@@ -125,7 +127,7 @@ export function createDeviceSyncStore({query=(...args)=>catalogDatabase()(...arg
     return {id:row.id,expiresAt:row.expires_at};
   }
   async function join(input){
-    if(!uuid(input.id)||!secret(input.secret)||!secret(input.credential)||typeof input.name!=='string'||!input.name.trim()||input.name.length>40)throw failure(400,'配对邀请无效');
+    if(!uuid(input.id)||!secret(input.secret)||!secret(input.credential)||!validName(input.name))throw failure(400,'配对邀请无效');
     const [previous]=await query(`SELECT d.id FROM openstream_sync.devices d JOIN openstream_sync.pairings p ON p.join_id=d.id WHERE p.id=$1 AND p.secret_hash=$2 AND d.token_hash=$3 AND p.state IN ('claimed','approved')`,[input.id,hash(input.secret),hash(input.credential)]);
     if(previous)return status(input.credential);
     await capacity();await limit('public-join',120);

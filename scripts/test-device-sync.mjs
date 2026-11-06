@@ -101,6 +101,8 @@ test('individual device revocation, space isolation and recovery rotate all cred
 
 test('invalid secrets/metadata/ranges and excessive anonymous requests are rejected',async()=>{
   await assert.rejects(store.create({name:'x',credential:'weak',recoveryCode:'weak'}),{status:400});
+  await assert.rejects(store.create({...device(),name:'<b></b>'}),{status:400});
+  assert.throws(()=>syncRecordValue('favorite',{...favorite,updatedAt:'invalid'}),{status:400});
   for(const p of [{position:-1},{duration:Infinity},{episode:0}])assert.throws(()=>syncRecordValue('progress',{...progress(),progress:{...progress().progress,...p}}),{status:400});
   assert.throws(()=>syncRecordValue('preferences',{playbackRate:7}),{status:400});
   for(let i=0;i<12;i++)await assert.rejects(store.recover({name:'bad',credential:secret(),newRecoveryCode:secret(),recoveryCode:secret()}),error=>[403,429].includes(error.status));
