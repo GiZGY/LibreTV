@@ -10,3 +10,17 @@ test('late metadata enrichment keeps the original result identity rather than a 
 test('more than 300 favorites retain metadata after persist reload and backup',async({page})=>{await page.addInitScript(()=>{if(localStorage.getItem('capacity-fixture'))return;const films=Array.from({length:350},(_,i)=>({id:'film-cap'+i,name:'保留收藏 '+i,type:'电影',episodes:1,seasons:1}));localStorage.setItem('openstream_live_filmRecords',JSON.stringify(films));localStorage.setItem('openstream_live_favorites',JSON.stringify(films.map(f=>f.id)));localStorage.setItem('capacity-fixture','true');});await page.goto('/#home');await expect(page.locator('#hero-slot')).toBeVisible();await page.evaluate(()=>location.hash='detail/film-cap0');const favorite=page.locator('.detail-content [data-action=favorite]');await expect(favorite).toBeVisible();await favorite.click();await favorite.click();await expect.poll(()=>page.evaluate(()=>JSON.parse(localStorage.getItem('openstream_live_filmRecords')).length)).toBe(350);await page.evaluate(()=>location.hash='home');await expect(page.locator('#hero-slot')).toBeVisible();await page.reload();await expect.poll(()=>page.evaluate(()=>OpenStreamLocalData.snapshot().data.favorites.length)).toBe(350);expect(await page.evaluate(()=>OpenStreamLocalData.snapshot().data.films.length)).toBe(350);});
 
 test('resume notice selects the latest valid work and retains long-standing progress',async({page})=>{await seed(page);await page.goto('/#home');await page.evaluate(()=>{historyMetadata['film-library2']={position:15,duration:120,episode:1,watchedAt:new Date().toISOString()};historyMetadata['film-library1'].watchedAt='2020-01-01T00:00:00Z';save('historyMetadataV2',historyMetadata);render();});await expect(page.locator('.continue-notice')).toHaveCount(1);await expect(page.locator('.continue-notice')).toContainText('已经看完的电影');await page.evaluate(()=>{historyMetadata['film-library2'].completed=true;save('historyMetadataV2',historyMetadata);render();});await expect(page.locator('.continue-notice')).toContainText('继续观看测试');await expect(page.locator('.continue-notice')).toContainText('第 2 集');});
+
+test('home resume uses the bottom notification area for thirty seconds without resetting on rerender',async({page})=>{
+ await seed(page);await page.clock.install();await page.goto('/#home');
+ const notice=page.locator('#notification-dock .continue-notice');await expect(notice).toBeVisible();
+ await expect(page.locator('#main .continue-notice')).toHaveCount(0);
+ expect(await notice.evaluate(n=>innerHeight-n.getBoundingClientRect().bottom)).toBeLessThan(120);
+ const progress=await page.evaluate(()=>localStorage.getItem('openstream_live_historyMetadataV2'));
+ await page.clock.fastForward(20000);await page.evaluate(()=>OpenStreamLibrary.notifyResume());
+ await page.clock.fastForward(9000);await expect(notice).toBeVisible();
+ await page.evaluate(()=>toast('已保存'));await page.clock.fastForward(1100);
+ await expect(notice).toHaveCount(0);await expect(page.locator('#toast.visible')).toHaveText('已保存');
+ await page.reload();await expect(notice).toHaveCount(0);
+ expect(await page.evaluate(()=>localStorage.getItem('openstream_live_historyMetadataV2'))).toBe(progress);
+});

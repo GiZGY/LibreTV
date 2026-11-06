@@ -148,7 +148,7 @@
       if(i>=featured.length)html=html.replace('<article ','<article data-loop-copy="true" ');
       return html;
     }).join('')}</div>`;
-    $('#main').innerHTML=`${window.OpenStreamLibrary?.continueWatching()||''}<div id="hero-slot"><section class="film-ribbon poster-ribbon" aria-label="精选影片"><div class="film-ribbon-track">${group(false)}${group(true)}</div></section></div><div class="section-head"><h2>推荐影片</h2><a class="text-button" href="#discover">发现更多 ${icon('arrow')}</a></div><div class="filter-tabs">${['全部','科幻','悬疑','剧情','历史'].map(genre=>`<button class="chip ${homeGenre===genre?'selected':''}" data-live-home-genre="${genre}" aria-pressed="${homeGenre===genre}">${genre}</button>`).join('')}</div><div id="home-recommendations">${homeGenre==='全部'?grid(rest):status('正在加载影片…',false)}</div><div class="section-head"><h2>热门剧集</h2></div><div id="live-tv">${status('正在加载剧集…',false)}</div>`;
+    window.OpenStreamLibrary?.notifyResume();$('#main').innerHTML=`<div id="hero-slot"><section class="film-ribbon poster-ribbon" aria-label="精选影片"><div class="film-ribbon-track">${group(false)}${group(true)}</div></section></div><div class="section-head"><h2>推荐影片</h2><a class="text-button" href="#discover">发现更多 ${icon('arrow')}</a></div><div class="filter-tabs">${['全部','科幻','悬疑','剧情','历史'].map(genre=>`<button class="chip ${homeGenre===genre?'selected':''}" data-live-home-genre="${genre}" aria-pressed="${homeGenre===genre}">${genre}</button>`).join('')}</div><div id="home-recommendations">${homeGenre==='全部'?grid(rest):status('正在加载影片…',false)}</div><div class="section-head"><h2>热门剧集</h2></div><div id="live-tv">${status('正在加载剧集…',false)}</div>`;
     if(homeGenre!=='全部')await updateHomeGenre(homeGenre);
     try {
       const {items:tv}=await data.discoverTMDB({type:'电视剧',genre:'全部',year:'全部',sort:'精选',minRating:6.5,page:1,signal});
@@ -520,7 +520,7 @@
       const accessMs=needsAccess?performance.now()-accessStarted:0;metric?.segment('render');
       if(token!==generation)return;
       showSources();
-      if(page==='home'){activePlayback=null;$('#main').innerHTML=(window.OpenStreamLibrary?.continueWatching()||'')+status('正在加载推荐…',false);try{await fetchHome(signal,token);}catch(error){if(!signal.aborted&&token===generation)$('#main').innerHTML=(window.OpenStreamLibrary?.continueWatching()||'')+status(error.message);}}
+      if(page==='home'){activePlayback=null;window.OpenStreamLibrary?.notifyResume();$('#main').innerHTML=status('正在加载推荐…',false);try{await fetchHome(signal,token);}catch(error){if(!signal.aborted&&token===generation)$('#main').innerHTML=status(error.message);}}
       else if(page==='discover'){activePlayback=null;await fetchDiscovery(signal,token);}
       else if(page==='search'){activePlayback=null;await fetchSearch(decodeURIComponent(encoded),signal,token);}
       else if(page==='detail'||page==='player'){

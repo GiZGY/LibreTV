@@ -68,3 +68,5 @@
 }
 @container watch-surface (max-width:540px){#watch-player .art-settings .art-setting-item{min-height:44px}}
 #watch-player .art-settings .art-setting-item[hidden]{display:none!important}
+
+#watch-player .art-settings .art-setting-item .art-setting-item-left .art-setting-item-left-icon{display:none}

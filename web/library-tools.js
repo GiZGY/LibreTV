@@ -35,11 +35,20 @@
   const next=watchedComplete(r)&&isSeries(f),target=next&&f.lines?.length&&window.OpenStreamEpisodes?after(f,r):null,shown=target?{episode:target}:r,label=isSeries(f)?(window.OpenStreamEpisodes?OpenStreamEpisodes.display(f,shown).label:`第 ${r.season||1} 季 · 第 ${r.episode||1} ${f.type==='综艺'?'期':'集'}`):'';
   return `<aside class="continue-notice" aria-label="继续观看"><p class="continue-notice-title"><span>${esc(f.name)}</span>${label?`<span class="continue-notice-episode">${esc(label)}</span>`:''}</p><div class="continue-notice-actions"><a class="text-button" href="#player/${f.id}" data-id="${f.id}" ${next?'data-playback-intent="next"':'data-action="resume-history"'}>继续</a><button type="button" class="continue-notice-close" data-dismiss-resume aria-label="关闭继续观看提醒">×</button></div></aside>`;
  }
+ let timer=null,activeKey=null;
+ function clearNotice(){clearTimeout(timer);timer=null;activeKey=null;document.querySelector('#resume-toast-slot')?.replaceChildren();}
+ function dismiss(key){dismissed.add(key);dismissed=new Set([...dismissed].slice(-100));try{sessionStorage.setItem(DISMISS_KEY,JSON.stringify([...dismissed]));}catch{}}
+ function notifyResume(){
+  const slot=document.querySelector('#resume-toast-slot');if(!slot)return;
+  const markup=continueWatching();if(!markup){clearNotice();return;}
+  if(activeKey===shownNotice)return;
+  clearNotice();const key=activeKey=shownNotice;slot.innerHTML=markup;
+  timer=setTimeout(()=>{if(activeKey!==key)return;dismiss(key);clearNotice();},30000);
+ }
+ window.addEventListener?.('hashchange',()=>{if(!['','#home'].includes(location.hash))clearNotice();});
  document.addEventListener('click',event=>{
   const button=event.target.closest('[data-dismiss-resume]'),notice=button?.closest('.continue-notice');if(!notice||!shownNotice)return;
-  dismissed.add(shownNotice);dismissed=new Set([...dismissed].slice(-100));shownNotice=null;
-  try{sessionStorage.setItem(DISMISS_KEY,JSON.stringify([...dismissed]));}catch{}
-  const next=notice.nextElementSibling?.querySelector('a,button')||document.querySelector('#main');notice.remove();next?.focus({preventScroll:true});
+  dismiss(shownNotice);shownNotice=null;notice.remove();clearNotice();document.querySelector('#main')?.focus({preventScroll:true});
  });
- window.OpenStreamLibrary={availability,continueWatching};
+ window.OpenStreamLibrary={availability,continueWatching,notifyResume};
 })();

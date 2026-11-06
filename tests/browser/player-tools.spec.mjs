@@ -26,7 +26,7 @@ test('native fullscreen episode and route panels retain identity, speed, mute an
 });
 test('native gear has one inline marker per skip row, exact slider sync and independent keyboard focus',async({page})=>{
  await open(page);await page.locator('video').evaluate(v=>{v.pause();v.currentTime=4;});await expect(page.locator('video')).toHaveJSProperty('seeking',false);await settings(page);
- await expect(page.locator('[data-player-view="options"]')).toHaveCount(0);await expect(page.locator('[data-skip-mark]')).toHaveCount(2);
+ await expect(page.locator('.art-settings .art-setting-item-left-icon:visible')).toHaveCount(0);await expect(page.locator('[data-player-view="options"]')).toHaveCount(0);await expect(page.locator('[data-skip-mark]')).toHaveCount(2);
  for(const which of ['intro','outro']){
   const row=page.locator(`[data-name="skip-${which}"]`),marker=row.locator('[data-skip-mark]');
   await expect(marker).toHaveText('标记');await expect(marker).toHaveAccessibleName(which==='intro'?'当前位置记为片头结束':'当前位置记为片尾开始');
