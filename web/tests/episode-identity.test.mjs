@@ -1,0 +1,11 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import vm from 'node:vm';
+const context={window:{}};vm.runInNewContext(readFileSync(new URL('../episode-identity.js',import.meta.url),'utf8'),context);const ep=context.window.OpenStreamEpisodes;
+const line=names=>({episodes:names.map(name=>({name,url:name}))});
+test('a missing episode never shifts the target onto the next array entry',()=>{const a=line(['第1集','第2集','第3集']),b=line(['第1集','第3集']),f={type:'电视剧',lines:[a,b]};assert.equal(ep.indexFor(f,b,{episode:2}),-1);assert.equal(ep.indexFor(f,b,{episode:3}),1);assert.equal(ep.catalog({type:'电视剧',lines:[b]}).length,3);});
+test('order, season and Chinese labels align without relying on source index',()=>{const a=line(['第3集','第一集','第2集']),f={type:'电视剧',lines:[a]};assert.equal(ep.indexFor(f,a,{episode:1}),1);assert.equal(ep.describe('S02E03').key,'s2:e3');assert.equal(ep.describe('第二季 第三集').key,'s2:e3');assert.equal(ep.describe('第十二集').key,'s1:e12');});
+test('trailers, specials, split episodes and duplicate ambiguous labels stay separate',()=>{assert.equal(ep.describe('第1集预告').kind,'special');assert.notEqual(ep.describe('第1集上').key,ep.describe('第1集').key);assert.equal(ep.describe('第1集（下）').part,'下');const a=line(['第1集','第1集']),f={type:'电视剧',lines:[a]};assert.equal(ep.indexFor(f,a,{episode:1}),-1);assert.equal(ep.describe('20260101').kind,'label');});
+test('catalog expansion retains the selected canonical episode and legacy numbered gaps',()=>{const f={type:'电视剧',lines:[line(['第1集','第3集'])]},state={episode:3};ep.sync(f,state);f.lines.push(line(['第1集','第2集','第3集','第4集']));ep.sync(f,state);assert.equal(state.episode,3);assert.equal(f.episodes,4);assert.equal(ep.selection(f,state).key,'s1:e3');});
+test('unknown names map only by unique exact normalized labels and cuts remain explicit',()=>{const a=line(['开端','转折']),b=line(['转折','开端']),f={type:'电视剧',lines:[a,b]};assert.equal(ep.indexFor(f,b,{episode:1}),1);assert.equal(ep.cut({label:'导演剪辑版'}),'导演剪辑');assert.equal(ep.cut({label:'高清'}),'标准版');});

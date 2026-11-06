@@ -307,7 +307,7 @@
         Object.assign(f,FilmMetadata.merge(result.item,f));
         f.director=data.text(result.item.vod_director)||f.director;f.cast=data.text(result.item.vod_actor)||f.cast;
       }
-      f.episodes=Math.max(...f.lines.map(line=>line.episodes.length));f.length=data.text(result.item.vod_remarks);
+      f.episodes=Math.max(...f.lines.map(line=>line.episodes.length));window.OpenStreamEpisodes?.sync(f);f.length=data.text(result.item.vod_remarks);
       globalThis.OpenStreamLibrary?.availability.record(f.id,'sources');persist();return f;
     })();
     detailTasks.set(f.id,{task,signal});
@@ -424,7 +424,8 @@
   function probeLines(f,signal){
     if(navigator.connection?.saveData)return;
     for(const line of f.lines.slice(0,10)){
-      const episode=line.episodes[['电影','纪录片'].includes(f.type)?0:episodeFor(f).episode-1];
+      const index=window.OpenStreamEpisodes?OpenStreamEpisodes.indexFor(f,line,episodeFor(f)):['电影','纪录片'].includes(f.type)?0:episodeFor(f).episode-1;
+      const episode=line.episodes[index];
       if(!episode)continue;
       const key=line.key+'|'+episode.url;
       const cached=lineProbeCache.get(key);
@@ -436,7 +437,7 @@
         const controller=new AbortController();
         const combined=AbortSignal.any([signal,controller.signal,AbortSignal.timeout(3500)]);
         try{
-          const url=await data.resolveEpisode(line,['电影','纪录片'].includes(f.type)?0:episodeFor(f).episode-1,combined);
+          const url=await data.resolveEpisode(line,index,combined);
           const started=performance.now();
           // Headers-only sample: never download another movie alongside playback.
           const response=await fetch(url,{method:'GET',signal:combined,credentials:'omit',cache:'no-store'});
@@ -458,7 +459,7 @@
     return f.lines.map((line,i)=>({line,i})).sort((a,b)=>(rank[a.line.health]??2)-(rank[b.line.health]??2));
   }
   function routeButtons(f) {
-    return `<details class="watch-routes" aria-label="播放线路"><summary class="routes-heading"><span>播放线路 <small>${f.lines.length} 条</small></span><span class="route-current" title="${esc(f.lines[f.lineIndex||0]?.name||'')}">当前 ${esc(f.lines[f.lineIndex||0]?.name||'暂无片源')}</span><span class="route-switch">切换源</span></summary><div class="watch-source-list" aria-label="选择播放线路">${rankedLines(f).map(({line,i})=>`<button class="source-button ${i===(f.lineIndex||0)?'active':''}" data-live-line="${i}" aria-pressed="${i===(f.lineIndex||0)}"><span class="source-dot" data-health="${line.health||'unknown'}" title="${line.estimated?'连接响应预估：':''}${({fast:'流畅',fair:'一般',slow:'缓慢',unknown:'尚未检测'})[line.health||'unknown']}"></span><span>${esc(line.name)}</span></button>`).join('')}</div><p id="route-status" role="status"></p></details>`;
+    return `<details class="watch-routes" aria-label="播放线路"><summary class="routes-heading"><span>播放线路 <small>${f.lines.length} 条</small></span><span class="route-current" title="${esc(f.lines[f.lineIndex||0]?.name||'')}">当前 ${esc(f.lines[f.lineIndex||0]?.name||'暂无片源')}</span><span class="route-switch">切换源</span></summary><div class="watch-source-list" aria-label="选择播放线路">${rankedLines(f).map(({line,i})=>`<button class="source-button ${i===(f.lineIndex||0)?'active':''}" data-live-line="${i}" aria-pressed="${i===(f.lineIndex||0)}" ${typeof window!=='undefined'&&window.OpenStreamEpisodes&&OpenStreamEpisodes.indexFor(f,line,episodeFor(f))<0?'disabled title="这条线路没有当前集"':''}><span class="source-dot" data-health="${line.health||'unknown'}" title="${line.estimated?'连接响应预估：':''}${({fast:'流畅',fair:'一般',slow:'缓慢',unknown:'尚未检测'})[line.health||'unknown']}"></span><span>${esc(line.name)}</span></button>`).join('')}</div><p id="route-status" role="status"></p></details>`;
   }
   async function addOtherLines(f,signal,token) {
     probeLines(f,signal);
@@ -485,18 +486,22 @@
       while(index<candidates.length&&!signal.aborted){
         const candidate=candidates[index++];
         try{const result=await data.detail(candidate,signal);for(const line of result.lines)if(!f.lines.some(old=>old.key===line.key))f.lines.push(line);
-          if(token===generation&&!signal.aborted){if(location.hash.startsWith('#player/'))document.querySelector('.watch-routes')?.replaceWith(document.createRange().createContextualFragment(routeButtons(f)));probeLines(f,signal);}
+          if(token===generation&&!signal.aborted){window.OpenStreamEpisodes?.sync(f,episodeFor(f),activePlayback?.filmId===f.id?activePlayback.episodeKey:null);if(activePlayback?.filmId===f.id)activePlayback.episode=episodeFor(f).episode;if(location.hash.startsWith('#player/'))document.querySelector('.watch-routes')?.replaceWith(document.createRange().createContextualFragment(routeButtons(f)));probeLines(f,signal);}
         }catch{} }
     }));
   }
   let lineTransfer=null;
   async function playback(f,signal) {
-    const line=f.lines[f.lineIndex||0];const ep=['电影','纪录片'].includes(f.type)?0:episodeFor(f).episode-1;
-    const episode=line?.episodes[ep];
-    if(!episode)return null;
-    const addressStarted=performance.now();const url=await data.resolveEpisode(line,ep,signal);
-    const value={filmId:f.id,lineKey:line.key,url,addressMs:performance.now()-addressStarted,episode:ep+1,source:line.sourceKey,label:episode.name,resume:historyMetadata[f.id]?.episode===ep+1&&!watchedComplete(historyMetadata[f.id])?historyMetadata[f.id]?.position:0,resumeRatio:lineTransfer?.filmId===f.id&&lineTransfer.episode===ep+1?lineTransfer.ratio:null,switched:lineTransfer?.filmId===f.id,autoplay:continuePlayback};
-    continuePlayback=false;lineTransfer=null;return value;
+    const line=f.lines[f.lineIndex||0],state=episodeFor(f),ordinal=['电影','纪录片'].includes(f.type)?1:state.episode;
+    const index=window.OpenStreamEpisodes?OpenStreamEpisodes.indexFor(f,line,state):ordinal-1;
+    const episode=line?.episodes[index];if(!episode)return null;
+    const transfer=lineTransfer?.filmId===f.id&&lineTransfer.episode===ordinal?lineTransfer:null;
+    const autoplay=continuePlayback,key=window.OpenStreamEpisodes?.selection(f,state)?.key;
+    const addressStarted=performance.now(),url=await data.resolveEpisode(line,index,signal);
+    if(signal.aborted)throw signal.reason;
+    const saved=historyMetadata[f.id],same=saved?.episodeKey?key===saved.episodeKey:saved?.episode===ordinal;
+    const value={filmId:f.id,lineKey:line.key,url,addressMs:performance.now()-addressStarted,episode:ordinal,episodeKey:key,source:line.sourceKey,label:episode.name,cut:window.OpenStreamEpisodes?.cut(line)||'标准版',resume:transfer?.position??(same&&!watchedComplete(saved)?saved?.position:0),resumeDuration:transfer?.duration||saved?.duration||0,resumeRatio:transfer?.ratio??null,switched:!!transfer,autoplay};
+    continuePlayback=false;if(lineTransfer===transfer)lineTransfer=null;return value;
   }
   render = async function () {
     const token=++generation;request?.abort();homeFilterController?.abort();request=new AbortController();const {signal}=request;
@@ -522,10 +527,12 @@
         if(!retainedPlayer)$('#main').innerHTML=status('正在获取播放线路…',false);
         await resolveFilm(film,signal);if(token!==generation)return;
         const sourceMs=performance.now()-resolveStarted;
-        if(!episodeState[film.id]&&historyMetadata[film.id])episodeState[film.id]={season:1,episode:Math.max(1,Math.min(film.episodes,historyMetadata[film.id].episode||1))};
+        const restoredEpisode=!episodeState[film.id]&&historyMetadata[film.id];
+        if(restoredEpisode)episodeState[film.id]={season:restoredEpisode.season||1,episode:Math.max(1,Math.min(film.episodes,restoredEpisode.episode||1))};
+        window.OpenStreamEpisodes?.sync(film,episodeFor(film),restoredEpisode?.episodeKey);
         if(page==='detail'){activePlayback=null;$('#main').innerHTML=detail(film);}
         else{
-          if(!film.manualLine&&!activePlayback){film.lineIndex=rankedLines(film).find(({line})=>line.episodes[['电影','纪录片'].includes(film.type)?0:episodeFor(film).episode-1])?.i||0;}
+          if(!film.manualLine&&!activePlayback){film.lineIndex=rankedLines(film).find(({line})=>window.OpenStreamEpisodes?OpenStreamEpisodes.indexFor(film,line,episodeFor(film))>=0:line.episodes[['电影','纪录片'].includes(film.type)?0:episodeFor(film).episode-1])?.i||0;}
           const nextPlayback=await playback(film,signal);if(token!==generation)return;activePlayback=nextPlayback;if(activePlayback)Object.assign(activePlayback,{resolveMs:performance.now()-resolveStarted,sourceMs,accessMs});
           if(retainedPlayer?.isConnected){
             const fragment=document.createRange().createContextualFragment(player(film));
@@ -570,10 +577,11 @@
     const line=event.target.closest('[data-live-line]');if(line){
       const f=films.find(f=>f.id===location.hash.split('/')[1]);
       if((f.lineIndex||0)===Number(line.dataset.liveLine))return;
+      if(window.OpenStreamEpisodes&&OpenStreamEpisodes.indexFor(f,f.lines[Number(line.dataset.liveLine)],episodeFor(f))<0){toast('这条线路没有当前集，请选择其他线路');return;}
       const video=document.querySelector('#watch-player video');
       if(video){LivePlayback.progress(video.currentTime,video.duration,f.id);rememberLinePosition(f,video);continuePlayback=!video.paused;}
       document.querySelectorAll('[data-live-line]').forEach(button=>button.disabled=true);line.setAttribute('aria-busy','true');
-      f.manualLine=true;f.lineIndex=Number(line.dataset.liveLine);f.episodes=f.lines[f.lineIndex].episodes.length;render();return;
+      failedPlaybackLines.delete(f.id+':'+episodeFor(f).episode);f.manualLine=true;f.lineIndex=Number(line.dataset.liveLine);render();return;
     }
     if(event.target.closest('[data-action="favorite"],[data-action="undo-favorite"]'))queueMicrotask(persist);
   });
@@ -589,7 +597,7 @@
   window.addEventListener('session-expired',()=>{authenticated=false;});
   function rememberLinePosition(f,video){
     const r=historyMetadata[f.id];const duration=Number(video?.duration)||r?.duration,position=Number(video?.currentTime)||r?.position||0;
-    lineTransfer={filmId:f.id,episode:activePlayback?.episode||1,ratio:duration>0?Math.min(.999,Math.max(0,position/duration)):null};
+    lineTransfer={filmId:f.id,episode:activePlayback?.episode||1,position,duration,ratio:duration>0?Math.min(.999,Math.max(0,position/duration)):null};
   }
   const failedPlaybackLines=new Map();
   const overlayNotifiedPlayback=new WeakSet();
@@ -604,7 +612,7 @@
     progress(position,duration,filmId){
       if(!activePlayback||activePlayback.filmId!==filmId||!Number.isFinite(duration)||duration<=0)return;
       const id=activePlayback.filmId;history=[id,...history.filter(value=>value!==id)].slice(0,200);
-      historyMetadata[id]={watchedAt:new Date().toISOString(),position:Math.floor(position),duration:Math.floor(duration),season:1,episode:activePlayback.episode,source:activePlayback.source,totalEpisodes:films.find(f=>f.id===id)?.episodes||1,completed:position/duration>=.99};
+      historyMetadata[id]={watchedAt:new Date().toISOString(),position:Math.floor(position),duration:Math.floor(duration),season:episodeFor(films.find(f=>f.id===id)).season||1,episode:activePlayback.episode,episodeKey:activePlayback.episodeKey,source:activePlayback.source,totalEpisodes:films.find(f=>f.id===id)?.episodes||1,completed:position/duration>=.99};
       save('history',history);save('historyMetadataV2',historyMetadata);persist();
     },
     failed(media){
@@ -614,7 +622,7 @@
       const failed=failedPlaybackLines.get(key)||new Set();
       if(failed.has(media.lineKey))return;
       failed.add(media.lineKey);failedPlaybackLines.set(key,failed);
-      const next=rankedLines(f).find(({line})=>!failed.has(line.key)&&line.episodes?.[media.episode-1]);
+      const next=rankedLines(f).find(({line})=>!failed.has(line.key)&&(window.OpenStreamEpisodes?OpenStreamEpisodes.indexFor(f,line,media.episodeKey||episodeFor(f))>=0:line.episodes?.[media.episode-1]));
       if(!next){toast('播放暂时失败，请稍后重试或选择其他来源');return;}
       const video=document.querySelector('#watch-player video');
       if(video)LivePlayback.progress(video.currentTime,video.duration,f.id);

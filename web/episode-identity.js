@@ -1,0 +1,49 @@
+(() => {
+ const catalogs=new WeakMap();
+ const digits={'零':0,'〇':0,'一':1,'二':2,'两':2,'三':3,'四':4,'五':5,'六':6,'七':7,'八':8,'九':9};
+ const clean=value=>String(value||'').normalize('NFKC').replace(/<[^>]*>/g,'').replace(/\s+/g,' ').trim();
+ function number(value){
+  if(/^\d{1,4}$/.test(value))return Number(value);
+  if(!/^[零〇一二两三四五六七八九十百千]+$/.test(value))return NaN;
+  let sum=0,current=0;for(const char of value){if(char in digits)current=digits[char];else{const unit={十:10,百:100,千:1000}[char];sum+=(current||1)*unit;current=0;}}return sum+current;
+ }
+ function describe(value,{series=true,season=1}={}){
+  const label=clean(value),normal=label.toLowerCase().replace(/[\s._\-【】\[\]（）()]/g,'');
+  if(!series)return{key:'feature',label:label||'正片',season:1,number:1,kind:'feature'};
+  if(/预告|花絮|特辑|特别篇|番外|彩蛋|trailer|preview|special|^sp\d*/i.test(normal))return{key:'special:'+normal,label:label||'特别篇',season,number:null,kind:'special'};
+  const seasonMatch=normal.match(/第([零〇一二两三四五六七八九十百千\d]+)季/)||normal.match(/^s(\d{1,2})e/i);
+  const s=seasonMatch?number(seasonMatch[1]):season;
+  const match=normal.match(/s\d{1,2}e(\d{1,4})/i)||normal.match(/第([零〇一二两三四五六七八九十百千\d]+)[集话期]/)||normal.match(/^(?:ep?|episode)?(\d{1,4})(?:集|话|期)?(?:[上下中](?:集|部)?|完|end)?$/i);
+  const n=match?number(match[1]):NaN;
+  if(Number.isInteger(n)&&n>0&&n<=1000&&Number.isInteger(s)&&s>0&&s<=100){
+   const part=/[（(]上[）)]|(?:集|话|期|\d)上(?:集|部)?$/.test(label)?'上':/[（(]下[）)]|(?:集|话|期|\d)下(?:集|部)?$/.test(label)?'下':/[（(]中[）)]|(?:集|话|期|\d)中(?:集|部)?$/.test(label)?'中':'';
+   return{key:'s'+s+':e'+n+(part?':'+part:''),label:label||'第 '+n+' 集',season:s,number:n,part,kind:'episode'};
+  }
+  return{key:'label:'+normal,label:label||'未标注集名',season:s,number:null,kind:'label'};
+ }
+ const serial=f=>!['电影','纪录片'].includes(f.type);
+ function catalog(f){
+  const entries=new Map();
+  for(const line of f.lines||[])for(const episode of line.episodes||[]){const item=describe(episode.name,{series:serial(f)});if(item.key!=='label:'&&!entries.has(item.key))entries.set(item.key,item);}
+  if(!serial(f))return[{key:'feature',label:'正片',season:1,number:1,kind:'feature'}];
+  const known=[...entries.values()].filter(item=>item.kind==='episode');
+  const wholeSeasons=new Set(known.filter(item=>!item.part).map(item=>item.season));
+  // Fill numbered gaps so legacy "episode 2" never becomes another source's episode 3.
+  for(const season of wholeSeasons){const max=Math.max(...known.filter(item=>item.season===season).map(item=>item.number));for(let n=1;n<=max;n++){const key='s'+season+':e'+n;if(!entries.has(key)&&!known.some(item=>item.season===season&&item.number===n))entries.set(key,{key,label:'第 '+n+' 集',season,number:n,part:'',kind:'episode'});}}
+  const list=[...entries.values()].sort((a,b)=>a.kind==='episode'&&b.kind==='episode'?a.season-b.season||a.number-b.number||({上:0,中:1,下:2}[a.part]??-1)-({上:0,中:1,下:2}[b.part]??-1):a.kind==='episode'?-1:b.kind==='episode'?1:0);
+  return list.length?list:Array.from({length:Math.min(1000,Math.max(1,Number(f.episodes)||1))},(_,i)=>({key:'unresolved:'+i,label:'第 '+(i+1)+' 集',season:1,number:i+1,kind:'unresolved'}));
+ }
+ function sync(f,state,key){
+  const previous=catalogs.get(f),keep=key||previous?.[Math.max(0,(state?.episode||1)-1)]?.key,list=catalog(f);catalogs.set(f,list);f.episodes=list.length;
+  if(state){const index=list.findIndex(item=>item.key===keep);if(index>=0)state.episode=index+1;else state.episode=Math.min(list.length,Math.max(1,state.episode||1));state.season=list[state.episode-1]?.season||1;}
+  return list;
+ }
+ function selection(f,state){return catalog(f)[Math.max(0,(state?.episode||1)-1)]||null;}
+ function indexFor(f,line,state){
+  const key=typeof state==='string'?state:selection(f,state)?.key;if(!key)return -1;
+  const matches=(line?.episodes||[]).map((episode,index)=>({index,item:describe(episode.name,{series:serial(f)})})).filter(({item})=>item.key===key);
+  return matches.length===1?matches[0].index:-1;
+ }
+ function cut(line){const label=clean([line?.name,line?.label,line?.version].filter(Boolean).join(' '));return label.match(/导演剪辑|加长|未删减|删减|精简|剧场版|电视版|修复版/)?.[0]||'标准版';}
+ window.OpenStreamEpisodes={describe,catalog,sync,selection,indexFor,cut};
+})();
