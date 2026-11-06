@@ -470,3 +470,12 @@ html.video-web-fullscreen{overflow:hidden}
 .detail-section .episodes{--episode-width:44px;--episode-height:32px;display:grid;grid-template-columns:repeat(auto-fill,var(--episode-width));grid-auto-rows:var(--episode-height);gap:6px;margin-top:12px}
 .detail-section .episode{min-width:0;width:100%;height:100%;padding:0 3px;border-radius:5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-variant-numeric:tabular-nums}
 @media(pointer:coarse){.detail-section .episodes{--episode-height:44px}}
+
+/* The source note can grow; anchor the bookmark to the title row, not the card bottom. */
+#live-results > .poster-card:not([hidden]){display:grid;grid-template-columns:minmax(0,1fr) auto;grid-template-rows:repeat(4,auto);align-content:start}
+#live-results .poster-card > a{grid-area:1/1/5/3;display:grid;grid-template-columns:subgrid;grid-template-rows:subgrid;min-width:0}
+#live-results .poster-art{grid-area:1/1/2/3}
+#live-results .poster-card h3{grid-area:2/1;align-self:center;margin:4px 4px 0 0;padding:0}
+#live-results .quick-favorite{grid-area:2/2;position:static;align-self:center;justify-self:end;margin-top:4px}
+#live-results .poster-meta{grid-area:3/1/4/3}
+#live-results .search-version-note{grid-area:4/1/5/3}
