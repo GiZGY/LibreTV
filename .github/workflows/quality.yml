@@ -23,7 +23,8 @@ concurrency:
 jobs:
   quality:
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    # The serial cross-engine suite includes real 10s media windows; allow for the whole build/test job.
+    timeout-minutes: 40
     steps:
       - name: Check out repository
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2

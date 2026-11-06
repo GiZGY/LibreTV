@@ -10,7 +10,18 @@ export function mediaState(video){
 // of playback; paused loading waits for an error-free decoded current frame only.
 export async function expectMediaFrame(page,{timeout=15000}={}){
  const video=page.locator('video');await expect(video).toHaveCount(1);
- await expect.poll(async()=>video.evaluate(v=>Number.isFinite(v.duration)&&v.duration>0&&v.readyState>=v.HAVE_CURRENT_DATA&&v.videoWidth>0&&v.videoHeight>0&&!v.seeking&&!v.error),{timeout,message:'Media must expose a decoded frame and finish seeking'}).toBe(true);
+ let last;
+ try{
+  await expect.poll(async()=>{
+   last=await video.evaluate(v=>({
+    ready:Number.isFinite(v.duration)&&v.duration>0&&v.readyState>=v.HAVE_CURRENT_DATA&&v.videoWidth>0&&v.videoHeight>0&&!v.seeking&&!v.error,
+    state:{ready:v.readyState,network:v.networkState,duration:Number.isFinite(v.duration)?v.duration:null,time:v.currentTime,paused:v.paused,seeking:v.seeking,error:v.error?.code||null,width:v.videoWidth,height:v.videoHeight,frames:v.getVideoPlaybackQuality?.().totalVideoFrames??v.webkitDecodedFrameCount??null,connected:v.isConnected}
+   }));return last.ready;
+  },{timeout,message:'Media must expose a decoded frame and finish seeking'}).toBe(true);
+ }catch(error){
+  // Keep signed sources and browser credentials out of retained failure evidence.
+  throw new Error(error.message+'\nLast media state: '+JSON.stringify(last?.state||{videoElements:await video.count()}),{cause:error});
+ }
  return video;
 }
 
