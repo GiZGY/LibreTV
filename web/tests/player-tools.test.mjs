@@ -43,10 +43,20 @@ test('custom sleep accepts whole minutes only and rejects invalid input without 
  for(const value of ['', ' ', 0, 241, '7.5', 1.5, Infinity, '1e2', null, true]){assert.equal(sleep.setMinutes(value),false);assert.equal(sleep.snapshot().deadline,421000);}
  assert.equal(schedules,1);now=2000;assert.equal(sleep.setMinutes(240),true);assert.equal(sleep.snapshot().deadline,14402000);sleep.dispose();
 });
-test('aspect selection reflects exact native formats without forcing wide or unknown video dimensions',()=>{
- assert.equal(tools.aspectFor({videoWidth:1920,videoHeight:1080},'default'),'16:9');assert.equal(tools.aspectFor({videoWidth:1440,videoHeight:1080},'default'),'4:3');
- assert.equal(tools.aspectFor({videoWidth:2560,videoHeight:1080},'default'),null);assert.equal(tools.aspectFor({videoWidth:0,videoHeight:0},'default'),null);
- assert.equal(tools.aspectFor({videoWidth:2560,videoHeight:1080},'4:3'),'4:3');assert.equal(tools.aspectFor({videoWidth:2560,videoHeight:1080},'21:9'),null);
+test('aspect selection has a natural default and only accepts explicit supported ratios',()=>{
+ for(const dimensions of [{videoWidth:1920,videoHeight:1080},{videoWidth:1440,videoHeight:1080},{videoWidth:2560,videoHeight:1080},{videoWidth:0,videoHeight:0}]){
+  assert.equal(tools.aspectFor(dimensions,'default'),'default');assert.equal(tools.aspectFor(dimensions,'21:9'),'default');assert.equal(tools.aspectFor(dimensions,'4:3'),'4:3');assert.equal(tools.aspectFor(dimensions,'16:9'),'16:9');
+ }
+});
+test('settings chevron uses the actual current parent options and cannot navigate above root',()=>{
+ const root=[],parent={$item:{id:'subtitle'}},children=[{$parents:root,$parent:parent}],renders=[],setting={active:children,render(options){renders.push(options);this.active=options;}};
+ assert.equal(tools.backSetting(setting),parent);assert.equal(setting.active,root);assert.deepEqual(renders,[root]);assert.equal(tools.backSetting(setting),null);assert.equal(renders.length,1);
+});
+test('editable subtitle values validate whole font sizes and signed half-second offsets without coercion',()=>{
+ for(const n of [16,25,40])assert.equal(tools.subtitleValue('size',String(n)),n);
+ for(const value of ['',0,15,41,24.5,null,true,'2e1'])assert.equal(tools.subtitleValue('size',value),null);
+ for(const [value,n] of [['+2.5',2.5],['−2.5',-2.5],['-.5',-.5],['0',0],[-120,-120],[120,120]])assert.equal(tools.subtitleValue('offset',value),n);
+ for(const value of ['', '-', '+', '1e1', 'NaN', true, null, -120.5, 120.5, .25, Infinity])assert.equal(tools.subtitleValue('offset',value),null);
 });
 
 test('recovery-induced pause cannot disable its deadline, but an explicit pause cancels recovery',()=>{const a=watch();a.watch.arm();a.video.currentTime=1;a.advance(1000);a.advance(12000);a.video.paused=true;a.advance(15000);assert.deepEqual(a.counts(),[1,1]);const b=watch();b.watch.arm();b.advance(25000);b.video.paused=true;b.watch.suspend();b.advance(99999);assert.deepEqual(b.counts(),[1,0]);});

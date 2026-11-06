@@ -86,8 +86,8 @@
 #watch-player .player-bottom-trigger:focus-visible{outline:2px solid var(--player-focus);outline-offset:-2px}
 #watch-player .art-settings{max-height:min(300px,calc(100% - var(--art-control-height) - 8px));width:min(280px,calc(100% - 16px))!important;left:auto!important;right:8px!important;color:var(--player-ink);font-size:13px}
 #watch-player .art-settings .art-setting-item{min-height:35px;height:35px!important;flex-shrink:0}
-#watch-player .art-settings :is(.player-skip-setting,.player-aspect-setting,.player-sleep-setting){gap:8px;cursor:default}
-#watch-player .art-settings :is(.player-skip-setting,.player-aspect-setting,.player-sleep-setting)>.art-setting-item-right{display:none}
+#watch-player .art-settings :is(.player-skip-setting,.player-aspect-setting,.player-sleep-setting,.player-subtitle-setting){gap:8px;cursor:default}
+#watch-player .art-settings :is(.player-skip-setting,.player-aspect-setting,.player-sleep-setting,.player-subtitle-setting)>.art-setting-item-right{display:none}
 #watch-player .player-setting-controls{display:flex;align-items:center;justify-content:flex-end;gap:5px;min-width:0}
 #watch-player .player-setting-controls button{flex:none;min-width:38px;min-height:26px;padding:3px 6px;border:1px solid transparent;border-radius:4px;background:transparent;color:inherit;font:inherit;line-height:1.2;cursor:pointer}
 #watch-player .player-setting-controls button:hover{background:#ffffff16}
@@ -103,7 +103,15 @@
 #watch-player .player-setting-controls input::-webkit-inner-spin-button,#watch-player .player-setting-controls input::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
 #watch-player .player-setting-controls input[aria-invalid=true]{border-color:#ff9696;outline:1px solid #ff9696}
 #watch-player .art-settings :is([tabindex="0"],button,input):focus-visible{outline:2px solid var(--player-focus);outline-offset:-2px}
-#watch-player .art-settings .player-settings-back-arrow{display:inline-grid;place-items:center;min-width:28px;color:var(--player-ink);font-size:24px;font-weight:600;line-height:1}
+#watch-player .art-settings .art-setting-item-back{position:sticky;top:0;z-index:2;padding:0;background:var(--player-surface)}
+#watch-player .player-settings-back{display:flex;align-items:center;gap:5px;width:100%;height:100%;min-height:35px;padding:0 8px;border:0;border-radius:0;background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer}
+#watch-player .player-settings-chevron{flex:none;width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+#watch-player .player-subtitle-setting .player-setting-controls{gap:3px}
+#watch-player .player-subtitle-setting button{min-width:26px;padding-inline:3px}
+#watch-player .player-subtitle-setting button:disabled{opacity:.35;cursor:default}
+#watch-player .player-setting-controls input[data-subtitle-offset]{box-sizing:border-box;width:62px;min-height:26px;padding:3px;border:1px solid #ffffff30;border-radius:4px;background:#ffffff08;color:inherit;font:inherit;font-variant-numeric:tabular-nums;text-align:center}
+#watch-player .player-setting-controls [role=spinbutton][aria-invalid=true]{border-color:#ff9696;outline:1px solid #ff9696}
+@media(pointer:coarse){#watch-player .player-settings-back{min-height:44px}#watch-player .player-subtitle-setting button{min-width:44px;min-height:44px}#watch-player .player-setting-controls input[data-subtitle-offset]{width:70px;min-height:44px}}
 @media(pointer:coarse){#watch-player .art-settings .art-setting-item{min-height:44px;height:44px!important}#watch-player .player-setting-controls button{min-width:44px;min-height:44px}#watch-player .player-setting-controls :is(.player-setting-switch,.player-skip-mark){min-width:44px}#watch-player .player-setting-controls input[type=number]{width:56px;min-height:44px}}
 
 #watch-player{container:watch-surface / inline-size}
