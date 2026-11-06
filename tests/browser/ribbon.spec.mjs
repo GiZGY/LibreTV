@@ -145,3 +145,53 @@ test('real touch swipes cross the boundary in both directions without opening a 
   expect(new URL(page.url()).hash).toBe('#home');const fit=await coverage(page);expect(fit.largestGap).toBeLessThanOrEqual(fit.gap+1);
  }finally{await context.close();}
 });
+
+test('one, two and eight titles keep the old eight-title per-card pace',async({browser,baseURL})=>{
+ const viewport={width:1365,height:900};
+ const measure=page=>page.locator('.film-ribbon').evaluate(async ribbon=>{
+  const card=ribbon.querySelector('.poster-card'),group=card.parentElement;
+  const cardWidth=card.getBoundingClientRect().width,gap=parseFloat(getComputedStyle(group).columnGap);
+  await new Promise(requestAnimationFrame);
+  const start={x:card.getBoundingClientRect().left,wall:performance.now()};let end=start;
+  while(end.wall-start.wall<2100){await new Promise(requestAnimationFrame);end={x:card.getBoundingClientRect().left,wall:performance.now()};}
+  const pixelsPerSecond=(start.x-end.x)/(end.wall-start.wall)*1000;
+  return {cardWidth,gap,pixelsPerSecond,msPerCard:(cardWidth+gap)/pixelsPerSecond*1000};
+ });
+ const baseline=await browser.newPage({baseURL,viewport});let old;
+ try{
+  await openRibbon(baseline,8);
+  // Old CSS moved a double track by 50% in 140s: 16 card pitches, or 8.75s per card.
+  await expect(baseline.locator('.film-ribbon-group').first().locator('.poster-card')).toHaveCount(16);
+  await baseline.addStyleTag({content:'.film-ribbon-track{display:flex;animation:legacy-ribbon-travel 140s linear infinite!important}.film-ribbon-group{animation:none!important}@keyframes legacy-ribbon-travel{to{transform:translateX(-50%)}}'});
+  const duration=await baseline.locator('.film-ribbon-track').evaluate(track=>track.getAnimations()[0].effect.getTiming().duration);
+  expect(duration).toBe(140000);old=await measure(baseline);
+ }finally{await baseline.close();}
+ const measured=[];
+ for(const count of [1,2,8]){
+  const page=await browser.newPage({baseURL,viewport});
+  try{await openRibbon(page,count);measured.push({count,...await measure(page)});}finally{await page.close();}
+ }
+ console.info(JSON.stringify({legacyEight:old,current:measured}));
+ expect(Math.abs(old.msPerCard-8750)).toBeLessThan(150);
+ for(const result of measured){
+  expect(result.cardWidth).toBeCloseTo(old.cardWidth,3);expect(result.gap).toBe(old.gap);
+  expect(Math.abs(result.msPerCard-8750),`${result.count} titles must keep the eight-title pace`).toBeLessThan(150);
+  expect(Math.abs(result.pixelsPerSecond-old.pixelsPerSecond)).toBeLessThan(.5);
+ }
+});
+
+test('pressing a ribbon gap pauses before a drag can capture a stale phase',async({page})=>{
+ await openRibbon(page);await phase(page,(await period(page))-.001,true);
+ const ribbon=page.locator('.film-ribbon'),anchor=ribbon.locator('.poster-card').first(),box=await anchor.boundingBox();
+ const gap=await anchor.evaluate(card=>parseFloat(getComputedStyle(card.parentElement).columnGap));
+ const point={x:box.x+box.width+gap/2,y:box.y+100};await page.mouse.move(point.x,point.y);
+ expect(await page.evaluate(({x,y})=>Boolean(document.elementFromPoint(x,y)?.closest('.poster-art')),point)).toBe(false);
+ await page.mouse.down();await expect(ribbon).toHaveClass(/is-held/);
+ await expect.poll(()=>ribbon.evaluate(r=>r.firstElementChild.getAnimations({subtree:true}).filter(a=>a.animationName==='ribbon-travel').every(a=>a.playState==='paused'))).toBe(true);
+ const start=(await anchor.boundingBox()).x;
+ const held=await anchor.evaluate(async card=>{for(let i=0;i<10;i++)await new Promise(requestAnimationFrame);return card.getBoundingClientRect().left;});
+ expect(Math.abs(held-start)).toBeLessThan(.1);
+ await page.mouse.move(point.x-60,point.y,{steps:3});expect((await anchor.boundingBox()).x-start).toBeCloseTo(-60,0);
+ const released=(await anchor.boundingBox()).x;await page.mouse.up();await page.mouse.move(5,5);
+ await expect(ribbon).not.toHaveClass(/is-held|is-dragging/);await expect.poll(async()=>(await anchor.boundingBox()).x).toBeLessThan(released-2);
+});

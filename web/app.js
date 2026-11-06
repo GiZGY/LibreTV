@@ -108,8 +108,8 @@ function setupHeroRibbon(){
     }
    }
   }
-  // Extra coverage must not accelerate a short list or expose a group while it recycles.
-  const period=70000*copies;
+  // The old eight-title rail took 8.75s per card; extra copies only extend its cycle.
+  const period=8750*originals.length*copies;
   ribbon.style.setProperty('--ribbon-period',`${period}ms`);
   const width=groups[0].getBoundingClientRect().width;
   if(previous&&animations.length){
@@ -340,14 +340,18 @@ document.addEventListener('pointerdown',event=>{
  const ribbon=event.target.closest(draggableShelfSelector);
  if(ribbonDrag||!ribbon||event.isPrimary===false||event.button!==0||(event.target.closest('button')&&!ribbon.matches('.watch-source-list')))return;
  const track=ribbon.querySelector('.film-ribbon-track');
+ if(track)ribbon.classList.add('is-held');
  const animations=ribbonAnimations(track),animation=animations[0];
  // Touch shelves without a running track keep native scrolling and momentum.
  if(event.pointerType!=='mouse'&&!animation)return;
  const duration=animation?.effect.getTiming().duration;
  const distance=track?.firstElementChild?track.firstElementChild.getBoundingClientRect().width*2:0;
+ const time=Number(animation?.currentTime)||0;
+ // Resolve the pending CSS pause before another compositor frame can advance.
+ if(animation)animations.forEach(animation=>{animation.currentTime=time;});
  if(event.pointerType==='mouse'&&!ribbon.matches('.watch-source-list'))event.preventDefault();
  suppressRibbonClick=false;
- ribbonDrag={ribbon,id:event.pointerId,x:event.clientX,y:event.clientY,scroll:ribbon.scrollLeft,animations,animation,duration,distance,time:Number(animation?.currentTime)||0,moved:false};
+ ribbonDrag={ribbon,id:event.pointerId,x:event.clientX,y:event.clientY,scroll:ribbon.scrollLeft,animations,animation,duration,distance,time,moved:false};
 });
 document.addEventListener('pointermove',event=>{
  if(!ribbonDrag||event.pointerId!==ribbonDrag.id)return;
