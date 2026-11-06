@@ -13,9 +13,9 @@ async function openPlayer(page,mode='mp4'){
  await expectMediaFrame(page);
  await expect(page.locator('video')).toHaveJSProperty('muted',true);
 }
-async function speed(page,{start=false}={}){
+async function speed(page,{start=false,pauseAfter=true}={}){
  if(start)await page.locator('video').evaluate(v=>v.play());
- const reading=await sampleRealPlayback(page);
+ const reading=await sampleRealPlayback(page,{pauseAfter});
  console.log(JSON.stringify({test:test.info().title,project:test.info().project.name,sampleSeconds:10,...reading}));
  await expect(page.locator('.fine-speed summary')).toHaveText('1.75×');
 }
@@ -24,14 +24,13 @@ test('full UI: manual, natural-ended, outro and line switch inherit real speed',
  await openPlayer(page);
  await page.getByRole('checkbox',{name:'自动连播',exact:true}).uncheck();
  await page.locator('.art-control-fullscreen').click();
- await page.locator('#watch-player .player-next-episode').click();await nextReady(page,2);await speed(page);
+ await page.locator('#watch-player .player-next-episode').click();await nextReady(page,2);await speed(page,{pauseAfter:false});
  expect(await page.evaluate(()=>document.fullscreenElement?.id)).toBe('watch-player');
  await page.locator('.art-control-fullscreen').click();await page.getByRole('checkbox',{name:'自动连播',exact:true}).check();
- await page.locator('video').evaluate(v=>{v.currentTime=v.duration-.4;return v.play();});await nextReady(page,3);await speed(page);
+ await page.locator('video').evaluate(v=>{v.currentTime=v.duration-.4;});await nextReady(page,3);await speed(page);
  await page.evaluate(()=>localStorage.setItem('openstream_live_skip_film-qa1',JSON.stringify({intro:2,outro:5})));
  await page.locator('.episodes .active').click();await expectPlaybackProgress(page,{episode:3});
- await page.locator('video').evaluate(v=>{v.currentTime=v.duration-4.8;});await nextReady(page,4);await speed(page);
- await page.locator('video').evaluate(v=>v.play());
+ await page.locator('video').evaluate(v=>{v.currentTime=v.duration-4.8;});await nextReady(page,4);await speed(page,{pauseAfter:false});
  await page.getByText('播放线路',{exact:false}).first().click();await page.locator('[data-live-line="1"]').click();await expect(page.locator('[data-live-line="1"]')).toHaveAttribute('aria-pressed','true');await expectPlaybackProgress(page,{episode:4,lineKey:'qa:2'});await speed(page);
 });
 test('media reload after position restoration keeps actual speed',async({page})=>{
