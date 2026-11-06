@@ -50,3 +50,13 @@ test('temporary keyboard acceleration and blur preserve the selected default',as
  await openPlayer(page);await page.keyboard.down('ArrowRight');await expect(page.locator('video')).toHaveJSProperty('playbackRate',2);await expect(page.locator('video')).toHaveJSProperty('defaultPlaybackRate',1.75);await expect(page.locator('.fine-speed summary')).toHaveText('2×');await page.keyboard.up('ArrowRight');await expect(page.locator('video')).toHaveJSProperty('playbackRate',1.75);
  expect(await page.evaluate(()=>localStorage.getItem('openstream_live_playbackRate'))).toBe('1.75');await page.locator('.art-control-fine-speed summary').click();await page.locator('.fine-speed').press('Escape');await expect(page.locator('.fine-speed')).not.toHaveAttribute('open','');
 });
+test('rapid next requests and detached media events cannot advance or overwrite the new episode',async({page})=>{
+ await openPlayer(page);await page.evaluate(()=>window.__oldVideo=document.querySelector('video'));
+ await page.locator('#watch-player .player-next-episode').dblclick();await nextReady(page,2);
+ await page.locator('video').evaluate(v=>v.pause());
+ await page.evaluate(()=>{const v=window.__oldVideo;for(const name of ['pause','timeupdate','ended','ratechange','error'])v.dispatchEvent(new Event(name));});
+ await expect(page.locator('.episodes .active')).toHaveText('2');
+ const record=await page.evaluate(()=>JSON.parse(localStorage.getItem('openstream_live_historyMetadataV2'))['film-qa1']);expect(record.episode).toBe(2);expect(record.position).toBeLessThan(10);
+ await expect(page.locator('video')).toHaveJSProperty('playbackRate',1.75);
+ await page.locator('#watch-player .player-next-episode').click();await nextReady(page,3);await page.locator('#watch-player .player-next-episode').click();await nextReady(page,4);
+});
