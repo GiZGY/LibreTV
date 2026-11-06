@@ -171,6 +171,8 @@
    // Position restoration is one-shot; speed must survive every media lifecycle/recovery.
    for(const event of ['video:loadstart','video:loadedmetadata','video:canplay','video:play','video:playing','video:ratechange'])instance.on(event,syncRate);
    panel.addEventListener('click',event=>{event.stopPropagation();instance.setting.show=false;const button=event.target.closest('[data-rate]');if(button)updateRate(button.dataset.rate);const step=event.target.closest('[data-step]');if(step)updateRate(Number(slider.value)+Number(step.dataset.step));});
+   // Safari may blur details before a non-focusable mouse button dispatches its click.
+   panel.addEventListener('mousedown',event=>{if(event.target.closest('[data-rate],[data-step]'))event.preventDefault();});
    function fitSpeedPanel(){
     const popup=panel.querySelector?.('.fine-speed-panel');if(!popup||typeof next==='undefined'||!panel.open)return;
     popup.style.maxHeight=Math.max(80,next.clientHeight-66)+'px';popup.style.maxWidth=Math.max(160,next.clientWidth-16)+'px';popup.style.overflowY='auto';popup.style.right='';
@@ -210,7 +212,15 @@
    });
    instance.on('destroy',()=>{playerElement.removeEventListener('click',enterNativeFullscreen,true);document.documentElement.classList.remove('video-web-fullscreen');});
    if(webFullscreen){instance.fullscreenWeb=true;document.documentElement.classList.add('video-web-fullscreen');}
-   panel.addEventListener('keydown',event=>{event.stopPropagation();if(event.key==='Escape'){panel.open=false;panel.querySelector('summary').focus();}});
+   panel.addEventListener('keydown',event=>{
+    event.stopPropagation();const summary=panel.querySelector('summary');
+    if(event.key==='Escape'){event.preventDefault();panel.open=false;summary.focus();return;}
+    if(event.key==='Tab'&&panel.open){
+     const controls=[summary,...panel.querySelectorAll('button:not(:disabled),input:not(:disabled)')],index=controls.indexOf(document.activeElement),target=index+(event.shiftKey?-1:1);
+     if(index>=0&&target>=0&&target<controls.length){event.preventDefault();controls[target].focus();}
+     else{summary.focus();panel.open=false;}
+    }
+   });
    panel.addEventListener('focusout',event=>{if(!panel.contains(event.relatedTarget))panel.open=false;});
    slider.addEventListener('input',()=>updateRate(slider.value));
    syncRate();

@@ -72,3 +72,13 @@ test('live episode refresh retains the fullscreen host and recovers a resolution
   fail=true;state.episode=3;await context.render();
   assert.equal(mainWrites,0);assert.equal(state.episode,2);assert.ok(events.includes('playback-error'));
 });
+
+test('rate pointer buttons preserve popup focus while keyboard boundaries and Escape remain explicit',()=>{
+ const handlers={},summary={focus(){context.document.activeElement=summary;}},minus={focus(){context.document.activeElement=minus;}},range={focus(){context.document.activeElement=range;}};
+ const panel={open:true,addEventListener:(name,fn)=>handlers[name]=fn,querySelector:()=>summary,querySelectorAll:()=>[minus,range],contains:target=>[summary,minus,range].includes(target)};
+ const context={panel,document:{activeElement:summary}};vm.createContext(context);
+ const mouse=source.indexOf("   panel.addEventListener('mousedown'");vm.runInContext(source.slice(mouse,source.indexOf('   function fitSpeedPanel(',mouse)),context);
+ let prevented=0;handlers.mousedown({target:{closest:()=>minus},preventDefault:()=>prevented++});assert.equal(prevented,1);
+ const keyboard=source.indexOf("   panel.addEventListener('keydown'");vm.runInContext(source.slice(keyboard,source.indexOf("   slider.addEventListener('input'",keyboard)),context);
+ const key=(key,shiftKey=false)=>({key,shiftKey,stopPropagation(){},preventDefault:()=>prevented++});handlers.keydown(key('Tab'));assert.equal(context.document.activeElement,minus);assert.equal(panel.open,true);handlers.keydown(key('Tab',true));assert.equal(context.document.activeElement,summary);handlers.keydown(key('Tab',true));assert.equal(panel.open,false);panel.open=true;handlers.focusout({relatedTarget:range});assert.equal(panel.open,true);handlers.focusout({relatedTarget:{}});assert.equal(panel.open,false);panel.open=true;handlers.keydown(key('Escape'));assert.equal(context.document.activeElement,summary);assert.equal(panel.open,false);
+});
