@@ -66,3 +66,4 @@
  #watch-player .art-controls .art-control-time{position:absolute;bottom:calc(var(--art-control-height) + 8px);left:0;min-height:0;height:auto;line-height:1.4;text-shadow:0 1px 3px #000;pointer-events:none}
  #watch-player .fine-speed summary,#watch-player .player-next-episode{min-width:0;width:100%}
 }
+@container watch-surface (max-width:540px){#watch-player .art-settings .art-setting-item{min-height:44px}}
