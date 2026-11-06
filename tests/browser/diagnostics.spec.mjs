@@ -9,6 +9,7 @@ for(const width of [390,820,1440])test(`diagnostics are explicit, redacted and u
  const value=await page.evaluate(()=>JSON.parse(window.__copiedDiagnostic));expect(value.schema).toBe(1);await expect(page.locator('#settings [data-diagnostics-status]')).toHaveText('诊断信息已复制');expect(value.current).toBeNull();
  expect(JSON.stringify(value)).not.toMatch(/cookie|token|https?:|filmId|password/i);
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+ const theme=await page.evaluate(()=>({selected:document.documentElement.dataset.theme,scheme:getComputedStyle(document.documentElement).colorScheme,bg:getComputedStyle(document.querySelector('#settings')).backgroundColor}));expect(theme.scheme).toBe(theme.selected);expect(theme.bg).not.toBe('rgb(18, 18, 18)');
  await page.screenshot({path:test.info().outputPath('settings.png')});
  await page.keyboard.press('Escape');await expect(page.locator('#settings')).not.toBeVisible();
 });
