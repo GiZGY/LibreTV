@@ -235,9 +235,19 @@
     if(!snapshot||snapshot.generation<hour-1){snapshot={generation:hour,id:'shared'};discoveryGenerations.set(key,snapshot);}
     while(discoveryGenerations.size>40)discoveryGenerations.delete(discoveryGenerations.keys().next().value);
     const params={type,genre,year,sort,region,...(minRating?{minRating}:{})};
-    const result=await catalogRequest({kind:'discover',filtered:'1',...params,
+    const request=()=>catalogRequest({kind:'discover',filtered:'1',...params,
       page:String(page),pageSize:String(pageSize),generation:String(snapshot.generation),snapshot:snapshot.id,
       ...(snapshot.revision?{revision:snapshot.revision}:{})},signal);
+    const revision=snapshot.revision;
+    let result;
+    try{result=await request();}catch(error){
+      if(error.status!==410||!revision||signal?.aborted)throw error;
+      // A retired index cannot serve another page. Do not reuse the cached unpinned response.
+      if(discoveryGenerations.get(key)===snapshot){
+        snapshot={generation:hour,id:'after-'+revision};discoveryGenerations.set(key,snapshot);
+      }else snapshot=discoveryGenerations.get(key)||{generation:hour,id:'after-'+revision};
+      result=await request();
+    }
     if(result.indexed&&result.revision)snapshot.revision=result.revision;
     if(result.filtered)return result;
     // An already-running preview or older deployment may still serve raw pages.

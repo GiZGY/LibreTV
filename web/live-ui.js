@@ -208,6 +208,7 @@
       document.querySelector('[data-live-page="1"]').disabled=!result.hasNext||(end&&page>=end);
     }catch(error){
       if(token!==generation||signal.aborted)return;
+      if(error.status===404&&page>1){discoverPage=1;return fetchDiscovery(signal,token);}
       const previous=retained;
       if(previous){
         discoverPage=previous.page;discoveryHasNext=previous.hasNext;
