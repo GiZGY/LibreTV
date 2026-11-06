@@ -61,7 +61,8 @@
     "build:new-ui": "node scripts/build-new-ui.mjs",
     "test:new-ui": "node --test web/tests/*.test.mjs",
     "smoke:new-ui-build": "node scripts/smoke-new-ui-build.mjs",
-    "quality:new-ui": "npm run test:new-ui && npm run build:new-ui && npm run smoke:new-ui-build"
+    "quality:new-ui": "npm run test:new-ui && npm run build:new-ui && npm run smoke:new-ui-build",
+    "test:browser": "node scripts/run-browser-regression.mjs"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.1.0",
@@ -75,6 +76,7 @@
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.5.8",
+    "@playwright/test": "^1.65.0",
     "@tailwindcss/cli": "^4.3.3",
     "esbuild": "^0.25.12",
     "tailwindcss": "^4.3.3"

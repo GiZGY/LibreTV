@@ -26,3 +26,7 @@ coverage
 .env
 .vercel
 .env.local
+
+# Browser acceptance artifacts
+test-results/
+playwright-report/

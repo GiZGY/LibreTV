@@ -10,9 +10,13 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: quality-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   quality:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - name: Check out repository
@@ -35,6 +39,30 @@ jobs:
 
       - name: Verify new UI production build
         run: npm run quality:new-ui && npm run smoke:native-ads
+
+      - name: Cache media acceptance browsers
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
+      - name: Install media acceptance runtime
+        timeout-minutes: 5
+        run: |
+          npx playwright install --with-deps chromium webkit
+          command -v ffmpeg || (sudo apt-get update && sudo apt-get install -y ffmpeg)
+
+      - name: Real media browser regression
+        run: npm run test:browser -- --no-build
+
+      - name: Retain failing synthetic media trace
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: synthetic-browser-failure
+          path: test-results/
+          if-no-files-found: ignore
+          retention-days: 3
 
       - name: Verify catalogue database and incremental refresh
         run: npm run test:catalog-index
