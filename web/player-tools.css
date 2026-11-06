@@ -86,3 +86,32 @@
 #watch-player .art-settings .art-setting-item[hidden]{display:none!important}
 
 #watch-player .art-settings .art-setting-item .art-setting-item-left .art-setting-item-left-icon{display:none}
+
+/* A wrapped touch row needs real hit areas, not smaller equally divided slots. */
+@media(pointer:coarse){
+ .watch-main{container:watch-column / inline-size}
+ @container watch-surface (max-width:540px){
+  #watch-player .art-controls{height:var(--player-touch-controls,44px);flex-wrap:wrap;align-content:flex-end}
+  #watch-player .art-controls .art-control{flex:1 0 44px;min-width:44px;min-height:44px;height:44px}
+  #watch-player .player-bottom-trigger,#watch-player .fine-speed summary,#watch-player .player-next-episode{display:flex;align-items:center;justify-content:center;width:100%;min-width:44px;height:44px;min-height:44px}
+  #watch-player .art-controls .art-control-time{height:auto;min-height:0;bottom:var(--player-touch-clock,52px)}
+  #watch-player .art-video-player:not([data-aspect-ratio]) .art-video{height:calc(100% - var(--player-touch-controls,0px));object-fit:contain}
+  /* The vendor centers this menu on a single-row gear, which can move left after wrapping. */
+  #watch-player .art-settings{left:auto!important;right:8px!important;max-width:calc(100% - 16px);bottom:var(--player-touch-widget,var(--art-control-height));max-height:min(300px,calc(100% - var(--player-touch-widget,var(--art-control-height)) - 8px))}
+  #watch-player .player-tool-panel{bottom:var(--player-touch-widget,54px)}
+  #watch-player .player-local-subtitle{bottom:var(--player-touch-caption,54px)}
+  #watch-player .player-sleep-pill{left:var(--player-touch-sleep-left,8px);right:var(--player-touch-sleep-right,auto);bottom:var(--player-touch-sleep-bottom,48px)}
+  #watch-player .fine-speed{position:var(--player-touch-speed-position,relative)}
+  #watch-player .fine-speed-panel{bottom:var(--player-touch-speed-bottom,36px);height:var(--player-touch-speed-height,auto)}
+  #watch-player .rate-stepper button{width:44px;height:44px}
+ }
+ /* Available width excludes 10px padding per side; AirPlay adds one 44px action. */
+ @container watch-surface (width < 416px){#watch-player .art-video-player:has(.art-control-next-episode):has(.art-control-airplay){--player-touch-controls:88px;--player-touch-widget:136px;--player-touch-clock:111px;--player-touch-caption:144px;--player-touch-sleep-left:auto;--player-touch-sleep-right:8px;--player-touch-sleep-bottom:114px;--player-touch-speed-position:static;--player-touch-speed-bottom:calc(100% + 48px);--player-touch-speed-height:min(143px,max(116px,calc(100cqw * .5625 - 48px)))}}
+ @container watch-column (width < 416px){.watch-screen:has(.art-control-next-episode):has(.art-control-airplay){width:100%;min-height:max(260px,calc(100cqw * .5625 + 88px))}}
+ @container watch-surface (width < 372px){#watch-player .art-video-player:has(.art-control-next-episode){--player-touch-controls:88px;--player-touch-widget:136px;--player-touch-clock:111px;--player-touch-caption:144px;--player-touch-sleep-left:auto;--player-touch-sleep-right:8px;--player-touch-sleep-bottom:114px;--player-touch-speed-position:static;--player-touch-speed-bottom:calc(100% + 48px);--player-touch-speed-height:min(143px,max(116px,calc(100cqw * .5625 - 48px)))}}
+ @container watch-column (width < 372px){.watch-screen:has(.art-control-next-episode){width:100%;min-height:max(260px,calc(100cqw * .5625 + 88px))}}
+ @container watch-surface (width < 328px){#watch-player .art-video-player:not(:has(.art-control-next-episode)):has(.art-control-airplay){--player-touch-controls:88px;--player-touch-widget:136px;--player-touch-clock:111px;--player-touch-caption:144px;--player-touch-sleep-left:auto;--player-touch-sleep-right:8px;--player-touch-sleep-bottom:114px;--player-touch-speed-position:static;--player-touch-speed-bottom:calc(100% + 48px);--player-touch-speed-height:min(143px,max(116px,calc(100cqw * .5625 - 48px)))}}
+ @container watch-column (width < 328px){.watch-screen:not(:has(.art-control-next-episode)):has(.art-control-airplay){width:100%;min-height:max(260px,calc(100cqw * .5625 + 88px))}}
+ @container watch-surface (width < 284px){#watch-player .art-video-player:not(:has(.art-control-next-episode)){--player-touch-controls:88px;--player-touch-widget:136px;--player-touch-clock:111px;--player-touch-caption:144px;--player-touch-sleep-left:auto;--player-touch-sleep-right:8px;--player-touch-sleep-bottom:114px;--player-touch-speed-position:static;--player-touch-speed-bottom:calc(100% + 48px);--player-touch-speed-height:min(143px,max(116px,calc(100cqw * .5625 - 48px)))}}
+ @container watch-column (width < 284px){.watch-screen:not(:has(.art-control-next-episode)){width:100%;min-height:max(260px,calc(100cqw * .5625 + 88px))}}
+}
