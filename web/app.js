@@ -220,12 +220,12 @@ function renderCommand() {
   const controller=suggestionRequest=new AbortController();
   suggestionTimer=setTimeout(async()=>{
     try{
-      const titles=await window.LiveData.suggestTitles(query,controller.signal);
+      const titles=await window.LiveData.suggestTitles(query,controller.signal,!local.length);
       if(controller.signal.aborted||!command.open||commandInput.value.trim()!==query||commandIndex>=0||document.activeElement!==commandInput)return;
       const items=[...local],key=(name,year,type)=>JSON.stringify([name,String(year||''),type]),seen=new Set(local.map(i=>key(i.label,i.film.year,i.film.type)));
       for(const t of titles){
         const k=key(t.title,t.year,t.type_name);if(seen.has(k))continue;seen.add(k);
-        items.push({label:t.title,meta:[t.year,t.type_name].filter(Boolean).join(' · '),catalog:t});
+        items.push({label:t.title,meta:[t.year,t.type_name].filter(Boolean).join(' · '),suggestion:t});
       }
       items.sort((a,b)=>Number(b.label.toLowerCase()===term)-Number(a.label.toLowerCase()===term));
       paint(items.slice(0,6));
@@ -235,7 +235,7 @@ function renderCommand() {
 function selectCommand(index) {
   const item = commandItems[index];
   if (!item) return;
-  if(item.catalog)item.film=registerSuggestion(item.catalog);
+  if(item.suggestion)item.film=registerSuggestion(item.suggestion);
   if (!item.film) {commandInput.value=item.label;renderCommand();commandInput.focus();return;}
   const query = commandInput.value.trim();
   recentQueries = [query,...recentQueries.filter(q=>q!==query)].slice(0,6);

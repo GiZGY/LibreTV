@@ -208,9 +208,18 @@
     }
     return waitFor(tmdbPending.get(key),signal);
   }
-  async function suggestTitles(title,signal){
+  async function suggestTitles(title,signal,includeSources){
     const replies=await Promise.allSettled(['电影','电视剧'].map(type=>catalogRequest({kind:'lookup',title,type},signal)));
-    return replies.flatMap(reply=>reply.status==='fulfilled'?reply.value.items.filter(allowed).slice(0,6):[]);
+    const titles=replies.flatMap(reply=>reply.status==='fulfilled'?reply.value.items.filter(allowed).slice(0,6):[]);
+    if(titles.length||!includeSources||signal.aborted)return titles;
+    // A catalogue miss is not a source miss. Reuse the full search adapter's first-page cache.
+    await window.HumanAccess?.ensure();
+    if(signal.aborted)return [];
+    const plan=window.OpenStreamSourceHealth.getSearchPlan(sources()).slice(0,2);
+    const budget=AbortSignal.any([signal,AbortSignal.timeout(2500)]);
+    const batches=await Promise.allSettled(plan.map(({sourceKey})=>window.OpenStreamSourceAdapter.search(sourceKey,title,{}, {maxPages:1,signal:budget})));
+    const hits=batches.flatMap(r=>r.status==='fulfilled'?(r.value.list||[]).filter(allowed):[]);
+    return window.OpenStreamResultAggregator.aggregateResults(hits,plan).slice(0,6).map(item=>({title:text(item.vod_name),year:item.vod_year,type_name:item.type_name,sourceItem:item}));
   }
   async function lookupTMDB(f,signal){
     const result=await catalogRequest({kind:'lookup',title:f.name,type:f.type},signal);

@@ -591,7 +591,7 @@
     recentQueries=[query,...recentQueries.filter(item=>item!==query)].slice(0,6);save('recentQueries',recentQueries);
     command.close();const hash='#search/'+encodeURIComponent(query);if(location.hash===hash)render();else location.hash=hash;
   };
-  registerSuggestion=item=>register(item,true);
+  registerSuggestion=item=>item.sourceItem?register(item.sourceItem):register(item,true);
   document.addEventListener('submit',async event=>{
     if(event.target.id!=='live-login')return;event.preventDefault();const button=event.target.querySelector('button');button.disabled=true;
     try{

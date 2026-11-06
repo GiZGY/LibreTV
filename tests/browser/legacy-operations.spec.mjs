@@ -27,7 +27,8 @@ test('a source-only title can be found from the search box even when catalogue s
  const title='片源独有作品';
  await page.route('**/api/catalog/tmdb?kind=lookup*',route=>route.fulfill({status:503,body:'{}'}));
  await seed(page);await page.goto('/#home');
- await page.evaluate(()=>{window.OpenStreamStreamingSearch.runStreamingSearch=async({query,onUpdate,onSourceDone})=>{
+ await page.evaluate(()=>{window.OpenStreamSourceAdapter.search=async(source_code,query)=>({status:'ready',list:[{vod_id:42,source_code,vod_name:query,type_name:'电影',vod_year:'2025'}]});
+   window.OpenStreamStreamingSearch.runStreamingSearch=async({query,onUpdate,onSourceDone})=>{
    const results=[{vod_id:42,source_code:'qa',vod_name:query,type_name:'电影',vod_year:'2025'}];onSourceDone({status:'ready'});onUpdate({results});return {results};
  };});
  for(const byEnter of [true,false]){
@@ -35,7 +36,7 @@ test('a source-only title can be found from the search box even when catalogue s
    await expect(page.locator('#command-search-all')).toBeHidden();
    await input.fill(title);await expect(page.locator('#command-search-all')).toBeVisible();
    await expect(page.locator('#command')).not.toContainText('没有找到');
-   if(byEnter){await input.dispatchEvent('keydown',{key:'Enter',isComposing:true});await expect(page.locator('#command')).toBeVisible();await input.press('Enter');}
+   if(byEnter){await expect(page.getByRole('option',{name:/片源独有作品/})).toBeVisible();await input.dispatchEvent('keydown',{key:'Enter',isComposing:true});await expect(page.locator('#command')).toBeVisible();await input.press('Enter');}
    else await page.locator('#command-search-all').click();
    await expect(page.locator('#live-results h3').first()).toHaveText(title);
  }
