@@ -50,9 +50,9 @@
    const fail=()=>{if(failed||media!==window.LivePlayback?.current())return;failed=true;reportHealth('slow');window.LivePlayback?.failed(media);};
    const skipKey='skip_'+film.id;
    const storedSkip=load(skipKey,{});
-   const skip={intro:Math.min(300,Math.max(0,Number(storedSkip.intro)||0)),outro:Math.min(300,Math.max(0,Number(storedSkip.outro)||0))};
-   const configuredSkip={...skip};
-   const skipSetting=(key,label)=>({name:'skip-'+key,html:label,tooltip:skip[key]?skip[key]+' 秒':'关闭',range:[skip[key],0,300,1],onChange(item){skip[key]=configuredSkip[key]=Number(item.range[0]);save(skipKey,configuredSkip);tools?.updateSkip();return skip[key]?skip[key]+' 秒':'关闭';}});
+   const configuredSkip={intro:Math.min(300,Math.max(0,Math.round(Number(storedSkip.intro)||0))),outro:Math.min(300,Math.max(0,Math.round(Number(storedSkip.outro)||0)))};
+   const skip=window.OpenStreamPlayerTools?.effectiveSkip(media,configuredSkip)||{...configuredSkip};
+   const skipSetting=(key,label)=>({name:'skip-'+key,html:label,onClick:()=>''});
    // Reparenting a native-fullscreen element exits fullscreen in Chromium.
    Artplayer.FULLSCREEN_WEB_IN_BODY=false;
    // The application owns recovery; library reconnects would outlive its bounded budget.
@@ -96,7 +96,7 @@
      }else if(!startNative())next.innerHTML='<div class="watch-empty">当前浏览器不支持此视频格式</div>';
      }catch(error){if(!startNative())throw error;}
     }},
-    volume:previousSound?.volume??load('volume',.8),muted:previousSound?.muted??load('muted',false),setting:true,airplay:true,aspectRatio:true,pip:true,fullscreen:true,fullscreenWeb:true,playsInline:true,
+    volume:previousSound?.volume??load('volume',.8),muted:previousSound?.muted??load('muted',false),setting:true,airplay:true,aspectRatio:false,pip:true,fullscreen:true,fullscreenWeb:true,playsInline:true,
     hotkey:true,fastForward:false,playbackRate:false,autoPlayback:false,
     settings:[...(isSeries(film)?[{html:'自动连播',switch:load('autoplay',true),onSwitch(item){const enabled=!item.switch;save('autoplay',enabled);document.querySelectorAll('#autoplay,[data-watch-autoplay]').forEach(el=>el.checked=enabled);return enabled;}}]:[]),skipSetting('intro','跳过片头'),skipSetting('outro','跳过片尾')],
     controls:[...(isSeries(film)?[{name:'next-episode',position:'left',index:11,html:'<button type="button" class="player-next-episode" aria-label="下一集" title="下一集" '+(window.OpenStreamEpisodes?!OpenStreamEpisodes.nextOrdinal(film,episodeFor(film))?'disabled':'':episodeFor(film).episode>=film.episodes?'disabled':'')+'><svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor" aria-hidden="true"><path d="M5 4v16l11-8L5 4zm12 0h3v16h-3z"/></svg></button>',click:()=>advance(true)}]:[]),...(isSeries(film)?[{name:'episode-picker',position:'right',index:5,html:'<button type="button" class="player-bottom-trigger" data-player-panel="episodes" aria-expanded="false">选集</button>',click:(_controls,event)=>{event.stopPropagation();tools?.openPanel('episodes',event.target.closest('button'));}}]:[]),{name:'route-picker',position:'right',index:6,html:'<button type="button" class="player-bottom-trigger" data-player-panel="lines" aria-expanded="false">线路</button>',click:(_controls,event)=>{event.stopPropagation();tools?.openPanel('lines',event.target.closest('button'));}},{name:'fine-speed',position:'right',index:8,html:'<details class="fine-speed"><summary aria-label="调整播放速度">1×</summary><div class="fine-speed-panel"><div class="fine-speed-heading"><span>播放速度</span><div class="rate-stepper"><button type="button" data-step="-0.05" aria-label="减慢 0.05 倍">−</button><output>1×</output><button type="button" data-step="0.05" aria-label="加快 0.05 倍">＋</button></div></div><input type="range" min="0.5" max="2" step="0.05" value="1" aria-label="播放速度" aria-valuetext="1 倍"><div class="fine-speed-presets">'+[.5,.75,1,1.25,1.5,1.75,2].map(n=>'<button type="button" style="--tick:'+((n-.5)/1.5*100)+'%" data-rate="'+n+'">'+n+'×</button>').join('')+'</div></div></details>'}],
@@ -300,7 +300,7 @@
    document.addEventListener('playback-failed',stopFailedPlayback);instance.on('destroy',()=>document.removeEventListener('playback-failed',stopFailedPlayback));
    let recoveryPosition=null;
    instance.on('video:loadedmetadata',()=>{if(recoveryPosition===null||instance.isDestroy)return;const saved=recoveryPosition;recoveryPosition=null;instance.currentTime=Math.min(saved.position,Math.max(0,instance.duration-.5));syncRate();if(saved.playing&&!window.OpenStreamPlayerTools?.sleep.blocked())instance.play=true;});
-   tools=window.OpenStreamPlayerTools?.attach({instance,host:next,film,media,skip:configuredSkip,onSkipChange:()=>save(skipKey,configuredSkip),cancelRecovery(){recoveryPosition=null;},recover(){
+   tools=window.OpenStreamPlayerTools?.attach({instance,host:next,film,media,skip:configuredSkip,onSkipChange(change){if(change?.origin!=='mark'&&['intro','outro'].includes(change?.which))skip[change.which]=configuredSkip[change.which];save(skipKey,configuredSkip);},cancelRecovery(){recoveryPosition=null;},recover(){
     if(instance.isDestroy||media!==window.LivePlayback?.current())return;
     recoveryPosition={position:instance.currentTime,playing:!instance.video.paused};session?.recovery();syncRate();
     try{if(hls)hls.startLoad(-1);else instance.video.load();if(recoveryPosition?.playing&&!window.OpenStreamPlayerTools?.sleep.blocked())instance.video.play()?.catch(()=>{});}catch{fail();}

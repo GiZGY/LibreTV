@@ -3,8 +3,20 @@
  const time=value=>{const n=Math.max(0,Math.round(value||0));return Math.floor(n/60)+':'+String(n%60).padStart(2,'0');};
  const mediaKey=media=>media?.filmId+':'+(media?.episodeKey||media?.episode||1);
  const overrides=new Map();
- let nextFocus=null;
+ let nextFocus=null,chosenAspect=null;
+ const aspectRatios=['4:3','16:9'];
+ function aspectFor(video,applied){if(aspectRatios.includes(applied))return applied;const natural=Number(video?.videoWidth)/Number(video?.videoHeight);return aspectRatios.find(value=>Math.abs(natural-Number(value.split(':')[0])/Number(value.split(':')[1]))<.002)||null;}
  function overrideFor(media){const key=mediaKey(media);if(!overrides.has(key)){if(overrides.size>=50)overrides.delete(overrides.keys().next().value);overrides.set(key,{intro:false,outro:false});}return overrides.get(key);}
+ function integerIn(value,min,max){if(typeof value!=='number'&&(typeof value!=='string'||!/^\d+$/.test(value.trim())))return null;const n=Number(value);return Number.isInteger(n)&&n>=min&&n<=max?n:null;}
+ // A same-episode retry must not activate a marker promised for the next episode.
+ function effectiveSkip(media,configured){const pending=overrideFor(media).pending||{};return{intro:pending.intro??configured.intro,outro:pending.outro??configured.outro};}
+ function createSkipSettings({media,skip,onChange}){
+  const temporary=overrideFor(media),valid=which=>which==='intro'||which==='outro';
+  return{enabled:which=>valid(which)&&skip[which]>0&&!temporary[which],
+   setSeconds(which,value,{origin='input'}={}){const seconds=integerIn(value,0,300);if(!valid(which)||seconds===null)return false;const previous=skip[which];if(origin==='mark'){temporary.pending||={};temporary.pending[which]??=previous;}else if(temporary.pending)delete temporary.pending[which];skip[which]=seconds;if(!previous&&seconds)temporary[which]=false;onChange?.({which,origin});return true;},
+   setEnabled(which,enabled){if(!valid(which)||typeof enabled!=='boolean'||(enabled&&!skip[which]))return false;temporary[which]=!enabled;if(temporary.pending)delete temporary.pending[which];onChange?.({which,origin:'toggle'});return true;}
+  };
+ }
  function createStallWatch({video,now=()=>performance.now(),hidden=()=>document.hidden,onRecover,onFailed,startupMs=25000,stallMs=12000,cooldownMs=15000}){
   let disposed=false,armed=false,anchor=now(),lastProgress=now(),lastPosition=Number(video.currentTime)||0,played=false,recoveries=0,lastRecovery=-Infinity,recovering=false;
   function reset(){anchor=now();lastProgress=anchor;lastPosition=Number(video.currentTime)||0;}
@@ -54,7 +66,7 @@
   const stop=()=>{state={deadline:null,endKey:null,stopped:true};clear();binding?.pause();emit();};
   function tick(){if(state.deadline&&now()>=state.deadline){stop();return;}emit();}
   return{snapshot,applies,blocked:()=>state.stopped,tick,
-   setMinutes(minutes){const n=Number(minutes);if(!Number.isFinite(n)||n<1||n>240)return;state={deadline:now()+n*60000,endKey:null,stopped:false};clear();timer=schedule(tick);emit();},
+   setMinutes(minutes){const n=integerIn(minutes,1,240);if(n===null)return false;state={deadline:now()+n*60000,endKey:null,stopped:false};clear();timer=schedule(tick);emit();return true;},
    setEnd(media){state={deadline:null,endKey:mediaKey(media),stopped:false};clear();emit();},
    extend(){if(state.deadline){state.deadline+=15*60000;emit();}},
    cancel(){state={deadline:null,endKey:null,stopped:false};clear();emit();},
@@ -67,7 +79,7 @@
  const sleep=createSleep();
  let subtitle={key:null,cues:[],name:'',enabled:false,size:24,offset:0};
  function attach({instance,host,film,media,skip,onSkipChange,recover,cancelRecovery}){
-  const video=instance.video,key=mediaKey(media),temporary=overrideFor(media);let disposed=false,opened=null,opener=null,fileGeneration=0;
+  const video=instance.video,key=mediaKey(media),temporary=overrideFor(media),skipControls=createSkipSettings({media,skip,onChange:onSkipChange}),skipDrafts=new Map();let disposed=false,opened=null,opener=null,fileGeneration=0;
   if(subtitle.key!==key)subtitle={key,cues:[],name:'',enabled:false,size:Math.max(16,Math.min(40,Number(load('subtitleSize',24))||24)),offset:0};
   const root=document.createElement('div');root.className='player-tools-ui';
   root.innerHTML=`<div class="player-tool-head"><div class="player-tool-title"><strong></strong><span data-player-target></span></div></div><div class="player-inline-status" role="status" hidden><span></span><button type="button" data-player-play hidden>继续播放</button><button type="button" data-player-retry hidden>重试</button><button type="button" data-player-panel="lines" hidden>换线</button><a href="#detail/${escape(film.id)}" hidden>返回详情</a></div><section class="player-tool-panel" data-player-view="episodes" role="dialog" aria-label="选集" tabindex="-1" hidden><div class="player-panel-heading"><h3>选集</h3><button type="button" data-player-close aria-label="关闭选集">关闭</button></div><div class="player-episode-grid"></div></section><section class="player-tool-panel" data-player-view="lines" role="dialog" aria-label="播放线路" tabindex="-1" hidden><div class="player-panel-heading"><h3>切换线路</h3><button type="button" data-player-close aria-label="关闭播放线路">关闭</button></div><div class="player-tool-lines"></div><p>缺少当前集的线路暂不可选。</p></section><input type="file" data-subtitle-file accept=".srt,.vtt" hidden><div class="player-local-subtitle" aria-hidden="true"></div><div class="player-sleep-pill" role="status" hidden></div>`;
@@ -81,7 +93,7 @@
   const item=name=>instance.setting.find(name);
   function setStatus(text,{error=false,busy=false}={}){status.hidden=!text;status.querySelector('span').textContent=text||'';status.classList.toggle('is-error',error);for(const node of status.querySelectorAll('[data-player-retry],[data-player-panel],a'))node.hidden=!error;status.querySelector('[data-player-play]').hidden=true;root.setAttribute('aria-busy',String(busy));}
   function updateTarget(loading=false){const state=episodeFor(film),item=window.OpenStreamEpisodes?.display(film,state);target.textContent=(loading?'正在加载 · ':'')+(isSeries(film)?(item?.label||'第 '+state.episode+' 集'):'正片')+(media?.cut&&media.cut!=='标准版'?' · '+media.cut:'');}
-  function updateSkip(){for(const key of ['intro','outro']){const row=item('skip-'+key);if(row){row.range=[skip[key],0,300,1];row.tooltip=skip[key]?skip[key]+' 秒':'关闭';}}}
+  function updateSkip(){for(const which of ['intro','outro']){const row=item('skip-'+which);if(!row?.$item)continue;const input=row.$item.querySelector('[data-skip-seconds]'),toggle=row.$item.querySelector('[data-skip-enabled]');if(input&&!skipDrafts.has(which))input.value=String(skip[which]);if(toggle){const enabled=skipControls.enabled(which);toggle.setAttribute('aria-checked',String(enabled));toggle.title=enabled?'仅本集关闭':'开启跳过';for(const icon of toggle.querySelectorAll('[data-skip-icon]'))icon.hidden=(icon.dataset.skipIcon==='on')!==enabled;}}}
   function renderEpisodes(){const state=episodeFor(film),list=window.OpenStreamEpisodes?.catalog(film)||Array.from({length:film.episodes},(_,i)=>({label:String(i+1)}));root.querySelector('.player-episode-grid').innerHTML=list.map((item,index)=>`<button type="button" data-player-episode="${index+1}" aria-pressed="${state.episode===index+1}" ${state.episode===index+1?'class="active"':''}>${escape(item.label)}</button>`).join('');}
   function renderLines(){const ranked=window.LivePlayback?.rankedLines?.(film)??(film.lines||[]).map((line,i)=>({line,i}));root.querySelector('.player-tool-lines').innerHTML=ranked.map(({line,i:index})=>{const missing=window.OpenStreamEpisodes&&OpenStreamEpisodes.indexFor(film,line,episodeFor(film))<0,cut=window.OpenStreamEpisodes?.cut(line)||'标准版';return `<button type="button" data-player-line="${index}" aria-pressed="${index===(film.lineIndex||0)}" ${missing?'disabled':''}><span>${escape(line.name)}${cut!=='标准版'?' · '+escape(cut):''}</span><small>${missing?'缺少当前集':index===(film.lineIndex||0)?'当前线路':({fast:'响应较快',fair:'响应一般',slow:'响应较慢'})[line.health]||'尚未核实'}</small></button>`;}).join('');}
   function closePanel(restore=true){if(!opened)return;const panel=root.querySelector(`[data-player-view="${opened}"]`);panel.hidden=true;if(mobileSheet.open){mobileSheet.close();panel.setAttribute('role','dialog');root.append(panel);}host.querySelectorAll('[data-player-panel]').forEach(button=>button.setAttribute('aria-expanded','false'));opened=null;if(restore&&opener?.isConnected)opener.focus({preventScroll:true});}
@@ -110,16 +122,13 @@
    if(disposed||instance.isDestroy)return false;
    const duration=Number(instance.duration),position=Number(instance.currentTime),value=Math.round(which==='intro'?position:duration-position),other=which==='intro'?skip.outro:skip.intro;
    if(!Number.isFinite(duration)||duration<30||!Number.isFinite(value)||value<1||value>300||value+other>=duration-10||value>duration*.45){notify('这个位置不适合跳过，请选择更接近片头或片尾的位置');return false;}
-   skip[which]=value;onSkipChange?.();updateSkip();notify((which==='intro'?'片头结束已记为 ':'片尾已记为 ')+time(value)+'，下一集起生效');return true;
+   skipDrafts.delete(which);skipControls.setSeconds(which,value,{origin:'mark'});updateSkip();notify((which==='intro'?'片头结束已记为 ':'片尾已记为 ')+time(value)+'，下一集起生效');return true;
   }
   const nativeSettings=instance.template.$setting,gear=instance.controls.setting;
   const nativeRows=[
-   {name:'episode-skip',html:'本集跳过',tooltip:'单集设置',selector:[
-    ...['intro','outro'].map(which=>({name:'keep-'+which,html:which==='intro'?'本集保留片头':'本集保留片尾',switch:temporary[which],onSwitch(row){if(disposed)return row.switch;const enabled=!row.switch;temporary[which]=enabled;row.$item?.setAttribute('aria-checked',String(enabled));notify(enabled?'仅本集保留，下一集恢复原设置':'本集恢复原跳过设置');return enabled;}})),
-    {name:'skip-reset',html:'恢复默认',onClick(){if(!disposed){skip.intro=0;skip.outro=0;onSkipChange?.();updateSkip();notify('已关闭这部影片的片头片尾跳过');}return '';}}
-   ]},
+   {name:'aspect-ratio',html:'画面比例',onClick:()=>''},
    {name:'sleep-timer',html:'睡眠定时',tooltip:'未设置',selector:[
-    ...[15,30,60].map(minutes=>({name:'sleep-'+minutes,html:minutes+' 分钟',onClick(){if(!disposed)sleep.setMinutes(minutes);return '';}})),
+    {name:'sleep-custom',html:'分钟后停止',onClick:()=>''},
     {name:'sleep-end',html:'本集结束停止',onClick(){if(!disposed)sleep.setEnd(media);return '';}},
     {name:'sleep-extend',html:'延长 15 分钟',disable:true,onClick(){if(!disposed)sleep.extend();return '';}},
     {name:'sleep-cancel',html:'取消定时',disable:true,onClick(){if(!disposed)sleep.cancel();return '';}},
@@ -135,26 +144,37 @@
   for(const row of nativeRows)instance.setting.add(row);
   gear.setAttribute('role','button');gear.setAttribute('tabindex','0');gear.setAttribute('aria-label','播放设置');gear.setAttribute('aria-expanded','false');
   nativeSettings.setAttribute('role','dialog');nativeSettings.setAttribute('aria-label','播放设置');
+  function settingControls(row,className){const controls=document.createElement('div');controls.className='player-setting-controls';controls.addEventListener('click',event=>event.stopPropagation());row.$item.classList.add(className);row.$item.append(controls);return controls;}
+  function commitSkip(which,input){if(disposed)return;skipDrafts.set(which,input.value);if(!skipControls.setSeconds(which,input.value)){input.setAttribute('aria-invalid','true');notify('请输入 0–300 的整数秒数');return;}input.removeAttribute('aria-invalid');skipDrafts.delete(which);updateSkip();}
+  function updateAspect(){const row=item('aspect-ratio'),selected=aspectFor(video,instance.aspectRatio);for(const button of row?.$item?.querySelectorAll('button[data-aspect-ratio]')||[])button.setAttribute('aria-pressed',String(selected===button.dataset.aspectRatio));}
   function decorateNativeSettings(){
+   if(disposed)return;
    for(const which of ['intro','outro']){
-    const row=item('skip-'+which);if(!row?.$item)continue;row.$item.classList.add('player-skip-setting');
-    if(!row.$item.querySelector('[data-skip-mark]')){const button=document.createElement('button');button.type='button';button.className='player-skip-mark';button.dataset.skipMark=which;button.textContent='标记';const label=which==='intro'?'当前位置记为片头结束':'当前位置记为片尾开始';button.title=label;button.setAttribute('aria-label',label);button.addEventListener('mousedown',event=>event.preventDefault());button.addEventListener('click',event=>{event.preventDefault();event.stopPropagation();markSkip(which);});row.$item.insertBefore(button,row.$item.querySelector('.art-setting-item-right'));}
-    row.$range?.setAttribute('data-skip-range',which);row.$range?.setAttribute('aria-label',(which==='intro'?'跳过片头':'跳过片尾')+'秒数');
+    const row=item('skip-'+which);if(!row?.$item||row.$item.querySelector('[data-skip-seconds]'))continue;
+    const controls=settingControls(row,'player-skip-setting'),label=which==='intro'?'跳过片头':'跳过片尾';
+    controls.innerHTML=`<button type="button" class="player-setting-switch" data-skip-enabled="${which}" role="switch" aria-label="${label}" aria-checked="false"></button><label class="player-setting-number"><input type="number" min="0" max="300" step="1" inputmode="numeric" data-skip-seconds="${which}" aria-label="${label}秒数"><span>秒</span></label><button type="button" class="player-skip-mark" data-skip-mark="${which}">标记</button>`;
+    const input=controls.querySelector('input'),toggle=controls.querySelector('[data-skip-enabled]'),button=controls.querySelector('[data-skip-mark]');
+    for(const name of ['on','off']){const icon=instance.icons[name==='on'?'switchOn':'switchOff'];icon.dataset.skipIcon=name;icon.setAttribute('aria-hidden','true');toggle.append(icon);}
+    input.value=skipDrafts.get(which)??String(skip[which]);input.addEventListener('input',()=>{skipDrafts.set(which,input.value);input.removeAttribute('aria-invalid');});input.addEventListener('change',()=>commitSkip(which,input));input.addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();event.stopPropagation();commitSkip(which,input);}});
+    toggle.addEventListener('click',()=>{if(disposed)return;if(!skipControls.setEnabled(which,!skipControls.enabled(which))){notify('请先输入跳过秒数');return;}updateSkip();});
+    const markLabel=which==='intro'?'当前位置记为片头结束':'当前位置记为片尾开始';button.title=markLabel;button.setAttribute('aria-label',markLabel);button.addEventListener('mousedown',event=>event.preventDefault());button.addEventListener('click',event=>{event.preventDefault();markSkip(which);});
    }
+   const aspect=item('aspect-ratio');if(aspect?.$item&&!aspect.$item.querySelector('button[data-aspect-ratio]')){const controls=settingControls(aspect,'player-aspect-setting');controls.innerHTML=aspectRatios.map(value=>`<button type="button" data-aspect-ratio="${value}" aria-pressed="false">${value}</button>`).join('');controls.addEventListener('click',event=>{const button=event.target.closest('button[data-aspect-ratio]');if(button&&!disposed&&aspectRatios.includes(button.dataset.aspectRatio)){chosenAspect=button.dataset.aspectRatio;instance.aspectRatio=chosenAspect;updateAspect();}});}
+   const custom=item('sleep-custom');if(custom?.$item&&!custom.$item.querySelector('[data-sleep-custom]')){const controls=settingControls(custom,'player-sleep-setting');controls.innerHTML='<input type="number" min="1" max="240" step="1" inputmode="numeric" value="30" data-sleep-custom aria-label="睡眠定时分钟数"><button type="button" data-sleep-start>开始</button>';const input=controls.querySelector('input'),start=()=>{if(disposed)return;if(!sleep.setMinutes(input.value)){input.setAttribute('aria-invalid','true');notify('请输入 1–240 的整数分钟数');return;}input.removeAttribute('aria-invalid');};input.addEventListener('input',()=>input.removeAttribute('aria-invalid'));input.addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();event.stopPropagation();start();}});controls.querySelector('button').addEventListener('click',start);}
    for(const row of nativeSettings.querySelectorAll('.art-setting-item')){
     const name=row.dataset.name||'',model=name?item(name):null,range=row.querySelector('input');
-    row.setAttribute('tabindex',range?'-1':'0');row.setAttribute('role',model&&'switch'in model?'switch':range?'group':'button');
+    const custom=row.classList.contains('player-skip-setting')||row.classList.contains('player-aspect-setting')||row.classList.contains('player-sleep-setting');
+    row.setAttribute('tabindex',range||custom?'-1':'0');row.setAttribute('role',model&&'switch'in model?'switch':range||custom?'group':'button');
     if(model&&'switch'in model)row.setAttribute('aria-checked',String(model.switch));
     if(range&&!range.hasAttribute('aria-label'))range.setAttribute('aria-label',row.querySelector('.art-setting-item-left-text')?.textContent||'调整数值');
-    if(/^keep-(intro|outro)$/.test(name))row.setAttribute('data-keep-skip',name.slice(5));
-    if(name==='skip-reset')row.setAttribute('data-skip-reset','');
-    if(/^sleep-(15|30|60)$/.test(name))row.setAttribute('data-sleep-minutes',name.slice(6));
+    if(row.classList.contains('art-setting-item-back')){row.setAttribute('data-settings-back','');row.setAttribute('aria-label','返回上一级');if(!row.querySelector('.player-settings-back-arrow')){const arrow=document.createElement('span');arrow.className='player-settings-back-arrow';arrow.textContent='←';arrow.setAttribute('aria-hidden','true');row.querySelector('.art-setting-item-left').prepend(arrow);}}
     if(['sleep-end','sleep-extend','sleep-cancel','sleep-resume'].includes(name)){row.setAttribute('data-'+name,'');if(name!=='sleep-end')row.hidden=!!model?.disable;}
     if(name==='subtitle-file')model?.$tooltip?.setAttribute('data-subtitle-summary','');
     if(name==='subtitle-toggle'){row.setAttribute('data-subtitle-toggle','');row.setAttribute('aria-disabled',String(!subtitle.cues.length));}
     if(name==='subtitle-size'){model?.$range?.setAttribute('data-subtitle-size','');model?.$tooltip?.setAttribute('data-subtitle-size-value','');}
     if(name==='subtitle-offset')model?.$range?.setAttribute('data-subtitle-offset','');
    }
+   updateSkip();updateAspect();
   }
   function settingFocusables(){const current=nativeSettings.querySelector('.art-setting-panel.art-current');return current?[...current.querySelectorAll('[tabindex="0"],button:not(:disabled),input:not(:disabled)')].filter(node=>node.getClientRects().length&&!node.closest('[hidden]')):[];}
   const focusSetting=()=>settingFocusables()[0]?.focus({preventScroll:true});
@@ -168,7 +188,10 @@
   const gearKey=event=>{if(['Enter',' '].includes(event.key)){event.preventDefault();event.stopPropagation();gear.click();}};
   nativeSettings.addEventListener('keydown',nativeKey);nativeSettings.addEventListener('click',nativeClick);gear.addEventListener('keydown',gearKey);
   const settingObserver=new MutationObserver(decorateNativeSettings);settingObserver.observe(nativeSettings,{childList:true,subtree:true});decorateNativeSettings();
-  instance.on('setting',active=>{gear.setAttribute('aria-expanded',String(active));if(active){closePanel(false);decorateNativeSettings();queueMicrotask(focusSetting);}});
+  instance.on('setting',active=>{gear.setAttribute('aria-expanded',String(active));if(active){closePanel(false);instance.setting.render();activeNativePanel=nativeSettings.querySelector('.art-setting-panel.art-current');decorateNativeSettings();queueMicrotask(focusSetting);}});
+  instance.on('aspectRatio',updateAspect);
+  instance.on('video:loadedmetadata',updateAspect);
+  if(aspectRatios.includes(chosenAspect))instance.aspectRatio=chosenAspect;
   const detachSleep=sleep.bind(instance),unsubscribe=sleep.subscribe(state=>{if(disposed)return;const label=state.stopped?'定时已结束，播放已停止':state.deadline?'将在 '+time(Math.ceil(state.remaining/1000))+' 后停止':state.endKey?sleep.applies(media)?'本集结束后停止，不再自动连播':'已为上一集设置停止':'未设置';const parent=item('sleep-timer');if(parent)parent.tooltip=label;const pill=root.querySelector('.player-sleep-pill');pill.hidden=!state.deadline&&!state.endKey&&!state.stopped;pill.textContent=label;for(const[name,hidden]of [['sleep-extend',!state.deadline],['sleep-cancel',!state.deadline&&!state.endKey],['sleep-resume',!state.stopped]]){const row=item(name);if(row){row.disable=hidden;if(row.$item)row.$item.hidden=hidden;}}if(state.stopped)setStatus('定时已结束，播放已停止');});
   const watch=createStallWatch({video,onRecover(){if(disposed||sleep.blocked())return;setStatus('播放较慢，正在恢复…');recover?.();},onFailed(){if(disposed||sleep.blocked())return;setStatus('正在尝试其他线路…');window.LivePlayback?.failed(media);}});
   const poll=setInterval(()=>watch.poll(),1000);
@@ -189,5 +212,5 @@
   instance.on('destroy',()=>{disposed=true;fileGeneration++;settingObserver.disconnect();nativeSettings.removeEventListener('keydown',nativeKey);nativeSettings.removeEventListener('click',nativeClick);gear.removeEventListener('keydown',gearKey);if(mobileSheet.open)mobileSheet.close();watch.dispose();clearInterval(poll);host.removeEventListener('pointerdown',userPause,true);host.removeEventListener('keydown',userPause,true);detachSleep();unsubscribe();root.removeEventListener('click',onClick);document.removeEventListener('keydown',onKey,true);host.removeEventListener('pointerdown',outside);document.removeEventListener('fullscreenchange',fullscreenChanged);document.removeEventListener('webkitfullscreenchange',fullscreenChanged);document.removeEventListener('playback-loading',onLoading);document.removeEventListener('playback-error',onFailure);document.removeEventListener('playback-failed',onFailure);document.removeEventListener('playback-health',health);root.remove();});
   return{skipEnabled:which=>!temporary[which],sleep,watch,notify,updateSkip,openPanel,closePanel,playBlocked(){setStatus('点击继续播放');status.querySelector('[data-player-play]').hidden=false;}};
  }
- window.OpenStreamPlayerTools={attach,createStallWatch,createSleep,parseSubtitles,cuesAt,sleep,overrideFor};
+ window.OpenStreamPlayerTools={attach,createStallWatch,createSleep,createSkipSettings,effectiveSkip,aspectFor,parseSubtitles,cuesAt,sleep,overrideFor};
 })();

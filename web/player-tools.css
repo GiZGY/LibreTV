@@ -52,11 +52,28 @@
 #watch-player .player-mobile-sheet .player-tool-panel{position:relative;inset:auto;width:100%;height:auto;min-height:220px;max-height:80dvh;margin:0;padding:12px;border:0;border-radius:0;box-shadow:none;overflow-y:auto;background:var(--player-surface)}
 
 #watch-player .player-bottom-trigger{height:100%;padding:0 3px;background:none;border:0;color:inherit;font:inherit;white-space:nowrap;cursor:pointer}
-#watch-player .player-skip-mark{flex:none;min-width:32px;min-height:24px;margin-inline:4px;padding:1px 4px;border:1px solid #ffffff38;border-radius:4px;background:transparent;color:inherit;font:inherit;font-size:12px;line-height:1.2;cursor:pointer}
-#watch-player .player-skip-mark:hover{border-color:currentColor}
-#watch-player :is(.player-bottom-trigger,.player-skip-mark):focus-visible{outline:2px solid var(--player-focus);outline-offset:-2px}
-#watch-player .art-settings{max-height:min(300px,calc(100% - var(--art-control-height) - 8px))}
-@media(pointer:coarse){#watch-player .player-skip-mark{min-height:32px}}
+#watch-player .player-bottom-trigger:focus-visible{outline:2px solid var(--player-focus);outline-offset:-2px}
+#watch-player .art-settings{max-height:min(300px,calc(100% - var(--art-control-height) - 8px));width:min(280px,calc(100% - 16px))!important;left:auto!important;right:8px!important;color:var(--player-ink);font-size:13px}
+#watch-player .art-settings .art-setting-item{min-height:35px;height:35px!important;flex-shrink:0}
+#watch-player .art-settings :is(.player-skip-setting,.player-aspect-setting,.player-sleep-setting){gap:8px;cursor:default}
+#watch-player .art-settings :is(.player-skip-setting,.player-aspect-setting,.player-sleep-setting)>.art-setting-item-right{display:none}
+#watch-player .player-setting-controls{display:flex;align-items:center;justify-content:flex-end;gap:5px;min-width:0}
+#watch-player .player-setting-controls button{flex:none;min-width:38px;min-height:26px;padding:3px 6px;border:1px solid transparent;border-radius:4px;background:transparent;color:inherit;font:inherit;line-height:1.2;cursor:pointer}
+#watch-player .player-setting-controls button:hover{background:#ffffff16}
+#watch-player .player-setting-controls button:active{background:#ffffff30}
+#watch-player .player-setting-controls button[data-aspect-ratio][aria-pressed=true]{border-color:var(--player-accent);background:var(--player-speed-bg);color:var(--player-speed-ink)}
+#watch-player .player-setting-controls .player-setting-switch{display:grid;place-items:center;min-width:32px;border:0;padding:0}
+#watch-player .player-setting-switch [data-skip-icon][hidden]{display:none!important}
+#watch-player .player-setting-switch .art-icon{width:26px;height:26px}
+#watch-player .player-setting-controls .player-skip-mark{min-width:32px;padding-inline:3px;color:var(--player-muted);font-size:12px}
+#watch-player .player-setting-controls .player-skip-mark:hover{border-color:#ffffff38;color:var(--player-ink)}
+#watch-player .player-setting-number{display:flex;align-items:center;gap:3px;font-size:12px}
+#watch-player .player-setting-controls input[type=number]{box-sizing:border-box;width:46px;min-height:26px;padding:3px;border:1px solid #ffffff30;border-radius:4px;background:#ffffff08;color:inherit;font:inherit;font-variant-numeric:tabular-nums;text-align:center;appearance:textfield;-moz-appearance:textfield}
+#watch-player .player-setting-controls input::-webkit-inner-spin-button,#watch-player .player-setting-controls input::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
+#watch-player .player-setting-controls input[aria-invalid=true]{border-color:#ff9696;outline:1px solid #ff9696}
+#watch-player .art-settings :is([tabindex="0"],button,input):focus-visible{outline:2px solid var(--player-focus);outline-offset:-2px}
+#watch-player .art-settings .player-settings-back-arrow{display:inline-grid;place-items:center;min-width:28px;color:var(--player-ink);font-size:24px;font-weight:600;line-height:1}
+@media(pointer:coarse){#watch-player .art-settings .art-setting-item{min-height:44px;height:44px!important}#watch-player .player-setting-controls button{min-width:44px;min-height:44px}#watch-player .player-setting-controls :is(.player-setting-switch,.player-skip-mark){min-width:44px}#watch-player .player-setting-controls input[type=number]{width:56px;min-height:44px}}
 
 #watch-player{container:watch-surface / inline-size}
 @container watch-surface (max-width:540px){
@@ -66,7 +83,6 @@
  #watch-player .art-controls .art-control-time{position:absolute;bottom:calc(var(--art-control-height) + 8px);left:0;min-height:0;height:auto;line-height:1.4;text-shadow:0 1px 3px #000;pointer-events:none}
  #watch-player .fine-speed summary,#watch-player .player-next-episode{min-width:0;width:100%}
 }
-@container watch-surface (max-width:540px){#watch-player .art-settings .art-setting-item{min-height:44px}}
 #watch-player .art-settings .art-setting-item[hidden]{display:none!important}
 
 #watch-player .art-settings .art-setting-item .art-setting-item-left .art-setting-item-left-icon{display:none}

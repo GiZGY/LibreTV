@@ -12,6 +12,43 @@ test('sleep deadline fires once, blocks automatic advance and recovers only on e
 test('stop-at-end takes priority over autoplay and outro, while manual navigation cancels it',()=>{let paused=0;const sleep=tools.createSleep(),media={filmId:'f',episodeKey:'s1:e1'};sleep.bind({pause:()=>paused++});sleep.setEnd(media);assert.equal(sleep.applies(media),true);assert.equal(sleep.beforeAdvance(media,false),false);assert.equal(paused,0);assert.equal(sleep.ended(media),true);assert.equal(paused,1);sleep.cancel();sleep.setEnd(media);assert.equal(sleep.beforeAdvance(media,true),true);assert.equal(sleep.applies(media),false);sleep.dispose();});
 test('episode temporary skip choices survive same-episode retry but never change persistent defaults',()=>{const a={filmId:'f',episodeKey:'s1:e1'},b={filmId:'f',episodeKey:'s1:e2'};tools.overrideFor(a).outro=true;assert.equal(tools.overrideFor({...a}).outro,true);assert.equal(tools.overrideFor(b).outro,false);assert.equal(tools.overrideFor(a).intro,false);});
 
+test('direct skip seconds validate atomically and enable a first positive value',()=>{
+ const media={filmId:'direct',episodeKey:'s1:e1'},skip={intro:0,outro:30},changes=[],controls=tools.createSkipSettings({media,skip,onChange:change=>changes.push({...change})});
+ assert.equal(controls.enabled('intro'),false);assert.equal(controls.setEnabled('intro',true),false);
+ for(const value of ['', ' ', '1.5', '1e2', NaN, Infinity, -1, 301, null, true])assert.equal(controls.setSeconds('intro',value),false);
+ assert.deepEqual(skip,{intro:0,outro:30});assert.equal(changes.length,0);
+ assert.equal(controls.setSeconds('intro','17'),true);assert.equal(controls.enabled('intro'),true);assert.equal(skip.intro,17);assert.deepEqual(changes,[{which:'intro',origin:'input'}]);
+ assert.equal(controls.setSeconds('outro',300),true);assert.equal(controls.setSeconds('intro',0),true);assert.equal(controls.enabled('intro'),false);assert.equal(controls.enabled('outro'),true);
+});
+test('independent skip switches keep saved seconds, survive same-episode source changes and reset for the next episode',()=>{
+ const media={filmId:'switches',episodeKey:'s2:e3',lineKey:'a'},skip={intro:12,outro:25},controls=tools.createSkipSettings({media,skip});
+ assert.equal(controls.setEnabled('outro',false),true);assert.equal(controls.enabled('outro'),false);assert.equal(controls.enabled('intro'),true);assert.deepEqual(skip,{intro:12,outro:25});
+ assert.equal(controls.setSeconds('outro',31),true);assert.equal(controls.enabled('outro'),false);
+ const retry=tools.createSkipSettings({media:{...media,lineKey:'b'},skip:{...skip}});assert.equal(retry.enabled('outro'),false);
+ const next=tools.createSkipSettings({media:{...media,episodeKey:'s2:e4'},skip:{...skip}});assert.equal(next.enabled('outro'),true);
+ assert.equal(controls.setEnabled('outro',true),true);assert.equal(controls.enabled('outro'),true);assert.equal(skip.outro,31);
+});
+test('markers defer only their own duration through retry and source changes until next episode or an explicit edit',()=>{
+ const media={filmId:'markers',episodeKey:'s1:e1'},skip={intro:0,outro:5},changes=[],controls=tools.createSkipSettings({media,skip,onChange:change=>changes.push({...change})});
+ assert.equal(controls.setSeconds('intro',4,{origin:'mark'}),true);assert.equal(controls.setSeconds('outro',12,{origin:'mark'}),true);assert.deepEqual(skip,{intro:4,outro:12});
+ assert.deepEqual({...tools.effectiveSkip({...media,lineKey:'retry'},skip)},{intro:0,outro:5});
+ assert.equal(controls.setSeconds('outro',17),true);assert.deepEqual({...tools.effectiveSkip(media,skip)},{intro:0,outro:17});
+ assert.equal(controls.setSeconds('intro',7,{origin:'mark'}),true);assert.deepEqual({...tools.effectiveSkip(media,skip)},{intro:0,outro:17});
+ assert.deepEqual({...tools.effectiveSkip({...media,episodeKey:'s1:e2'},skip)},{intro:7,outro:17});
+ assert.equal(controls.setEnabled('intro',false),true);assert.deepEqual({...tools.effectiveSkip(media,skip)},{intro:7,outro:17});assert.equal(controls.enabled('intro'),false);
+ assert.deepEqual(changes.map(change=>change.origin),['mark','mark','input','mark','toggle']);
+});
+test('custom sleep accepts whole minutes only and rejects invalid input without changing an active deadline',()=>{
+ let now=1000,schedules=0;const sleep=tools.createSleep({now:()=>now,schedule:()=>++schedules,unschedule:()=>{}});assert.equal(sleep.setMinutes('7'),true);assert.equal(sleep.snapshot().deadline,421000);
+ for(const value of ['', ' ', 0, 241, '7.5', 1.5, Infinity, '1e2', null, true]){assert.equal(sleep.setMinutes(value),false);assert.equal(sleep.snapshot().deadline,421000);}
+ assert.equal(schedules,1);now=2000;assert.equal(sleep.setMinutes(240),true);assert.equal(sleep.snapshot().deadline,14402000);sleep.dispose();
+});
+test('aspect selection reflects exact native formats without forcing wide or unknown video dimensions',()=>{
+ assert.equal(tools.aspectFor({videoWidth:1920,videoHeight:1080},'default'),'16:9');assert.equal(tools.aspectFor({videoWidth:1440,videoHeight:1080},'default'),'4:3');
+ assert.equal(tools.aspectFor({videoWidth:2560,videoHeight:1080},'default'),null);assert.equal(tools.aspectFor({videoWidth:0,videoHeight:0},'default'),null);
+ assert.equal(tools.aspectFor({videoWidth:2560,videoHeight:1080},'4:3'),'4:3');assert.equal(tools.aspectFor({videoWidth:2560,videoHeight:1080},'21:9'),null);
+});
+
 test('recovery-induced pause cannot disable its deadline, but an explicit pause cancels recovery',()=>{const a=watch();a.watch.arm();a.video.currentTime=1;a.advance(1000);a.advance(12000);a.video.paused=true;a.advance(15000);assert.deepEqual(a.counts(),[1,1]);const b=watch();b.watch.arm();b.advance(25000);b.video.paused=true;b.watch.suspend();b.advance(99999);assert.deepEqual(b.counts(),[1,0]);});
 
 test('third-party reconnects do not compete with application-owned recovery budgets',()=>{const source=readFileSync(new URL('../player-preview.js',import.meta.url),'utf8');assert.ok(source.indexOf('Artplayer.RECONNECT_TIME_MAX=0')<source.indexOf('art=new Artplayer('));});
