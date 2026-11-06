@@ -80,3 +80,13 @@ test('series ratio notice fits the free space between control groups, without co
    expect(n.y).toBeGreaterThanOrEqual(bar.y);expect(n.y+n.height).toBeLessThanOrEqual(bar.y+bar.height+1);
  }
 });
+
+for(const width of [1440,390])test('expanded synopsis uses natural height and its own collapse row at '+width+'px',async({page})=>{
+ await page.setViewportSize({width,height:900});
+ await page.addInitScript(()=>{const film={id:'film-plot',type:'电影',name:'简介测试',description:'在城市的另一端，新的旅程开始了。'.repeat(48)+'结尾可见。',director:'导演甲',cast:'主演乙',episodes:1,candidatesComplete:true,lines:[{key:'qa',sourceKey:'qa',name:'线路',episodes:[{name:'正片',url:'/media/sample.mp4'}]}]};localStorage.setItem('openstream_live_filmRecords',JSON.stringify([film]));localStorage.setItem('openstream_live_muted','true');});
+ await page.goto('/#player/film-plot');const plot=page.locator('.watch-plot'),preview=page.locator('.plot-preview'),toggle=plot.locator('summary');
+ await expect(preview).toBeVisible();expect(await plot.evaluate(e=>e.open)).toBe(false);const screen=page.locator('.watch-screen'),before=await screen.boundingBox();await toggle.click();await expect(preview).toBeHidden();const body=plot.locator('p');await expect(body).toContainText('结尾可见');
+ expect(await body.evaluate(e=>e.scrollHeight-e.clientHeight)).toBeLessThanOrEqual(1);
+ const [para,btn,credits]=await Promise.all([body,toggle,page.locator('.watch-credits')].map(e=>e.boundingBox()));expect(para.height).toBeGreaterThan(200);expect(btn.y).toBeGreaterThanOrEqual(para.y+para.height-1);expect(credits.y).toBeGreaterThanOrEqual(btn.y+btn.height-1);
+ expect(await page.locator('.watch-aside').evaluate(e=>e.scrollHeight-e.clientHeight)).toBeLessThanOrEqual(1);const after=await screen.boundingBox();expect(after.height).toBe(before.height);await toggle.click();await expect(preview).toBeVisible();expect(await preview.evaluate(e=>e.clientHeight)).toBeLessThan(80);
+});

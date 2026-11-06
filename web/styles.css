@@ -436,11 +436,10 @@ html.video-web-fullscreen{overflow:hidden}
 .watch-aside .season-tabs:has(>button:only-child){display:none}
 .watch-aside .watch-synopsis{margin-top:12px;padding-top:12px}
 .watch-aside>.watch-synopsis,.watch-aside.has-episodes>.watch-synopsis{flex:0 0 auto;min-height:0;max-height:none;overflow:visible;padding-right:0}
-.watch-synopsis:has(.watch-plot){position:relative}
-.watch-plot summary{position:absolute;right:0;bottom:0;z-index:1;list-style:none;cursor:pointer;color:var(--muted);font-size:12px;line-height:1.9;padding:0 0 0 18px;background:linear-gradient(to right,transparent,var(--bg) 14px)}
-.watch-plot:not([open]) .plot-expand:before{content:'… ';color:var(--muted)}
-.watch-plot[open] summary{bottom:0}
-.watch-plot[open]>p{padding-bottom:23px}
+.watch-synopsis:has(.watch-plot){display:flex;flex-direction:column-reverse}
+.watch-plot summary{width:fit-content;margin-left:auto;list-style:none;cursor:pointer;color:var(--muted);font-size:12px;line-height:1.9}
+.watch-plot[open]{position:relative;padding-bottom:24px}
+.watch-plot[open] summary{position:absolute;right:0;bottom:0}
 .watch-plot summary::-webkit-details-marker{display:none}
 .watch-plot summary:hover{color:var(--ink)}
 .watch-plot summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
@@ -448,7 +447,11 @@ html.video-web-fullscreen{overflow:hidden}
 .watch-plot[open] .plot-collapse{display:inline}
 .watch-synopsis .plot-preview{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;overflow:hidden}
 .watch-plot[open]+.plot-preview{display:none}
-.watch-plot[open]>p{max-height:200px;overflow:auto;scrollbar-width:thin}
+@media(min-width:1001px){
+ .watch-side-column:has(.watch-plot[open]){contain:none}
+ .watch-side-column:has(.watch-plot[open])>.watch-aside{overflow:visible}
+ .watch-aside:has(.watch-plot[open])>.detail-section{max-height:300px}
+}
 .watch-credits{display:grid;grid-template-columns:32px minmax(0,1fr);gap:6px 10px;flex-shrink:0;font-size:12px;margin:12px 0 0}
 .watch-credits dt{color:var(--muted)}
 .watch-credits dd{margin:0;line-height:1.7;overflow-wrap:anywhere}
@@ -475,7 +478,8 @@ html.video-web-fullscreen{overflow:hidden}
 #live-results > .poster-card:not([hidden]){display:grid;grid-template-columns:minmax(0,1fr) auto;grid-template-rows:repeat(4,auto);align-content:start}
 #live-results .poster-card > a{grid-area:1/1/5/3;display:grid;grid-template-columns:subgrid;grid-template-rows:subgrid;min-width:0}
 #live-results .poster-art{grid-area:1/1/2/3}
-#live-results .poster-card h3{grid-area:2/1;align-self:center;margin:4px 4px 0 0;padding:0}
+#live-results .poster-card h3{white-space:normal;overflow-wrap:anywhere;grid-area:2/1;align-self:center;margin:4px 4px 0 0;padding:0}
 #live-results .quick-favorite{grid-area:2/2;position:static;align-self:center;justify-self:end;margin-top:4px}
-#live-results .poster-meta{grid-area:3/1/4/3}
+#live-results .poster-meta{grid-area:3/1/4/3;align-items:baseline}
+#live-results .poster-meta>span:first-child{white-space:normal;overflow:visible;overflow-wrap:anywhere}
 #live-results .search-version-note{grid-area:4/1/5/3;min-width:0;overflow-wrap:anywhere}

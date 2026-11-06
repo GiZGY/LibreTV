@@ -239,6 +239,10 @@
   async function fetchSearch(query,signal,token) {
     $('#main').innerHTML=`<div class="page-title"><h1>搜索结果</h1><p id="search-progress">正在搜索“${esc(query)}”…</p></div><div class="search-result-filters"><label>类型<select data-search-filter="type"><option value="all">全部类型</option><option>电影</option><option>电视剧</option><option>动漫</option><option>综艺</option></select></label><label>年份<select data-search-filter="year"><option value="all">全部年份</option></select></label><label>季<select data-search-filter="season"><option value="all">全部季</option></select></label></div><div id="live-results" class="poster-grid"></div><p id="search-empty" class="search-empty" hidden>没有符合筛选条件的影片</p>`;
     const host=$('#live-results'),itemsById=new Map(),nodes=new Map(),filters={type:'all',year:'all',season:'all',...searchConditions.get(query)};
+    const term=data.foldTitle(query);
+    const exact=f=>[f.name,f.en].some(value=>value&&data.foldTitle(value)===term);
+    const year=f=>/^\d{4}$/.test(String(f.year))?Number(f.year):0;
+    const rank=(a,b)=>Number(exact(b))-Number(exact(a))||year(b)-year(a)||a.name.localeCompare(b.name,'zh-CN')||a.id.localeCompare(b.id);
     const watchCertificate=window.OpenStreamSearchCertificates.watch(host,signal);
     const applyFilters=()=>{let visible=0;for(const[id,f]of itemsById){const show=(filters.type==='all'||f.type===filters.type)&&(filters.year==='all'||String(f.year)===filters.year)&&(filters.season==='all'||String(f.searchSeason||'unknown')===filters.season);nodes.get(id).hidden=!show;if(show)visible++;}$('#search-empty').hidden=visible>0||!itemsById.size;};
     const updateOptions=()=>{for(const[key,values]of [['year',[...new Set([...itemsById.values()].map(f=>f.year).filter(Boolean))].sort((a,b)=>Number(b)-Number(a))],['season',[...new Set([...itemsById.values()].map(f=>f.searchSeason||'unknown'))].sort((a,b)=>Number(a)-Number(b))]]){const select=document.querySelector(`[data-search-filter="${key}"]`);for(const value of values)if(![...select.options].some(option=>option.value===String(value))){const option=document.createElement('option');option.value=value;option.textContent=key==='season'?(value==='unknown'?'季号未标注':'第 '+value+' 季'):value;select.append(option);}select.value=filters[key];}};
@@ -253,7 +257,7 @@
       // Keep the focused link mounted even when an exact title arrives after partial matches.
       const focused=document.activeElement?.closest('[data-film]');
       let next=null;
-      for(const id of [...visible].reverse()){
+      for(const id of [...visible].sort((a,b)=>rank(itemsById.get(a),itemsById.get(b))).reverse()){
         const node=nodes.get(id);if(!node)continue;
         if(node!==focused&&node.nextElementSibling!==next)host.insertBefore(node,next);
         next=node;

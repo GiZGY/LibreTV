@@ -56,6 +56,7 @@ for(const [width,touch] of [[1440,false],[320,true]]) test('search cards reserve
      const box=s=>c.querySelector(s)?.getBoundingClientRect(),fav=box('.quick-favorite'),title=box('h3'),meta=box('.poster-meta'),bounds=c.getBoundingClientRect(),labels=[...c.querySelectorAll('.poster-meta > span')].map(e=>e.getBoundingClientRect());
      const note=box('.search-version-note');return {separate:fav.bottom<=meta.top+.5&&title.right<=fav.left+.5&&note.top>=meta.bottom-.5&&note.right<=bounds.right+.5,fit:labels.every((r,i)=>r.right<=bounds.right+.5&&(!i||r.left>=labels[i-1].right-.5)),touchWidth:fav.width,touchHeight:fav.height};});
    expect(result.separate).toBe(true);expect(result.fit).toBe(true);
+   for(const el of await card.locator('h3,.poster-meta>span:first-child,.search-version-note').all())expect(await el.evaluate(e=>e.scrollWidth-e.clientWidth)).toBeLessThanOrEqual(1);
    if(touch){expect(result.touchWidth).toBeGreaterThanOrEqual(44);expect(result.touchHeight).toBeGreaterThanOrEqual(44);}
  }
  const fav=original.getByRole('button',{name:/收藏/});await fav.click();await expect(fav).toHaveAttribute('aria-pressed','true');await expect(page).toHaveURL(/#search\//);await fav.click();await expect(fav).toHaveAttribute('aria-pressed','false');
@@ -75,4 +76,18 @@ test('a cold search loads the verified certificate before all sources finish, ca
  await search();const card=page.locator('#live-results article').filter({hasText:'死亡预告'});await expect(card.locator('.film-certification')).toHaveText('R');
  await expect(page.locator('#live-results h3')).toHaveCount(2);await expect(page.locator('#live-results')).not.toContainText('预告片');await expect(page.locator('#live-results article').filter({hasText:'预告犯'}).locator('.film-certification')).toHaveCount(0);
  await expect(page.locator('#search-progress')).toContainText('正在补充');await page.evaluate(()=>window.finishSourceTest());await page.goto('/#home');await page.reload();await search();await expect(card.locator('.film-certification')).toHaveText('R');expect(details).toBe(1);await page.evaluate(()=>window.finishSourceTest());
+});
+
+test('exact titles lead, then each group orders newest first throughout streaming, filtering and cached navigation',async({page})=>{
+ await page.goto('/#home');await page.evaluate(()=>{
+   const hits=[['蜘蛛侠：未知',''],['蜘蛛侠','2002'],['蜘蛛侠：旧作','2017'],['蜘蛛侠：新作','2026'],['蜘蛛侠','2021']].map(([vod_name,vod_year],i)=>({vod_id:i+1,vod_name,vod_year,type_name:'电影',source_code:'qa'}));
+   OpenStreamStreamingSearch.runStreamingSearch=async o=>{o.onUpdate({results:hits.slice(0,3)});await new Promise(resolve=>window.finishYearTest=resolve);o.onUpdate({results:hits});o.onSourceDone({status:'ready'});return {results:hits};};
+   location.hash='search/'+encodeURIComponent('蜘蛛侠');
+ });
+ const names=page.locator('#live-results .poster-card:visible h3');await expect(names).toHaveText(['蜘蛛侠','蜘蛛侠：旧作','蜘蛛侠：未知']);
+ await page.locator('#live-results .poster-card:visible a').first().focus();await page.evaluate(()=>window.finishYearTest());
+ const sorted=['蜘蛛侠','蜘蛛侠','蜘蛛侠：新作','蜘蛛侠：旧作','蜘蛛侠：未知'];await expect(names).toHaveText(sorted);
+ await expect(page.locator('#live-results .poster-meta').first()).toContainText('2021');await expect(page.locator('#live-results a:focus')).toContainText('2002');
+ await page.locator('[data-search-filter=year]').selectOption('2017');await expect(names).toHaveText(['蜘蛛侠：旧作']);await page.locator('[data-search-filter=year]').selectOption('all');
+ await page.evaluate(()=>location.hash='history');await expect(page.locator('#live-results')).toHaveCount(0);await page.goBack();await expect(names).toHaveText(sorted);await expect(page.locator('#live-results .poster-meta').first()).toContainText('2021');
 });

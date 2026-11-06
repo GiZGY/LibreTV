@@ -45,13 +45,13 @@
     } catch { return ''; }
   };
   // A source can return matches from its synopsis, tags or cast. Those are not title matches.
+  const foldTitle=value=>text(value).normalize('NFKC').toLowerCase().replace(/[\p{P}\p{Z}\s]+/gu,'');
   function titleMatcher(query){
-    const fold=value=>text(value).normalize('NFKC').toLowerCase().replace(/[\p{P}\p{Z}\s]+/gu,'');
-    const term=fold(query);
+    const term=foldTitle(query);
     return item=>{
       if(!term)return false;
-      if([item.vod_name,item.title,item.original_title,item.name,item.en].some(value=>value&&fold(value).includes(term)))return true;
-      return String(item.vod_sub||'').split(/[,，、/|；;]/).some(alias=>alias&&fold(alias)===term);
+      if([item.vod_name,item.title,item.original_title,item.name,item.en].some(value=>value&&foldTitle(value).includes(term)))return true;
+      return String(item.vod_sub||'').split(/[,，、/|；;]/).some(alias=>alias&&foldTitle(alias)===term);
     };
   }
   const allowed = item => {
@@ -300,5 +300,5 @@
     const state=catalogState.get(url.href)||{};
     return {items,rawCount:data.data.length,hasNext:data.data.length===20,total:null,...state};
   }
-  window.LiveData = { json, proxied, image, sources, detail, firstDetail, recommend, discover, discoverTMDB, suggestTitles, lookupTMDB, detailTMDB, relatedTMDB, subjectMetadata, resolveEpisode, parseLines, safeURL, text, allowed, titleMatcher };
+  window.LiveData = { json, proxied, image, sources, detail, firstDetail, recommend, discover, discoverTMDB, suggestTitles, lookupTMDB, detailTMDB, relatedTMDB, subjectMetadata, resolveEpisode, parseLines, safeURL, text, allowed, titleMatcher, foldTitle };
 })();
