@@ -551,7 +551,7 @@
         }
         void addOtherLines(film,signal,token);
       } else {activePlayback=null;previewRender();
-        if(page==='about')$('#main').innerHTML='<article class="article"><div class="page-title"><h1>关于 OpenStream</h1></div><p>搜索影片、发现好故事，选择适合自己的播放线路。</p><h2>隐私</h2><p>收藏、观看历史和偏好保存在当前浏览器。搜索与播放会向相关内容来源发起请求。</p><h2>影片资料</h2><p>TMDB: This product uses the TMDB API but is not endorsed or certified by TMDB.</p><h2>内容与版权</h2><p>影片资料和播放内容由第三方来源提供，版权归各自权利方所有。</p></article>';
+        if(page==='about')$('#main').innerHTML='<article class="article"><div class="page-title"><h1>关于 OpenStream</h1></div><p>搜索影片、发现好故事，选择适合自己的播放线路。</p><h2>隐私</h2><p>收藏、观看历史和偏好默认保存在当前浏览器。开启设备同步后，必要的收藏与观看进度会保存到同步服务，只有已配对的设备可读取。可以随时解除配对或删除同步数据，本机记录仍会保留。搜索与播放会向相关内容来源发起请求。</p><h2>影片资料</h2><p>TMDB: This product uses the TMDB API but is not endorsed or certified by TMDB.</p><h2>内容与版权</h2><p>影片资料和播放内容由第三方来源提供，版权归各自权利方所有。</p></article>';
       }
     }catch(error){if(token===generation&&!signal.aborted){
       if(page==='player')window.LivePlayback?.loadFailed();
