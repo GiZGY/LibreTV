@@ -65,10 +65,20 @@ test('live episode refresh retains the fullscreen host and recovers a resolution
   const host={isConnected:true};let mainWrites=0,sideUpdates=0,fail=false;
   const main={set innerHTML(value){mainWrites++;}};
   const document={querySelector:selector=>selector==='#watch-player'?host:{replaceWith(){sideUpdates++;}},createRange:()=>({createContextualFragment:()=>({querySelector:()=>({})})}),dispatchEvent:event=>events.push(event.type)};
-  const context={performance:{now:()=>0},generation:0,request:null,homeFilterController:null,AbortController,location:{hash:'#player/series'},shell(){},authenticated:true,showSources(){},films:[film],activePlayback:{filmId:'series',episode:1},$:()=>main,document,resolveFilm:async()=>{if(fail)throw new Error('resolution failed');},episodeState:{series:state},historyMetadata:{},playback:async()=>({filmId:'series',episode:state.episode}),player:()=>'',routeButtons:()=>'',addOtherLines(){},Event,episodeFor:()=>state,toast(){},status:()=>'',isSeries:()=>true};
+  const context={window:{},performance:{now:()=>0},generation:0,request:null,homeFilterController:null,AbortController,location:{hash:'#player/series'},shell(){},authenticated:true,showSources(){},films:[film],activePlayback:{filmId:'series',episode:1},$:()=>main,document,resolveFilm:async()=>{if(fail)throw new Error('resolution failed');},episodeState:{series:state},historyMetadata:{},playback:async()=>({filmId:'series',episode:state.episode}),player:()=>'',routeButtons:()=>'',addOtherLines(){},Event,episodeFor:()=>state,toast(){},status:()=>'',isSeries:()=>true};
   vm.createContext(context);vm.runInContext(block,context);
   await context.render();
   assert.equal(mainWrites,0);assert.equal(sideUpdates,2);assert.equal(context.activePlayback.episode,2);assert.ok(events.includes('playback-ready'));
   fail=true;state.episode=3;await context.render();
   assert.equal(mainWrites,0);assert.equal(state.episode,2);assert.ok(events.includes('playback-error'));
+});
+
+test('rate pointer buttons preserve popup focus while keyboard boundaries and Escape remain explicit',()=>{
+ const handlers={},summary={focus(){context.document.activeElement=summary;}},minus={focus(){context.document.activeElement=minus;}},range={focus(){context.document.activeElement=range;}};
+ const panel={open:true,addEventListener:(name,fn)=>handlers[name]=fn,querySelector:()=>summary,querySelectorAll:()=>[minus,range],contains:target=>[summary,minus,range].includes(target)};
+ const context={panel,document:{activeElement:summary}};vm.createContext(context);
+ const mouse=source.indexOf("   panel.addEventListener('mousedown'");vm.runInContext(source.slice(mouse,source.indexOf('   function fitSpeedPanel(',mouse)),context);
+ let prevented=0;handlers.mousedown({target:{closest:()=>minus},preventDefault:()=>prevented++});assert.equal(prevented,1);
+ const keyboard=source.indexOf("   panel.addEventListener('keydown'");vm.runInContext(source.slice(keyboard,source.indexOf("   slider.addEventListener('input'",keyboard)),context);
+ const key=(key,shiftKey=false)=>({key,shiftKey,stopPropagation(){},preventDefault:()=>prevented++});handlers.keydown(key('Tab'));assert.equal(context.document.activeElement,minus);assert.equal(panel.open,true);handlers.keydown(key('Tab',true));assert.equal(context.document.activeElement,summary);handlers.keydown(key('Tab',true));assert.equal(panel.open,false);panel.open=true;handlers.focusout({relatedTarget:range});assert.equal(panel.open,true);handlers.focusout({relatedTarget:{}});assert.equal(panel.open,false);panel.open=true;handlers.keydown(key('Escape'));assert.equal(context.document.activeElement,summary);assert.equal(panel.open,false);
 });

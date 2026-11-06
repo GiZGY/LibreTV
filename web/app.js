@@ -29,10 +29,20 @@ let discoverPage=1,undoHistory=null;
 const episodeState={};
 function episodeFor(f){return episodeState[f.id]||(episodeState[f.id]={season:1,episode:1});}
 function isSeries(f){return !['电影','纪录片'].includes(f.type)&&f.episodes>1;}
-function episodePicker(f){if(!isSeries(f))return '';const state=episodeFor(f);return `<section class="detail-section"><div class="section-head"><h2>选集</h2><span>全 ${f.episodes} 集</span></div><div class="season-tabs">${Array.from({length:f.seasons},(_,i)=>`<button data-action="season" data-id="${f.id}" data-value="${i+1}" aria-pressed="${state.season===i+1}" class="chip ${state.season===i+1?'selected':''}">第 ${i+1} 季</button>`).join('')}</div><div class="episodes">${Array.from({length:f.episodes},(_,i)=>`<button class="episode ${state.episode===i+1?'active':''}" data-action="episode" data-id="${f.id}" data-value="${i+1}">${i+1}</button>`).join('')}</div></section>`;}
+function episodePicker(f){
+ if(!isSeries(f))return '';
+ if(window.OPENSTREAM_LIVE&&!f.lines?.length)return '<section class="detail-section"><div class="section-head"><h2>选集</h2><span>集数待核实</span></div></section>';
+ const state=episodeFor(f),canonical=window.OpenStreamEpisodes,list=canonical?canonical.catalog(f):Array.from({length:f.episodes},(_,i)=>({number:i+1,label:String(i+1),season:state.season||1,kind:'episode'}));
+ const seasons=[...new Set(list.map(item=>item.season||1))].sort((a,b)=>a-b);if(!seasons.includes(state.season))state.season=canonical?.selection(f,state)?.season||seasons[0]||1;
+ const visible=list.map((item,index)=>({item,ordinal:index+1})).filter(({item})=>(item.season||1)===state.season),main=visible.filter(({item})=>item.kind!=='special').length,extras=visible.length-main;
+ return `<section class="detail-section"><div class="section-head"><h2>选集</h2><span>${main} 集${extras?' · '+extras+' 段附加内容':''}</span></div><div class="season-tabs">${seasons.map(season=>`<button data-action="season" data-id="${f.id}" data-value="${season}" aria-pressed="${state.season===season}" class="chip ${state.season===season?'selected':''}">第 ${season} 季</button>`).join('')}</div><div class="episodes">${visible.map(({item,ordinal})=>`<button class="episode ${state.episode===ordinal?'active':''}" data-action="episode" data-id="${f.id}" data-value="${ordinal}" aria-label="${esc(canonical?canonical.display(f,{episode:ordinal}).label:item.label)}">${esc(item.kind==='special'||!item.number?item.label:String(item.number)+(item.part?'（'+item.part+'）':''))}</button>`).join('')}</div></section>`;
+}
+function seasonEpisode(f,season){const list=window.OpenStreamEpisodes?.catalog(f);if(!list)return 1;const index=list.findIndex(item=>item.season===season&&item.kind!=='special'),fallback=list.findIndex(item=>item.season===season);return (index>=0?index:fallback)+1;}
+function episodeDescription(f,value){return window.OpenStreamEpisodes?.display(f,value).label||(isSeries(f)?`第 ${value?.season||1} 季 · 第 ${value?.episode||1} ${f.type==='综艺'?'期':'集'}`:'正片');}
+function updatedEpisodeLink(f){const target=newEpisode(f);if(!target)return '';const known=!!f.lines?.length;return `<a class="text-button" href="#${known?'player':'detail'}/${f.id}" ${known?`data-new-episode="${target}"`:''} data-id="${f.id}">有新集 · ${known?esc(episodeDescription(f,{episode:target})):'查看更新'}</a>`;}
 const $=s=>document.querySelector(s),esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 function load(k,d){try{return JSON.parse(localStorage.getItem((window.OPENSTREAM_LIVE?'openstream_live_':'openstream_ui_')+k))??d}catch{return d}}
-function save(k,v){try{localStorage.setItem((window.OPENSTREAM_LIVE?'openstream_live_':'openstream_ui_')+k,JSON.stringify(v))}catch{toast('浏览器暂时无法保存偏好')}}
+function save(k,v){try{localStorage.setItem((window.OPENSTREAM_LIVE?'openstream_live_':'openstream_ui_')+k,JSON.stringify(v));if(typeof CustomEvent==='function'&&!window.OpenStreamLocalData?.applying)document.dispatchEvent(new CustomEvent('openstream:data-change',{detail:{key:k,origin:'local'}}))}catch{toast('浏览器暂时无法保存偏好')}}
 let favorites=new Set(load('favorites',window.OPENSTREAM_LIVE?[]:['interstellar','blade'])),history=load('history',window.OPENSTREAM_LIVE?[]:['interstellar','dune']),filters={type:'电影',genre:'全部',year:'全部',region:'全部',sort:'精选'},homeGenre='全部';let toastTimer;
 const historyExamples={
  interstellar:{watchedAt:new Date(Date.now()-45*60000).toISOString(),position:2906,duration:10140},
@@ -45,7 +55,7 @@ const historyMetadata=load('historyMetadataV2',window.OPENSTREAM_LIVE?{}:history
 if(!window.OPENSTREAM_LIVE&&!load('historyExamplesV2',false)){history=[...new Set([...history,...Object.keys(historyExamples)])];save('history',history);save('historyMetadataV2',historyMetadata);save('historyExamplesV2',true);}
 function playbackTime(seconds){const m=Math.floor(seconds/60);return m+':'+String(seconds%60).padStart(2,'0');}
 function watchedComplete(record){return !!record&&(record.completed===true||(record.duration>0&&record.position/record.duration>=.99));}
-function newEpisode(f){const r=historyMetadata[f.id];return isSeries(f)&&r&&r.totalEpisodes>0&&f.episodes>r.totalEpisodes?r.totalEpisodes+1:0;}
+function newEpisode(f){const r=historyMetadata[f.id],target=isSeries(f)&&r&&r.totalEpisodes>0&&f.episodes>r.totalEpisodes?r.totalEpisodes+1:0;if(target&&typeof window!=='undefined'&&window.OpenStreamEpisodes&&f.lines?.length&&OpenStreamEpisodes.selection(f,{episode:target})?.kind==='special')return 0;return target;}
 function historyLabel(id){const record=historyMetadata[id];return watchedComplete(record)?'重新观看':record?'继续播放 · '+playbackTime(record.position):'立即观看';}
 function watchedTime(value){if(!value)return '观看时间未知';return new Date(value).toLocaleString('zh-CN',{year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false});}
 function toast(s){$('#toast').textContent=s;$('#toast').classList.add('visible');clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('#toast').classList.remove('visible'),2300)}
@@ -76,7 +86,7 @@ function heroMarkup(){
 
 
 
-function home(){return `<div id="hero-slot">${heroMarkup()}</div><div class="section-head"><h2>推荐影片</h2><a class="text-button" href="#discover">发现更多 ${icon('arrow')}</a></div><div class="filter-tabs">${chips(['全部','科幻','悬疑','剧情','传记'],homeGenre,'home')}</div><div id="home-recommendations" class="poster-grid">${films.filter(f=>(f.type||'电影')==='电影').map(f=>card(f).replace('<article class="poster-card"',`<article data-home-genre="${esc(f.genre)}" ${homeGenre!=='全部'&&f.genre!==homeGenre?'hidden':''} class="poster-card"`)).join('')}</div><div class="section-head"><h2>剧集与动漫</h2></div>${grid(films.filter(f=>['电视剧','动漫'].includes(f.type)))}<div class="section-head"><h2>综艺</h2></div>${grid(films.filter(f=>f.type==='综艺'))}`;}
+function home(){return `${window.OpenStreamLibrary?.continueWatching()||''}<div id="hero-slot">${heroMarkup()}</div><div class="section-head"><h2>推荐影片</h2><a class="text-button" href="#discover">发现更多 ${icon('arrow')}</a></div><div class="filter-tabs">${chips(['全部','科幻','悬疑','剧情','传记'],homeGenre,'home')}</div><div id="home-recommendations" class="poster-grid">${films.filter(f=>(f.type||'电影')==='电影').map(f=>card(f).replace('<article class="poster-card"',`<article data-home-genre="${esc(f.genre)}" ${homeGenre!=='全部'&&f.genre!==homeGenre?'hidden':''} class="poster-card"`)).join('')}</div><div class="section-head"><h2>剧集与动漫</h2></div>${grid(films.filter(f=>['电视剧','动漫'].includes(f.type)))}<div class="section-head"><h2>综艺</h2></div>${grid(films.filter(f=>f.type==='综艺'))}`;}
 const filterScroll = {};
 function filterStrip(label,key,items) {
   return `<div class="discovery-row"><span class="discovery-label" id="label-${key}">${label}</span><button class="strip-arrow" data-action="strip" data-key="${key}" data-direction="-1" aria-label="向左滚动${label}">${icon('arrow')}</button><div class="filter-strip" data-strip="${key}" role="group" aria-labelledby="label-${key}">${chips(items,filters[key],key)}</div><button class="strip-arrow" data-action="strip" data-key="${key}" data-direction="1" aria-label="向右滚动${label}">${icon('arrow')}</button></div>`;
@@ -91,14 +101,14 @@ function discover(){
   return `<div class="discovery-heading"><h1>探索影片</h1><button class="text-button" data-action="reset" ${active?'':'disabled'}>重置筛选</button></div><div class="discovery-filters">${filterStrip('分类','type',['电影','电视剧','动漫','综艺','纪录片'])}${filterStrip('题材','genre',['全部','科幻','悬疑','剧情','传记','喜剧','爱情','动作','冒险','惊悚','犯罪','动画','战争','历史','奇幻','家庭','美食','旅行'])}${filterStrip('年份','year',years)}</div><div class="results-head discovery-results"><span>${list.length} 部影片</span><div class="sort-options" role="group" aria-label="排序">${chips(['精选','最新上映','评分最高'],filters.sort,'sort')}</div></div>${grid(list.slice((discoverPage-1)*6,discoverPage*6))}<div class="pagination"><button data-action="page" data-value="-1" ${discoverPage===1?'disabled':''}>上一页</button><span>第 ${discoverPage} / ${pages} 页</span><button data-action="page" data-value="1" ${discoverPage===pages?'disabled':''}>下一页</button></div>`;
 }
 
-function detail(f){return `<a class="back" href="${listOrigin}">← 返回列表</a><div class="detail-layout"><img class="detail-poster" ${posterAttributes(f,'(max-width:700px) 44vw, 300px')} alt="${esc(f.name)}海报"><div class="detail-content"><h1>${esc(f.name)}</h1><p class="english">${esc(f.en)}</p><div class="meta"><span class="score ${scoreClass(f.rating)}" title="${esc(f.ratingSource||'评分')}">${f.ratingSource==='TMDB'?'TMDB ':''}★ ${esc(f.rating)}</span>${certificationMarkup(f)}<span data-detail-year>${esc(f.year||'年份未收录')}</span><span data-detail-genre>${esc(f.genre||f.type)}</span><span>${esc(f.length)}</span></div><p class="synopsis">${esc(f.description)}</p><p class="credits">导演　${esc(f.director)}<br>主演　${esc(f.cast)}</p><div class="actions"><a href="#player/${f.id}" class="primary">${icon('play')}${history.includes(f.id)?historyLabel(f.id):'立即观看'}</a><button class="secondary favorite-button" aria-pressed="${favorites.has(f.id)}" data-action="favorite" data-id="${f.id}">${icon('bookmark')}${favorites.has(f.id)?'已收藏':'加入收藏'}</button></div></div></div>${episodePicker(f)}<div class="section-head"><h2>相关推荐</h2></div><div id="related-films">${window.OPENSTREAM_LIVE?'<p class="related-empty">正在寻找相关影片…</p>':grid(window.FilmMetadata?.related(f,films)||[])}</div>`}
+function detail(f){return `<a class="back" href="${listOrigin}">← 返回列表</a><div class="detail-layout"><img class="detail-poster" ${posterAttributes(f,'(max-width:700px) 44vw, 300px')} alt="${esc(f.name)}海报"><div class="detail-content"><h1>${esc(f.name)}</h1><p class="english">${esc(f.en)}</p><div class="meta"><span class="score ${scoreClass(f.rating)}" title="${esc(f.ratingSource||'评分')}">${f.ratingSource==='TMDB'?'TMDB ':''}★ ${esc(f.rating)}</span>${certificationMarkup(f)}<span data-detail-year>${esc(f.year||'年份未收录')}</span><span data-detail-genre>${esc(f.genre||f.type)}</span><span>${esc(f.length)}</span></div><p class="synopsis">${esc(f.description)}</p><p class="credits">导演　${esc(f.director)}<br>主演　${esc(f.cast)}</p><div class="actions"><a href="#player/${f.id}" class="primary" ${history.includes(f.id)?`data-action="resume-history" data-id="${f.id}"`:""}>${icon('play')}${history.includes(f.id)?historyLabel(f.id):'立即观看'}</a><button class="secondary favorite-button" aria-pressed="${favorites.has(f.id)}" data-action="favorite" data-id="${f.id}">${icon('bookmark')}${favorites.has(f.id)?'已收藏':'加入收藏'}</button></div>${window.OpenStreamLibrary?.availability.markup(f.id)||''}</div></div>${episodePicker(f)}<div class="section-head"><h2>相关推荐</h2></div><div id="related-films">${window.OPENSTREAM_LIVE?'<p class="related-empty">正在寻找相关影片…</p>':grid(window.FilmMetadata?.related(f,films)||[])}</div>`}
 function player(f){
  const state=episodeFor(f),serial=isSeries(f);
- const episode=serial?`第 ${state.season} 季 · 第 ${state.episode} ${f.type==='综艺'?'期':'集'}`:'正片';
- return `<section class="watch-page"><div class="watch-heading"><a class="back" href="#detail/${f.id}">${icon('arrow')}返回详情</a><span>${f.type||'电影'} · ${esc(f.year)}</span></div><div class="watch-layout"><div class="watch-main"><div class="watch-screen" id="screen"><div id="watch-player" aria-label="影片播放器"></div></div></div><aside class="watch-side-column"><div class="watch-aside ${serial?'has-episodes':''}"><div class="watch-side-heading"><h2>${esc(f.name)}</h2><button class="secondary favorite-button" aria-pressed="${favorites.has(f.id)}" data-action="favorite" data-id="${f.id}">${icon('bookmark')}${favorites.has(f.id)?'已收藏':'收藏'}</button></div><div class="watch-film-info"><span class="score ${scoreClass(f.rating)}" title="${esc(f.ratingSource||'评分')}">${f.ratingSource==='TMDB'?'TMDB ':''}★ ${esc(f.rating)}</span><span>${esc(f.year)} · ${esc(f.genre)}</span><span>${esc(f.length)}</span></div><section class="watch-synopsis" aria-label="影片简介">${String(f.description||'').length>100?`<details class="watch-plot"><summary><span class="plot-expand">展开</span><span class="plot-collapse">收起</span></summary><p>${esc(f.description)}</p></details><p class="plot-preview">${esc(f.description)}</p>`:`<p>${esc(f.description)}</p>`}</section><dl class="watch-credits"><dt>导演</dt><dd>${esc(f.director)}</dd><dt>主演</dt><dd>${esc(f.cast)}</dd></dl>${serial?`<div class="watch-next"><button class="secondary" data-action="episode" data-id="${f.id}" data-value="${Math.max(1,state.episode-1)}" ${state.episode===1?'disabled':''}>上一集</button><label>自动连播 <input class="switch" type="checkbox" aria-label="自动连播" data-watch-autoplay ${load('autoplay',true)?'checked':''}></label><button class="secondary" data-action="episode" data-id="${f.id}" data-value="${Math.min(f.episodes,state.episode+1)}" ${state.episode===f.episodes?'disabled':''}>下一集</button></div>`:''}${serial?episodePicker(f):''}</div><details class="watch-routes" aria-label="播放线路"><summary class="routes-heading"><span>播放线路 <small>12 条</small></span><span class="route-current">当前 综合影视</span><span class="route-switch">切换源</span></summary><div class="watch-source-list">${Array.from({length:12},(_,i)=>`<button class="source-button ${i===0?'active':''}" data-action="source" aria-pressed="${i===0}"><span class="source-dot"></span><span>${i===0?'综合影视':'备用线路 '+i}</span><svg viewBox="0 0 24 24" class="source-check"><path d="m5 12 4 4L19 6"/></svg></button>`).join('')}</div></details></aside></div></section>`;
+ const episode=episodeDescription(f,state),next=window.OpenStreamEpisodes?OpenStreamEpisodes.nextOrdinal(f,state):state.episode<f.episodes?state.episode+1:null;
+ return `<section class="watch-page"><div class="watch-heading"><a class="back" href="#detail/${f.id}">${icon('arrow')}返回详情</a><span>${f.type||'电影'} · ${esc(f.year)}</span></div><div class="watch-layout"><div class="watch-main"><div class="watch-screen" id="screen"><div id="watch-player" aria-label="影片播放器"></div></div></div><aside class="watch-side-column"><div class="watch-aside ${serial?'has-episodes':''}"><div class="watch-side-heading"><h2>${esc(f.name)}</h2><button class="secondary favorite-button" aria-pressed="${favorites.has(f.id)}" data-action="favorite" data-id="${f.id}">${icon('bookmark')}${favorites.has(f.id)?'已收藏':'收藏'}</button></div><div class="watch-film-info"><span class="score ${scoreClass(f.rating)}" title="${esc(f.ratingSource||'评分')}">${f.ratingSource==='TMDB'?'TMDB ':''}★ ${esc(f.rating)}</span><span>${esc(f.year)} · ${esc(f.genre)}</span><span>${esc(f.length)}</span></div><section class="watch-synopsis" aria-label="影片简介">${String(f.description||'').length>100?`<details class="watch-plot"><summary><span class="plot-expand">展开</span><span class="plot-collapse">收起</span></summary><p>${esc(f.description)}</p></details><p class="plot-preview">${esc(f.description)}</p>`:`<p>${esc(f.description)}</p>`}</section><dl class="watch-credits"><dt>导演</dt><dd>${esc(f.director)}</dd><dt>主演</dt><dd>${esc(f.cast)}</dd></dl>${serial?`<div class="watch-next"><button class="secondary" data-action="episode" data-id="${f.id}" data-value="${Math.max(1,state.episode-1)}" ${state.episode===1?'disabled':''}>上一集</button><label>自动连播 <input class="switch" type="checkbox" aria-label="自动连播" data-watch-autoplay ${load('autoplay',true)?'checked':''}></label><button class="secondary" data-action="episode" data-id="${f.id}" data-value="${next||state.episode}" ${!next?'disabled':''}>下一集</button></div>`:''}${serial?episodePicker(f):''}</div><details class="watch-routes" aria-label="播放线路"><summary class="routes-heading"><span>播放线路 <small>12 条</small></span><span class="route-current">当前 综合影视</span><span class="route-switch">切换源</span></summary><div class="watch-source-list">${Array.from({length:12},(_,i)=>`<button class="source-button ${i===0?'active':''}" data-action="source" aria-pressed="${i===0}"><span class="source-dot"></span><span>${i===0?'综合影视':'备用线路 '+i}</span><svg viewBox="0 0 24 24" class="source-check"><path d="m5 12 4 4L19 6"/></svg></button>`).join('')}</div></details></aside></div></section>`;
 }
 
-function library(){let list=films.filter(f=>favorites.has(f.id)&&(!window.OPENSTREAM_LIVE||!window.LiveData||LiveData.allowed(f)));return `<div class="page-title"><h1>我的收藏</h1></div><div class="results-head"><span>${list.length} 部影片</span></div>${list.length?grid(list):'<div class="empty"><h2>还没有收藏</h2><a class="primary" href="#discover">探索影片</a></div>'}` }
+function library(){if(window.OpenStreamLibrary?.libraryMarkup)return OpenStreamLibrary.libraryMarkup();let list=films.filter(f=>favorites.has(f.id)&&(!window.OPENSTREAM_LIVE||!window.LiveData||LiveData.allowed(f)));return `<div class="page-title"><h1>我的收藏</h1></div><div class="results-head"><span>${list.length} 部影片</span></div>${list.length?grid(list):'<div class="empty"><h2>还没有收藏</h2><a class="primary" href="#discover">探索影片</a></div>'}` }
 let historyOlderOpen=false,historyOlderLimit=20;
 function historyBucket(record,now=new Date()){
  const stamp=new Date(record.watchedAt).getTime();
@@ -109,8 +119,8 @@ function historyBucket(record,now=new Date()){
 }
 function historyRow({film:f,record:r}){
  const progress=r.duration?Math.min(100,r.position/r.duration*100):0;
- const episode=f.episodes>1?`第 ${r.season||1} 季 · 第 ${r.episode||1} ${f.type==='综艺'?'期':'集'}`:'正片';
- return `<article class="history-item"><img ${posterAttributes(f,'80px')} loading="lazy" alt="${esc(f.name)}"><div class="history-copy"><h3>${esc(f.name)}</h3><time datetime="${r.watchedAt||''}">${watchedTime(r.watchedAt)}</time><p>${episode} · ${watchedComplete(r)?'已看完':r.duration?'看到 '+playbackTime(r.position)+' / '+playbackTime(r.duration):'进度未知'}</p><div class="progress" role="progressbar" aria-label="观看进度" aria-valuenow="${Math.round(progress)}" aria-valuemin="0" aria-valuemax="100"><i style="width:${progress}%"></i></div></div><a href="#player/${f.id}" data-action="resume-history" data-id="${f.id}" class="primary">${watchedComplete(r)?'重新观看':'继续观看'}</a>${newEpisode(f)?`<a class="text-button" href="#player/${f.id}" data-new-episode="${newEpisode(f)}" data-id="${f.id}">有新集 · 第 ${newEpisode(f)} 集</a>`:''}<button class="remove" data-action="remove-history" data-id="${f.id}" aria-label="移除${esc(f.name)}的观看记录">移除</button></article>`;
+ const episode=episodeDescription(f,r);
+ return `<article class="history-item"><img ${posterAttributes(f,'80px')} loading="lazy" alt="${esc(f.name)}"><div class="history-copy"><h3>${esc(f.name)}</h3><time datetime="${r.watchedAt||''}">${watchedTime(r.watchedAt)}</time><p>${episode} · ${watchedComplete(r)?'已看完':r.duration?'看到 '+playbackTime(r.position)+' / '+playbackTime(r.duration):'进度未知'}</p><div class="progress" role="progressbar" aria-label="观看进度" aria-valuenow="${Math.round(progress)}" aria-valuemin="0" aria-valuemax="100"><i style="width:${progress}%"></i></div></div><a href="#player/${f.id}" data-action="resume-history" data-id="${f.id}" class="primary">${watchedComplete(r)?'重新观看':'继续观看'}</a>${updatedEpisodeLink(f)}<button class="remove" data-action="remove-history" data-id="${f.id}" aria-label="移除${esc(f.name)}的观看记录">移除</button></article>`;
 
 }
 function historyPage(){
@@ -205,9 +215,9 @@ document.addEventListener('click',e=>{
 
  if(a==='strip'){const strip=document.querySelector(`[data-strip="${b.dataset.key}"]`);strip.scrollBy({left:Number(b.dataset.direction)*strip.clientWidth*.75,behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth'});}
  if(a==='page'){discoverPage+=Number(b.dataset.value);render();$('.discovery-results').scrollIntoView({block:'start'});}
- if(a==='undo'&&undoHistory){history=undoHistory;undoHistory=null;save('history',history);if(location.hash==='#history')render();toast('已恢复观看记录');}
+ if(a==='undo'&&undoHistory){history=undoHistory;undoHistory=null;save('history',history);if(location.hash==='#history'||['','#home'].includes(location.hash))render();toast('已恢复观看记录');}
  if(a==='search-all')searchAll();
- if(a==='season'||a==='episode'){const f=films.find(f=>f.id===b.dataset.id);const state=episodeFor(f);state[a]=Number(b.dataset.value);if(a==='season')state.episode=1;if(a==='episode'&&!location.hash.startsWith('#player/'))location.hash='player/'+f.id;else render();}
+ if(a==='season'||a==='episode'){const f=films.find(f=>f.id===b.dataset.id);const state=episodeFor(f);state[a]=Number(b.dataset.value);if(a==='season')state.episode=seasonEpisode(f,state.season);if(a==='episode'&&window.OpenStreamEpisodes)state.season=OpenStreamEpisodes.selection(f,state)?.season||state.season;if(a==='episode'&&!location.hash.startsWith('#player/'))location.hash='player/'+f.id;else render();}
  if(a==='lights'){const off=document.body.classList.toggle('lights-off');b.textContent=off?'开灯':'关灯';b.setAttribute('aria-pressed',String(off));}
 });
 document.addEventListener('keydown',e=>{if(e.key==='Escape')document.body.classList.remove('lights-off');});
@@ -234,7 +244,7 @@ function syncFavoriteButtons(){
   button.setAttribute('aria-pressed',String(active));
   const compact=button.classList.contains('quick-favorite');
   button.innerHTML=icon('bookmark')+(compact?'':active?'已收藏':'加入收藏');
-  if(compact)button.setAttribute('aria-label',(active?'取消收藏':'收藏')+films.find(f=>f.id===button.dataset.id).name);
+  if(compact)button.setAttribute('aria-label',(active?'取消收藏':'收藏')+(films.find(f=>f.id===button.dataset.id)?.name||'影片'));
  });
 }
 function toggleFavorite(id){
@@ -291,18 +301,21 @@ let ribbonDrag=null;
 let suppressRibbonClick=false;
 document.addEventListener('pointerdown',event=>{
  const ribbon=event.target.closest(draggableShelfSelector);
- if(!ribbon||event.pointerType!=='mouse'||event.button!==0||(event.target.closest('button')&&!ribbon.matches('.watch-source-list')))return;
+ if(ribbonDrag||!ribbon||event.isPrimary===false||event.button!==0||(event.target.closest('button')&&!ribbon.matches('.watch-source-list')))return;
  const track=ribbon.querySelector('.film-ribbon-track');
  const animation=track?.getAnimations()[0];
+ // Touch shelves without a running track keep native scrolling and momentum.
+ if(event.pointerType!=='mouse'&&!animation)return;
  const duration=animation?.effect.getTiming().duration;
  const distance=track?track.getBoundingClientRect().width/2:0;
- if(!ribbon.matches('.watch-source-list'))event.preventDefault();
+ if(event.pointerType==='mouse'&&!ribbon.matches('.watch-source-list'))event.preventDefault();
  suppressRibbonClick=false;
- ribbonDrag={ribbon,id:event.pointerId,x:event.clientX,scroll:ribbon.scrollLeft,animation,duration,distance,time:Number(animation?.currentTime)||0,moved:false};
+ ribbonDrag={ribbon,id:event.pointerId,x:event.clientX,y:event.clientY,scroll:ribbon.scrollLeft,animation,duration,distance,time:Number(animation?.currentTime)||0,moved:false};
 });
 document.addEventListener('pointermove',event=>{
  if(!ribbonDrag||event.pointerId!==ribbonDrag.id)return;
  const delta=event.clientX-ribbonDrag.x;
+ if(!ribbonDrag.moved&&Math.abs(event.clientY-ribbonDrag.y)>Math.max(6,Math.abs(delta))){ribbonDrag.moved=true;finishRibbonDrag(event);return;}
  if(!ribbonDrag.moved&&Math.abs(delta)<6)return;
  if(!ribbonDrag.moved){ribbonDrag.moved=true;ribbonDrag.ribbon.setPointerCapture(event.pointerId);ribbonDrag.ribbon.classList.add('is-dragging');}
  event.preventDefault();
@@ -315,6 +328,7 @@ function finishRibbonDrag(event){
  const {ribbon,id,moved}=ribbonDrag;
  suppressRibbonClick=moved;
  ribbon.classList.remove('is-dragging');
+ ribbon.classList.remove('is-held');
  if(ribbon.hasPointerCapture(id))ribbon.releasePointerCapture(id);
  ribbonDrag=null;
 }
@@ -327,9 +341,9 @@ document.addEventListener('click',event=>{
 
 document.addEventListener('click',event=>{
  const resume=event.target.closest('[data-action="resume-history"]');
- if(resume){const f=films.find(f=>f.id===resume.dataset.id),r=historyMetadata[f.id];if(r&&f.episodes>1)Object.assign(episodeFor(f),{season:r.season||1,episode:r.episode||1});}
+ if(resume){const f=films.find(f=>f.id===resume.dataset.id),r=historyMetadata[f.id];if(r&&f.episodes>1){const shown=window.OpenStreamEpisodes?.display(f,r);Object.assign(episodeFor(f),{season:shown?.season||r.season||1,episode:shown?.ordinal||r.episode||1});}}
  const clear=event.target.closest('[data-action="clear-cookies"]');
- if(clear){if(!confirm('清除当前网站的 Cookie？登录状态可能失效，收藏和观看历史不会删除。'))return;
+ if(clear){if(!confirm('清除当前网站的 Cookie？验证状态可能失效，收藏和观看历史不会删除。'))return;
   const cookies=document.cookie.split(';').map(x=>x.split('=')[0].trim()).filter(Boolean);
   if(!cookies.length){toast('当前没有可清除的 Cookie');return;}
   for(const name of cookies)document.cookie=name+'=; Max-Age=0; path=/; SameSite=Lax';

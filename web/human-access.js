@@ -107,6 +107,7 @@
       if (config && (!config.enabled || config.verified)) return;
       await challenge(config);
     })().finally(() => {pending = null;});
+    window.OpenStreamPlayback?.observeAccess(pending);
     return pending;
   }
   // Only retry our read-only endpoints, never media hosts or arbitrary POSTs.

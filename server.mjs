@@ -4,6 +4,7 @@ import compression from 'compression';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import express from 'express';
+import deviceSync from './api/sync/device.mjs';
 import authHandler from './api/auth/[action].mjs';
 import proxyHandler from './api/proxy/[...path].mjs';
 import tvboxHandler from './api/tvbox/[action].mjs';
@@ -44,6 +45,7 @@ app.use((req, res, next) => {
   res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
   next();
 });
+app.all('/api/sync/device', express.json({limit:'64kb',type:'application/json'}),deviceSync);
 app.use(express.json({ limit: '4kb', type: 'application/json' }));
 
 function sendHtml(res, fileName) {

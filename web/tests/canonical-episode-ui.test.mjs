@@ -1,0 +1,11 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import vm from 'node:vm';
+import {readFileSync} from 'node:fs';
+const app=readFileSync(new URL('../app.js',import.meta.url),'utf8');
+function fixture(){const state={season:2,episode:2},context={window:{OPENSTREAM_LIVE:true},esc:String,isSeries:()=>true,episodeFor:()=>state};vm.createContext(context);vm.runInContext(readFileSync(new URL('../episode-identity.js',import.meta.url),'utf8'),context);context.OpenStreamEpisodes=context.window.OpenStreamEpisodes;vm.runInContext(app.slice(app.indexOf('function episodePicker('),app.indexOf('const $=')),context);const film={id:'film',name:'混合季测试',type:'电视剧',episodes:4,lines:[{episodes:['S01E01','S02E01','S02E02','S02E03预告'].map(name=>({name}))}]};return{context,state,film};}
+test('picker filters actual season and keeps its internal ordinal separate from button labels',()=>{const{context,film}=fixture(),markup=context.episodePicker(film);assert.match(markup,/data-value="2" aria-label="第 2 季 · 第 1 集">1</);assert.match(markup,/data-value="3" aria-label="第 2 季 · 第 2 集">2</);assert.doesNotMatch(markup,/aria-label="第 1 季 · 第 1 集"/);assert.equal(context.seasonEpisode(film,2),2);assert.equal(context.seasonEpisode(film,1),1);assert.match(markup,/附加内容/);});
+test('unverified cached counts are not exposed as actionable selection or false season tabs',()=>{const{context,film}=fixture();delete film.lines;assert.match(context.episodePicker(film),/集数待核实/);assert.doesNotMatch(context.episodePicker(film),/data-action="episode"/);assert.equal(context.episodeDescription(film,{episode:9,episodeKey:'s2:e1'}),'第 2 季 · 第 1 集');});
+test('a newly appended trailer never masquerades as a new normal episode',()=>{const{context,film}=fixture();context.historyMetadata={film:{episode:3,totalEpisodes:3}};vm.runInContext(app.slice(app.indexOf('function newEpisode('),app.indexOf('function historyLabel(')),context);assert.equal(context.newEpisode(film),0);});
+
+test('unresolved update hints request selection instead of claiming an ordinal is a real episode',()=>{const{context,film}=fixture();delete film.lines;context.newEpisode=()=>2;const markup=context.updatedEpisodeLink(film);assert.match(markup,/#detail\/film/);assert.match(markup,/查看更新/);assert.doesNotMatch(markup,/第 .*集|data-new-episode/);});

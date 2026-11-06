@@ -57,7 +57,7 @@
   const sources = () => Object.keys(API_SITES).filter(key => !API_SITES[key].adult && !OpenStreamSourceAdapter.isLoginRequiredSource(key));
   async function json(url, signal) {
     const response = await fetch(url, { signal, credentials: 'same-origin' });
-    if (response.status === 401) { window.dispatchEvent(new Event('session-expired')); throw new Error('登录已过期，请重新验证'); }
+    if (response.status === 401) { window.dispatchEvent(new Event('session-expired')); throw new Error('访问验证已过期，请重新验证'); }
     if (!response.ok) {
       const error=new Error(response.status === 429 ? '请求较多，请稍后重试' : '数据暂时无法加载，请重试');
       error.status=response.status;throw error;
