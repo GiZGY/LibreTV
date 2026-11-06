@@ -42,7 +42,7 @@
     }
     if(host!==next||currentMedia!==mountedMedia||!next.isConnected)return;
    }
-   let hls=null,guard=null,recoveries=0,failed=false,nativePlayback=false,overlayNotice=null,overlayTimer;
+   let hls=null,guard=null,recoveries=0,failed=false,nativePlayback=false,overlayNotice=null,overlayTimer,session=null;
    const reportHealth=health=>{if(media)document.dispatchEvent(new CustomEvent('playback-health',{detail:{filmId:media.filmId,lineKey:media.lineKey,health}}));};
    const fail=()=>{if(failed||media!==window.LivePlayback?.current())return;failed=true;reportHealth('slow');window.LivePlayback?.failed(media);};
    const skipKey='skip_'+film.id;
@@ -96,7 +96,7 @@
     layers:mediaUrl?[]:[{name:'empty-media',html:'<div class="watch-empty"><span>暂未获取到播放地址</span><p>请选择其他线路，或返回影片详情</p></div>',style:{inset:'0',display:'grid',placeItems:'center',pointerEvents:'none'}}]
    });
    const instance=art;
-   const session=window.OpenStreamPlayback?.createSession({resolveMs:media?.resolveMs||0,sourceMs:media?.sourceMs||0,accessMs:media?.accessMs||0,addressMs:media?.addressMs||0,transition:media?.switched?'line':media?.autoplay?'episode':'open'});
+   session=window.OpenStreamPlayback?.createSession({resolveMs:media?.resolveMs||0,sourceMs:media?.sourceMs||0,accessMs:media?.accessMs||0,addressMs:media?.addressMs||0,transition:media?.switched?'line':media?.autoplay?'episode':'open'});
    instance.on('destroy',()=>session?.dispose());
    let playIntent=!!media?.autoplay,playAttempt=false,playAttempts=0,playTimer=null;
    function resumePlayIntent(){
