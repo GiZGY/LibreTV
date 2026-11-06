@@ -96,7 +96,7 @@
     volume:previousSound?.volume??load('volume',.8),muted:previousSound?.muted??load('muted',false),setting:true,airplay:true,aspectRatio:true,pip:true,fullscreen:true,fullscreenWeb:true,playsInline:true,
     hotkey:true,fastForward:false,playbackRate:false,autoPlayback:false,
     settings:[...(isSeries(film)?[{html:'自动连播',switch:load('autoplay',true),onSwitch(item){const enabled=!item.switch;save('autoplay',enabled);document.querySelectorAll('#autoplay,[data-watch-autoplay]').forEach(el=>el.checked=enabled);return enabled;}}]:[]),skipSetting('intro','跳过片头'),skipSetting('outro','跳过片尾')],
-    controls:[...(isSeries(film)?[{name:'next-episode',position:'left',index:11,html:'<button type="button" class="player-next-episode" aria-label="下一集" title="下一集" '+(episodeFor(film).episode>=film.episodes?'disabled':'')+'><svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor" aria-hidden="true"><path d="M5 4v16l11-8L5 4zm12 0h3v16h-3z"/></svg></button>',click:()=>advance(true)}]:[]),{name:'fine-speed',position:'right',html:'<details class="fine-speed"><summary aria-label="调整播放速度">1×</summary><div class="fine-speed-panel"><div class="fine-speed-heading"><span>播放速度</span><div class="rate-stepper"><button type="button" data-step="-0.05" aria-label="减慢 0.05 倍">−</button><output>1×</output><button type="button" data-step="0.05" aria-label="加快 0.05 倍">＋</button></div></div><input type="range" min="0.5" max="2" step="0.05" value="1" aria-label="播放速度" aria-valuetext="1 倍"><div class="fine-speed-presets">'+[.5,.75,1,1.25,1.5,1.75,2].map(n=>'<button type="button" style="--tick:'+((n-.5)/1.5*100)+'%" data-rate="'+n+'">'+n+'×</button>').join('')+'</div></div></details>'}],
+    controls:[...(isSeries(film)?[{name:'next-episode',position:'left',index:11,html:'<button type="button" class="player-next-episode" aria-label="下一集" title="下一集" '+(window.OpenStreamEpisodes?!OpenStreamEpisodes.nextOrdinal(film,episodeFor(film))?'disabled':'':episodeFor(film).episode>=film.episodes?'disabled':'')+'><svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor" aria-hidden="true"><path d="M5 4v16l11-8L5 4zm12 0h3v16h-3z"/></svg></button>',click:()=>advance(true)}]:[]),{name:'fine-speed',position:'right',html:'<details class="fine-speed"><summary aria-label="调整播放速度">1×</summary><div class="fine-speed-panel"><div class="fine-speed-heading"><span>播放速度</span><div class="rate-stepper"><button type="button" data-step="-0.05" aria-label="减慢 0.05 倍">−</button><output>1×</output><button type="button" data-step="0.05" aria-label="加快 0.05 倍">＋</button></div></div><input type="range" min="0.5" max="2" step="0.05" value="1" aria-label="播放速度" aria-valuetext="1 倍"><div class="fine-speed-presets">'+[.5,.75,1,1.25,1.5,1.75,2].map(n=>'<button type="button" style="--tick:'+((n-.5)/1.5*100)+'%" data-rate="'+n+'">'+n+'×</button>').join('')+'</div></div></details>'}],
     layers:mediaUrl?[]:[{name:'empty-media',html:'<div class="watch-empty"><span>暂未获取到播放地址</span><p>请选择其他线路，或返回影片详情</p></div>',style:{inset:'0',display:'grid',placeItems:'center',pointerEvents:'none'}}]
    });
    const instance=art;
@@ -237,10 +237,10 @@
     if(instance.isDestroy||advancing||!(isSeries(film))||(!manual&&!load('autoplay',true)))return false;
     if(window.LivePlayback?.claimAdvance&&!LivePlayback.claimAdvance(media))return false;
     if(window.OpenStreamPlayerTools&&!OpenStreamPlayerTools.sleep.beforeAdvance(media,manual))return false;
-    const state=episodeFor(film);if(state.episode>=film.episodes)return false;
+    const state=episodeFor(film),target=window.OpenStreamEpisodes?OpenStreamEpisodes.nextOrdinal(film,state):state.episode+1;if(!target||target>film.episodes)return false;
     advancing=true;
     window.LivePlayback?.progress(instance.currentTime,instance.duration,film.id);
-    state.episode++;window.LivePlayback?.continue(manual?'manual':trigger);
+    state.episode=target;if(window.OpenStreamEpisodes)state.season=OpenStreamEpisodes.selection(film,state)?.season||1;window.LivePlayback?.continue(manual?'manual':trigger);
     if(window.LivePlayback)render();
     else{
      const fragment=document.createRange().createContextualFragment(player(film));

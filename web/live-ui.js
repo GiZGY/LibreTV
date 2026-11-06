@@ -500,7 +500,7 @@
     const autoplay=continuePlayback,trigger=playbackTrigger,key=window.OpenStreamEpisodes?.selection(f,state)?.key;
     const addressStarted=performance.now(),url=await data.resolveEpisode(line,index,signal);
     if(signal.aborted)throw signal.reason;
-    const saved=historyMetadata[f.id],same=saved?.episodeKey?key===saved.episodeKey:saved?.episode===ordinal;
+    const saved=historyMetadata[f.id],savedKey=saved?.episodeKey||window.OpenStreamEpisodes?.legacyKey(f,saved),same=savedKey?key===savedKey:saved?.episode===ordinal;
     const value={filmId:f.id,lineKey:line.key,url,addressMs:performance.now()-addressStarted,episode:ordinal,season:state.season||1,episodeKey:key,source:line.sourceKey,label:episode.name,cut:window.OpenStreamEpisodes?.cut(line)||'标准版',resume:transfer?.position??(same&&!watchedComplete(saved)?saved?.position:0),resumeDuration:transfer?.duration||saved?.duration||0,resumeRatio:transfer?.ratio??null,switched:!!transfer,autoplay,trigger};
     continuePlayback=false;playbackTrigger='open';lineTransfer=null;return value;
   }
@@ -532,6 +532,7 @@
         const restoredEpisode=!episodeState[film.id]&&historyMetadata[film.id];
         if(restoredEpisode)episodeState[film.id]={season:restoredEpisode.season||1,episode:Math.max(1,Math.min(film.episodes,restoredEpisode.episode||1))};
         window.OpenStreamEpisodes?.sync(film,episodeFor(film),restoredEpisode?.episodeKey||window.OpenStreamEpisodes?.legacyKey(film,restoredEpisode));
+        if(restoredEpisode&&!restoredEpisode.episodeKey&&window.OpenStreamEpisodes){const key=OpenStreamEpisodes.legacyKey(film,restoredEpisode);if(key){Object.assign(restoredEpisode,{episodeKey:key,episode:episodeFor(film).episode,season:episodeFor(film).season});save('historyMetadataV2',historyMetadata);}}
         if(page==='detail'){activePlayback=null;$('#main').innerHTML=detail(film);}
         else{
           if(!film.manualLine&&!activePlayback){film.lineIndex=rankedLines(film).find(({line})=>window.OpenStreamEpisodes?OpenStreamEpisodes.indexFor(film,line,episodeFor(film))>=0:line.episodes[['电影','纪录片'].includes(film.type)?0:episodeFor(film).episode-1])?.i||0;}
