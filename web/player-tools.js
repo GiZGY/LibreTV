@@ -243,7 +243,7 @@
   const poll=setInterval(()=>watch.poll(),1000);
   instance.on('video:play',()=>{if(sleep.blocked()){instance.pause();return;}watch.arm();});
   instance.on('video:playing',()=>{watch.arm();if(!sleep.blocked()&&!watch.snapshot().recovering)setStatus('');});
-  instance.on('video:pause',()=>{if(!watch.snapshot().recovering)watch.suspend();});instance.on('video:seeking',()=>{if(!watch.snapshot().recovering)watch.suspend();});instance.on('video:seeked',()=>{watch.arm();renderSubtitle();});
+  instance.on('video:pause',()=>{if(!watch.snapshot().recovering){watch.suspend();if(!video.error)cancelRecovery?.();}});instance.on('video:seeking',()=>{if(!watch.snapshot().recovering){watch.suspend();if(!video.error)cancelRecovery?.();}});instance.on('video:seeked',()=>{watch.arm();renderSubtitle();});
   instance.on('video:timeupdate',renderSubtitle);
   const userPause=event=>{const pointer=event.type==='pointerdown'&&(event.target.closest('.art-progress')||(!video.paused&&event.target.closest('.art-control-playAndPause,.art-video,.art-layer-play'))),keyboard=event.type==='keydown'&&!/INPUT|TEXTAREA|SELECT/.test(event.target.tagName)&&(['ArrowLeft','ArrowRight','Home','End'].includes(event.key)||!video.paused&&(event.key===' '||event.code==='Space'));if(pointer||keyboard){watch.suspend();cancelRecovery?.();setStatus('');}};
   host.addEventListener('pointerdown',userPause,true);host.addEventListener('keydown',userPause,true);

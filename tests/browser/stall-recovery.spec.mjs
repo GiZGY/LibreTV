@@ -37,14 +37,18 @@ test('missing on every line never borrows the following episode',async({page})=>
  await expect.poll(()=>page.evaluate(()=>LivePlayback.current())).toBe(null);await expect(page.locator('.watch-empty')).toContainText('暂未获取到播放地址');expect(await page.locator('video').evaluate(v=>v.currentSrc)).not.toContain('ep=3');
 });
 
-for(const action of ['pause','seek','manual-line'])test(`a ${action} action cancels a late recovery candidate`,async({page})=>{
+for(const action of ['pause','seek','api-pause','api-seek','manual-line'])test(`a ${action} action cancels a late recovery candidate`,async({page})=>{
  const release=await heldAlternates(page);try{
   await open(page);await page.evaluate(()=>{void LivePlayback.failed(LivePlayback.current());});await expect(page.locator('[data-playback-probe]')).toHaveCount(1);
+  if(action==='api-pause')await page.locator('#watch-player .art-video').evaluate(v=>v.pause());
+  if(action==='api-seek')await page.locator('#watch-player .art-video').evaluate(v=>{v.currentTime=18;});
   if(action==='pause')await page.locator('.art-control-playAndPause').click();
   if(action==='seek'){const box=await page.locator('.art-progress').boundingBox();await page.mouse.click(box.x+box.width*.3,box.y+box.height/2);}
   if(action==='manual-line'){await page.locator('.player-bottom-trigger[data-player-panel="lines"]').click();await page.locator('[data-player-line="3"]').click();await expectPlaybackProgress(page,{episode:1,lineKey:'stall:4'});}
   await expect(page.locator('[data-playback-probe]')).toHaveCount(0);await release();await page.waitForTimeout(1500);expect(await current(page)).toBe(action==='manual-line'?'stall:4':'stall:1');
-  if(action==='pause')await expect(page.locator('#watch-player .art-video')).toHaveJSProperty('paused',true);
+  if(action==='api-pause')await page.locator('#watch-player .art-video').evaluate(v=>v.pause());
+  if(action==='api-seek')await page.locator('#watch-player .art-video').evaluate(v=>{v.currentTime=18;});
+  if(action==='pause'||action==='api-pause')await expect(page.locator('#watch-player .art-video')).toHaveJSProperty('paused',true);
  }finally{await release();}
 });
 test('eight seconds of genuine current-line recovery cancels late candidate takeover',async({page})=>{
