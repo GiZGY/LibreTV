@@ -36,25 +36,47 @@ test('native fullscreen episode and route panels retain identity, speed, mute an
  await panel(page,'lines');await page.locator('[data-player-line="1"]').click();await episode(page,3);expect(await page.locator('video').evaluate(v=>v.currentSrc)).toContain('ep=3');expect(await page.evaluate(()=>document.fullscreenElement?.id)).toBe('watch-player');
  await panel(page,'lines');await page.locator('[data-player-line="0"]').click();await panel(page,'episodes');await page.locator('[data-player-episode="2"]').click();await episode(page,2);await panel(page,'lines');await expect(page.locator('[data-player-line="1"]')).toBeDisabled();await expect(page.locator('[data-player-line="1"] small')).toHaveText('缺少当前集');await page.locator('[data-player-view="lines"]').press('Escape');await expect(page.locator('.player-bottom-trigger[data-player-panel="lines"]')).toBeFocused();
 });
-test('native gear has one inline marker per skip row, exact slider sync and independent keyboard focus',async({page})=>{
- await open(page);await page.locator('video').evaluate(v=>{v.pause();v.currentTime=4;});await expect(page.locator('video')).toHaveJSProperty('seeking',false);await settings(page);
- await expect(page.locator('.art-settings .art-setting-item-left-icon:visible')).toHaveCount(0);await expect(page.locator('[data-player-view="options"]')).toHaveCount(0);await expect(page.locator('[data-skip-mark]')).toHaveCount(2);
- for(const which of ['intro','outro']){
-  const row=page.locator(`[data-name="skip-${which}"]`),marker=row.locator('[data-skip-mark]');
-  await expect(marker).toHaveText('标记');await expect(marker).toHaveAccessibleName(which==='intro'?'当前位置记为片头结束':'当前位置记为片尾开始');
-  expect(await row.evaluate(el=>{const nodes=[...el.children];return nodes.indexOf(el.querySelector('.art-setting-item-left'))<nodes.indexOf(el.querySelector('[data-skip-mark]'))&&nodes.indexOf(el.querySelector('[data-skip-mark]'))<nodes.indexOf(el.querySelector('.art-setting-item-right'));})).toBe(true);
+test('first-level skip controls keep exact seconds, independent toggles, markers and keyboard access',async({page})=>{
+ await open(page);const v=page.locator('video');await v.evaluate(v=>{v.pause();v.currentTime=4;});await expect(v).toHaveJSProperty('seeking',false);await settings(page);
+ const marker=page.locator('[data-skip-mark="intro"]'),seconds=page.locator('[data-skip-seconds="intro"]'),enabled=page.locator('[data-skip-enabled="intro"]');
+ await expect(page.locator('.art-settings .art-setting-item-left-icon:visible')).toHaveCount(0);await expect(page.locator('[data-name="episode-skip"]')).toHaveCount(0);
+ for(const key of ['intro','outro']){
+  const row=page.locator(`[data-name="skip-${key}"]`);
+  await expect(row.locator('[data-skip-mark]')).toHaveAccessibleName(key==='intro'?'当前位置记为片头结束':'当前位置记为片尾开始');
+  await expect(row.locator('input[type=range]')).toHaveCount(0);await expect(row.locator('input[type=number]')).toBeVisible();await expect(row.locator('[data-skip-enabled]')).toBeVisible();
  }
- await page.locator('video').evaluate(v=>{window.__markerSeeks=0;v.addEventListener('seeking',()=>window.__markerSeeks++);});
- const marker=page.locator('[data-skip-mark="intro"]'),range=page.locator('[data-skip-range="intro"]'),tooltip=page.locator('[data-name="skip-intro"] .art-setting-item-right-tooltip');
- await marker.click();await expect(range).toHaveValue('4');await expect(tooltip).toHaveText('4 秒');expect(await page.evaluate(()=>JSON.parse(localStorage.getItem('openstream_live_skip_film-qa1')))).toEqual({intro:4,outro:0});await expect(page.locator('video')).toHaveJSProperty('currentTime',4);await expect(page.locator('video')).toHaveJSProperty('paused',true);expect(await page.evaluate(()=>window.__markerSeeks)).toBe(0);
- await marker.focus();await page.keyboard.press('Tab');await expect(range).toBeFocused();await page.keyboard.press('ArrowRight');await expect(range).toHaveValue('5');await expect(tooltip).toHaveText('5 秒');expect(await page.evaluate(()=>JSON.parse(localStorage.getItem('openstream_live_skip_film-qa1')).intro)).toBe(5);
- await page.keyboard.press('Shift+Tab');await expect(marker).toBeFocused();await page.keyboard.press('Enter');await expect(range).toHaveValue('4');await expect(page.locator('video')).toHaveJSProperty('currentTime',4);await page.keyboard.press('Escape');await expect(page.locator('.art-control-setting')).toBeFocused();await expect(page.locator('#watch-player .art-video-player')).not.toHaveClass(/art-setting-show/);
- await page.keyboard.press('Enter');await expect(page.locator('#watch-player .art-video-player')).toHaveClass(/art-setting-show/);await expect(page.locator('[data-skip-mark]')).toHaveCount(2);
- await settings(page,'sleep-timer');await page.locator('[data-sleep-minutes="15"]').focus();await page.keyboard.press('Enter');await expect(page.locator('.player-sleep-pill')).toContainText('后停止');await expect(page.locator('[data-sleep-extend]')).toBeVisible();await page.locator('[data-sleep-cancel]').click();await expect(page.locator('.player-sleep-pill')).toBeHidden();await expect(page.locator('[data-sleep-extend]')).toBeHidden();
+ await v.evaluate(v=>{window.__markerSeeks=0;v.addEventListener('seeking',()=>window.__markerSeeks++);});
+ await marker.focus();await page.keyboard.press('Enter');await expect(seconds).toHaveValue('4');await expect(enabled).toHaveAttribute('aria-checked','true');
+ await seconds.fill('17');await seconds.press('Enter');await expect(seconds).toHaveValue('17');
+ const saved=()=>page.evaluate(()=>JSON.parse(localStorage.getItem('openstream_live_skip_film-qa1')));
+ expect(await saved()).toEqual({intro:17,outro:0});await enabled.click();await expect(enabled).toHaveAttribute('aria-checked','false');await expect(seconds).toHaveValue('17');expect(await saved()).toEqual({intro:17,outro:0});
+ await enabled.focus();await page.keyboard.press('Space');await expect(enabled).toHaveAttribute('aria-checked','true');await expect(seconds).toHaveValue('17');
+ await expect(v).toHaveJSProperty('currentTime',4);await expect(v).toHaveJSProperty('paused',true);expect(await page.evaluate(()=>window.__markerSeeks)).toBe(0);
+ await page.keyboard.press('Escape');await expect(page.locator('.art-control-setting')).toBeFocused();await expect(page.locator('#watch-player .art-video-player')).not.toHaveClass(/art-setting-show/);
+ await page.keyboard.press('Enter');await expect(seconds).toBeVisible();await expect(seconds).toHaveValue('17');
+});
+test('ratio is inline, custom sleep accepts minutes, submenus visibly go back and reopen at root',async({page})=>{
+ await open(page);await settings(page);
+ const gear=page.locator('.art-control-setting'),ratio=v=>page.locator(`button[data-aspect-ratio="${v}"]`);
+ for(const val of ['4:3','16:9']){await ratio(val).click();await expect(ratio(val)).toHaveAttribute('aria-pressed','true');await expect(ratio(val==='4:3'?'16:9':'4:3')).toHaveAttribute('aria-pressed','false');expect(await page.evaluate(()=>Artplayer.instances[0].aspectRatio)).toBe(val);await expect(page.locator('[data-skip-seconds="intro"]')).toBeVisible();}
+ await settings(page,'sleep-timer');const back=()=>page.locator('.art-setting-panel.art-current [data-settings-back]');await expect(back()).toBeVisible();await expect(back()).toHaveAccessibleName('返回上一级');
+ const minutes=page.locator('[data-sleep-custom]'),start=page.locator('[data-sleep-start]');await minutes.fill('7');await start.click();const left=await page.evaluate(()=>OpenStreamPlayerTools.sleep.snapshot().remaining);expect(left).toBeGreaterThan(410000);expect(left).toBeLessThanOrEqual(420000);
+ await expect(page.locator('.player-sleep-pill')).toBeVisible();await page.locator('[data-sleep-extend]').click();expect(await page.evaluate(()=>OpenStreamPlayerTools.sleep.snapshot().remaining)).toBeGreaterThan(1310000);await page.locator('[data-sleep-cancel]').click();await expect(page.locator('.player-sleep-pill')).toBeHidden();
+ await back().focus();await page.keyboard.press('Enter');await expect(ratio('4:3')).toBeVisible();
+ await page.locator('[data-name="local-subtitle"]').click();await expect(back()).toBeVisible();
+ await page.locator('.routes-heading').click();await expect(page.locator('#watch-player .art-video-player')).not.toHaveClass(/art-setting-show/);await gear.click();await expect(ratio('16:9')).toBeVisible();await expect(page.locator('[data-skip-seconds="outro"]')).toBeVisible();
+ await ratio('4:3').click();await closeSettings(page);await page.locator('.player-next-episode').click();await episode(page,2);await settings(page);await expect(ratio('4:3')).toHaveAttribute('aria-pressed','true');expect(await page.evaluate(()=>Artplayer.instances[0].aspectRatio)).toBe('4:3');
+});
+test('outside dismissal never reopens a stale settings subpage',async({page})=>{
+ await open(page);await settings(page,'local-subtitle');await expect(page.locator('.art-setting-panel.art-current [data-name="subtitle-file"]')).toBeVisible();
+ await page.locator('.routes-heading').click();
+ await expect(page.locator('#watch-player .art-video-player')).not.toHaveClass(/art-setting-show/);
+ await page.locator('.art-control-setting').click();
+ await expect(page.locator('.art-setting-panel.art-current [data-name="skip-intro"]')).toBeVisible();
 });
 test('one-click skip marks apply next episode and per-episode outro override survives retry only for that episode',async({page})=>{
  await open(page);await page.locator('video').evaluate(v=>{v.currentTime=4;});await settings(page);await page.locator('[data-skip-mark="intro"]').click();await page.locator('video').evaluate(v=>{v.currentTime=55;});await page.locator('[data-skip-mark="outro"]').click();expect(await page.evaluate(()=>JSON.parse(localStorage.getItem('openstream_live_skip_film-qa1')))).toEqual({intro:4,outro:5});await closeSettings(page);await page.locator('.player-next-episode').click();await episode(page,2);expect(await page.locator('video').evaluate(v=>v.currentTime)).toBeGreaterThanOrEqual(3.9);
- await settings(page,'episode-skip');await page.locator('[data-keep-skip="outro"]').click();await closeSettings(page);await page.locator('video').evaluate(v=>{v.currentTime=56;v.play();});await page.waitForTimeout(700);await episode(page,2);await page.locator('video').evaluate(v=>v.pause());await page.evaluate(()=>LivePlayback.retry(LivePlayback.current()));await episode(page,2);await settings(page,'episode-skip');await expect(page.locator('[data-keep-skip="outro"]')).toHaveAttribute('aria-checked','true');await closeSettings(page);await page.locator('video').evaluate(v=>{v.currentTime=v.duration-.3;v.play();});await episode(page,3);await settings(page,'episode-skip');await expect(page.locator('[data-keep-skip="outro"]')).toHaveAttribute('aria-checked','false');await settings(page);await expect(page.locator('[data-skip-range="intro"]')).toHaveValue('4');
+ await settings(page);await page.locator('[data-skip-enabled="outro"]').click();await closeSettings(page);await page.locator('video').evaluate(v=>{v.currentTime=56;v.play();});await page.waitForTimeout(700);await episode(page,2);await page.locator('video').evaluate(v=>v.pause());await page.evaluate(()=>LivePlayback.retry(LivePlayback.current()));await episode(page,2);await settings(page);await expect(page.locator('[data-skip-enabled="outro"]')).toHaveAttribute('aria-checked','false');await closeSettings(page);await page.locator('video').evaluate(v=>{v.currentTime=v.duration-.3;v.play();});await episode(page,3);await settings(page);await expect(page.locator('[data-skip-enabled="outro"]')).toHaveAttribute('aria-checked','true');await settings(page);await expect(page.locator('[data-skip-seconds="intro"]')).toHaveValue('4');
 });
 test('stop at end retains the outro and prevents autoplay or recovery from restarting playback',async({page})=>{
  await open(page,{skip:true});await settings(page,'sleep-timer');await page.locator('[data-sleep-end]').click();await closeSettings(page);await page.locator('video').evaluate(v=>{v.currentTime=56;v.play();});await page.waitForTimeout(700);await episode(page,1);await page.locator('video').evaluate(v=>{v.currentTime=v.duration-.3;v.play();});await expect(page.locator('video')).toHaveJSProperty('ended',true);await expect(page.locator('.player-sleep-pill')).toHaveText('定时已结束，播放已停止');await expect(page.locator('video')).toHaveJSProperty('paused',true);expect(await page.evaluate(()=>LivePlayback.current().episode)).toBe(1);await page.evaluate(()=>{LivePlayback.failed(LivePlayback.current());document.querySelector('video').play().catch(()=>{});});await expect(page.locator('video')).toHaveJSProperty('paused',true);expect(await page.evaluate(()=>LivePlayback.current().episode)).toBe(1);await settings(page,'sleep-timer');await page.locator('[data-sleep-resume]').click();expect(await page.evaluate(()=>OpenStreamPlayerTools.sleep.blocked())).toBe(false);
@@ -83,7 +105,7 @@ test('real HLS non-progress performs one bounded recovery then changes to a work
 
 test('manual, ended and outro transitions retain play intent through intro seeks without test-triggered playback',async({page})=>{
  await open(page,{skip:true});await page.locator('.player-next-episode').click();await episode(page,2);await expect(page.locator('video')).toHaveJSProperty('paused',false);
- await settings(page,'episode-skip');await page.locator('[data-keep-skip="outro"]').click();await closeSettings(page);await page.locator('video').evaluate(v=>{v.currentTime=v.duration-.3;});await episode(page,3);await expect(page.locator('video')).toHaveJSProperty('paused',false);
+ await settings(page);await page.locator('[data-skip-enabled="outro"]').click();await closeSettings(page);await page.locator('video').evaluate(v=>{v.currentTime=v.duration-.3;});await episode(page,3);await expect(page.locator('video')).toHaveJSProperty('paused',false);
  await page.locator('video').evaluate(v=>{v.currentTime=v.duration-4.8;});await episode(page,4);await expect(page.locator('video')).toHaveJSProperty('paused',false);await expect(page.locator('video')).toHaveJSProperty('seeking',false);
  await sampleRealPlayback(page,{episode:4});
 });
