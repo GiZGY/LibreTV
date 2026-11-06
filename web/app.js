@@ -59,7 +59,7 @@ function newEpisode(f){const r=historyMetadata[f.id],target=isSeries(f)&&r&&r.to
 function historyLabel(id){const record=historyMetadata[id];return watchedComplete(record)?'重新观看':record?'继续播放 · '+playbackTime(record.position):'立即观看';}
 function watchedTime(value){if(!value)return '观看时间未知';return new Date(value).toLocaleString('zh-CN',{year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false});}
 function toast(s){$('#toast').textContent=s;$('#toast').classList.add('visible');clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('#toast').classList.remove('visible'),2300)}
-const img=f=>f.art||`assets/${f.id}.jpg`;
+const img=f=>window.OpenStreamResultAggregator?.isUnavailablePoster?.(f.art)?'assets/poster-unavailable.svg':f.art||`assets/${f.id}.jpg`;
 function posterAttributes(f,sizes='(max-width:700px) 44vw, 220px'){
  const src=img(f),match=/^https:\/\/image\.tmdb\.org\/t\/p\/w\d+(\/[\w.-]+)$/.exec(src);
  const responsive=match?` srcset="${[185,342,500,780].map(width=>`https://image.tmdb.org/t/p/w${width}${match[1]} ${width}w`).join(', ')}" sizes="${esc(sizes)}"`:'';

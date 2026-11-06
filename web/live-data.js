@@ -125,6 +125,7 @@
   }
   function image(url) {
     const safe = safeURL(url);
+    if(window.OpenStreamResultAggregator?.isUnavailablePoster?.(safe))return 'assets/poster-unavailable.svg';
     if(!safe)return 'assets/placeholder.svg';
     return /^img\d*\.doubanio\.com$/.test(new URL(safe).hostname)
       ? ProxyAuth.addAuthToProxyUrlSync('/proxy/' + encodeURIComponent(safe)) : safe;

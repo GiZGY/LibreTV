@@ -131,6 +131,15 @@
             .reduce((score, key) => score + (left[key] && left[key] === right[key] ? 1 : 0), 0);
     }
 
+    // These two source assets return the same deleted-poster PNG with HTTP 200.
+    const unavailablePosters = new Set([
+        'p.bfvp26.com/upload/vod/20230619-1/9007664f78954ad2b459626a21ded7b2.png',
+        'ok.zuidapic.com/upload/vod/20230831-1/67793f92f86c83b19ea44e400a5d9f5e.png'
+    ]);
+    function isUnavailablePoster(url) {
+        return unavailablePosters.has(String(url || '').trim().replace(/^https?:\/\//i, '').split(/[?#]/, 1)[0]);
+    }
+
     function getLineScore(item, sourcePlanMap) {
         const sourceCode = item?.source_code || '';
         const planScore = sourcePlanMap?.get(sourceCode)?.score;
@@ -167,7 +176,7 @@
         base.vod_id = bestLine?.vod_id || base.vod_id;
         base.api_url = bestLine?.api_url || base.api_url;
 
-        if (!base.vod_pic && item.vod_pic) base.vod_pic = item.vod_pic;
+        if ((!base.vod_pic || isUnavailablePoster(base.vod_pic)) && item.vod_pic && !isUnavailablePoster(item.vod_pic)) base.vod_pic = item.vod_pic;
         if (!base.vod_year && item.vod_year) base.vod_year = item.vod_year;
         if (!base.type_name && item.type_name) base.type_name = item.type_name;
         if ((!base.vod_remarks || base.vod_remarks === '暂无介绍') && item.vod_remarks) base.vod_remarks = item.vod_remarks;
@@ -269,6 +278,7 @@
 
     window.OpenStreamResultAggregator = {
         aggregateResults,
+        isUnavailablePoster,
         normalizeTitle,
         normalizeType,
         getResultKey,
