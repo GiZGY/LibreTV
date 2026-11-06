@@ -16,14 +16,29 @@
   },
   markup(filmId){const value=availability.view(filmId);return `<p class="playability-note" title="${esc(value.detail)}">${esc(value.label)}${value.checkedAt?`<time datetime="${new Date(value.checkedAt).toISOString()}">${esc(value.detail)}</time>`:''}</p>`;}
  };
+ const DISMISS_KEY=(window.OPENSTREAM_LIVE?'openstream_live_':'openstream_ui_')+'resume_notice_session_v1';
+ let dismissed=new Set(),shownNotice=null;
+ try{const stored=JSON.parse(sessionStorage.getItem(DISMISS_KEY)||'[]');if(Array.isArray(stored))dismissed=new Set(stored.filter(key=>typeof key==='string').slice(-100));}catch{}
  function continueWatching(){
   const after=(f,r)=>f.lines?.length&&window.OpenStreamEpisodes?OpenStreamEpisodes.nextOrdinal(f,{episodeKey:OpenStreamEpisodes.display(f,r).key}):((r?.episode||1)<(f.episodes||1)?true:null);
-  const list=history.map(id=>({f:films.find(f=>f.id===id),r:historyMetadata[id]})).filter(({f,r})=>f&&(!window.OPENSTREAM_LIVE||!window.LiveData||LiveData.allowed(f))&&(!watchedComplete(r)||isSeries(f)&&after(f,r))).sort((a,b)=>Date.parse(b.r?.watchedAt||0)-Date.parse(a.r?.watchedAt||0)).slice(0,6);
-  if(!list.length)return '';
-  return `<section class="continue-section" aria-label="继续观看"><div class="section-head"><h2>继续观看</h2><a class="text-button" href="#history">全部记录 ${icon('arrow')}</a></div><div class="continue-list">${list.map(({f,r})=>{
-   const next=watchedComplete(r)&&isSeries(f),target=next&&f.lines?.length&&window.OpenStreamEpisodes?after(f,r):null,shown=target?{episode:target}:r,label=window.OpenStreamEpisodes?OpenStreamEpisodes.display(f,shown).label:isSeries(f)?`第 ${r?.season||1} 季 · 第 ${r?.episode||1} ${f.type==='综艺'?'期':'集'}`:'正片',position=next?0:r?.position||0,progress=r?.duration&&!next?Math.min(100,position/r.duration*100):0;
-   return `<article class="continue-item"><a class="continue-cover" href="#detail/${f.id}"><img ${posterAttributes(f,'90px')} alt="${esc(f.name)}海报" loading="lazy"></a><div class="continue-copy"><h3>${esc(f.name)}</h3><p>${esc(label)}</p><p>${next?'上集已看完':r?.duration?`看到 ${playbackTime(position)} / ${playbackTime(r.duration)}`:r?'尚未开始':'进度未保存'}</p><div class="progress" role="progressbar" aria-label="观看进度" aria-valuenow="${Math.round(progress)}" aria-valuemin="0" aria-valuemax="100"><i style="width:${progress}%"></i></div><a class="primary" href="#player/${f.id}" data-id="${f.id}" ${next?'data-playback-intent="next"':'data-action="resume-history"'}>${next?'播放下一集':position?'继续观看':'开始观看'}</a></div><button class="continue-remove" data-action="remove-history" data-id="${f.id}" aria-label="移除${esc(f.name)}的观看记录">×</button></article>`;
-  }).join('')}</div></section>`;
+  const rows=history.map(id=>({f:films.find(f=>f.id===id),r:historyMetadata[id]})).filter(({f,r})=>{
+   if(!f||!r||load('watchlist',{})[f.id]?.status==='completed'||window.OPENSTREAM_LIVE&&window.LiveData&&!LiveData.allowed(f))return false;
+   const stamp=Date.parse(r.watchedAt);if(!Number.isFinite(stamp))return false;
+   if(!Number.isFinite(r.position)||!Number.isFinite(r.duration)||r.position<=0||r.duration<=0||r.position>r.duration)return false;
+   return !watchedComplete(r)||isSeries(f)&&after(f,r);
+  }).sort((a,b)=>Date.parse(b.r.watchedAt)-Date.parse(a.r.watchedAt));
+  const latest=rows[0];shownNotice=null;if(!latest)return '';
+  const {f,r}=latest,key=JSON.stringify([f.id,r.episodeKey||[r.season||1,r.episode||1].join(':'),Math.floor(r.position),watchedComplete(r)]);
+  // Dismissing the latest item must not reveal older history one entry at a time.
+  if(dismissed.has(key))return '';shownNotice=key;
+  const next=watchedComplete(r)&&isSeries(f),target=next&&f.lines?.length&&window.OpenStreamEpisodes?after(f,r):null,shown=target?{episode:target}:r,label=isSeries(f)?(window.OpenStreamEpisodes?OpenStreamEpisodes.display(f,shown).label:`第 ${r.season||1} 季 · 第 ${r.episode||1} ${f.type==='综艺'?'期':'集'}`):'';
+  return `<aside class="continue-notice" aria-label="继续观看"><p class="continue-notice-title"><span>${esc(f.name)}</span>${label?`<span class="continue-notice-episode">${esc(label)}</span>`:''}</p><div class="continue-notice-actions"><a class="text-button" href="#player/${f.id}" data-id="${f.id}" ${next?'data-playback-intent="next"':'data-action="resume-history"'}>继续</a><button type="button" class="continue-notice-close" data-dismiss-resume aria-label="关闭继续观看提醒">×</button></div></aside>`;
  }
+ document.addEventListener('click',event=>{
+  const button=event.target.closest('[data-dismiss-resume]'),notice=button?.closest('.continue-notice');if(!notice||!shownNotice)return;
+  dismissed.add(shownNotice);dismissed=new Set([...dismissed].slice(-100));shownNotice=null;
+  try{sessionStorage.setItem(DISMISS_KEY,JSON.stringify([...dismissed]));}catch{}
+  const next=notice.nextElementSibling?.querySelector('a,button')||document.querySelector('#main');notice.remove();next?.focus({preventScroll:true});
+ });
  window.OpenStreamLibrary={availability,continueWatching};
 })();
