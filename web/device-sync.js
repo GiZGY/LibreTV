@@ -134,7 +134,7 @@
  function renderStatus(){const target=dialog?.querySelector('[data-sync-status]');if(target){target.textContent=message;target.setAttribute('role',errorMessage?'alert':'status');}}
  async function loadQr(){
   if(window.qrcode)return;
-  await(qrPromise||=(new Promise((resolve,reject)=>{const script=document.createElement('script');script.src='libs/qrcode-generator-1.4.4.min.js';script.onload=resolve;script.onerror=()=>{qrPromise=null;reject(Error('二维码暂时未生成，请复制邀请链接'));};document.head.append(script);}))); 
+  await(qrPromise||=(new Promise((resolve,reject)=>{const script=document.createElement('script');script.src='libs/qrcode-generator-1.4.4.min.js';script.onload=resolve;script.onerror=()=>{qrPromise=null;reject(Error('二维码暂时未生成，请复制邀请链接'));};document.head.append(script);})));
  }
  function pairUrl(){return location.origin+location.pathname+'#sync-pair/'+invite.id+'.'+invite.secret;}
  async function drawQr(){

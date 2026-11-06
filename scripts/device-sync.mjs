@@ -12,7 +12,7 @@ try{
     const schema=await readFile(new URL('../server/device-sync-schema.sql',import.meta.url),'utf8');
     const url=process.env.CATALOG_DATABASE_URL||process.env.CATALOG_POSTGRES_URL_NON_POOLING||process.env.CATALOG_POSTGRES_URL;
     const sql=neon(url);
-    await sql.transaction(schema.split(';').map(value=>value.trim()).filter(Boolean).map(statement=>sql.query(statement)),{fetchOptions:{signal:AbortSignal.timeout(20000)}}); 
+    await sql.transaction(schema.split(';').map(value=>value.trim()).filter(Boolean).map(statement=>sql.query(statement)),{fetchOptions:{signal:AbortSignal.timeout(20000)}});
     console.log('Private device-sync schema ready; catalogue tables unchanged.');
   }else if(command==='status'){
     const rows=await query(`SELECT (SELECT count(*)::int FROM openstream_sync.spaces WHERE closed_at IS NULL) AS spaces,
