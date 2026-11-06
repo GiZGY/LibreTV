@@ -43,18 +43,18 @@ for(const [width,touch] of [[1440,false],[320,true]]) test('search cards reserve
  const ctx=await browser.newContext({baseURL,viewport:{width,height:900},hasTouch:touch,isMobile:touch});try{
  const page=await ctx.newPage();await page.goto('/#home');
  await page.evaluate(()=>{const results=[
-   {vod_name:'金刚狼3：殊死一战',vod_id:3,vod_year:'2017',vod_class:'剧情 / 动作 / 科幻 / 惊悚',vod_douban_score:'8.3',rating_source:'TMDB',certification:{country:'US',label:'R'}},
+   {vod_name:'金刚狼3：殊死一战',vod_lang:'英语/西班牙语',vod_id:3,vod_year:'2017',vod_class:'剧情 / 动作 / 科幻 / 惊悚',vod_douban_score:'8.3',rating_source:'TMDB',certification:{country:'US',label:'R'}},
    {vod_name:'金刚狼测试影片很长的片名',vod_id:4,vod_douban_score:'8.1',rating_source:'TMDB',certification:{country:'US',label:'NC-17'}},
    {vod_name:'金刚狼短片',vod_id:5}].map(f=>({type_name:'电影',source_code:'qa',...f}));
    window.OpenStreamStreamingSearch.runStreamingSearch=async opts=>{opts.onUpdate({results});opts.onSourceDone({status:'ready'});return{results};};
    location.hash='search/'+encodeURIComponent('金刚狼');
  });
  const cards=page.locator('#live-results .poster-card');await expect(cards).toHaveCount(3);
- const original=cards.filter({hasText:'殊死一战'});await expect(original.locator('.poster-score')).toContainText('8.3');await expect(original.locator('.film-certification')).toHaveText('R');
+ const original=cards.filter({hasText:'殊死一战'});await expect(original.locator('.search-version-note')).toHaveText('英语/西班牙语 · 1 个来源');await expect(original.locator('.poster-score')).toContainText('8.3');await expect(original.locator('.film-certification')).toHaveText('R');
  for(const card of await cards.all()){
    const result=await card.evaluate(c=>{
      const box=s=>c.querySelector(s)?.getBoundingClientRect(),fav=box('.quick-favorite'),title=box('h3'),meta=box('.poster-meta'),bounds=c.getBoundingClientRect(),labels=[...c.querySelectorAll('.poster-meta > span')].map(e=>e.getBoundingClientRect());
-     return {separate:fav.bottom<=meta.top+.5&&title.right<=fav.left+.5,fit:labels.every((r,i)=>r.right<=bounds.right+.5&&(!i||r.left>=labels[i-1].right-.5)),touchWidth:fav.width,touchHeight:fav.height};});
+     const note=box('.search-version-note');return {separate:fav.bottom<=meta.top+.5&&title.right<=fav.left+.5&&note.top>=meta.bottom-.5&&note.right<=bounds.right+.5,fit:labels.every((r,i)=>r.right<=bounds.right+.5&&(!i||r.left>=labels[i-1].right-.5)),touchWidth:fav.width,touchHeight:fav.height};});
    expect(result.separate).toBe(true);expect(result.fit).toBe(true);
    if(touch){expect(result.touchWidth).toBeGreaterThanOrEqual(44);expect(result.touchHeight).toBeGreaterThanOrEqual(44);}
  }

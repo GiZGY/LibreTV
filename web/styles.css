@@ -478,4 +478,4 @@ html.video-web-fullscreen{overflow:hidden}
 #live-results .poster-card h3{grid-area:2/1;align-self:center;margin:4px 4px 0 0;padding:0}
 #live-results .quick-favorite{grid-area:2/2;position:static;align-self:center;justify-self:end;margin-top:4px}
 #live-results .poster-meta{grid-area:3/1/4/3}
-#live-results .search-version-note{grid-area:4/1/5/3}
+#live-results .search-version-note{grid-area:4/1/5/3;min-width:0;overflow-wrap:anywhere}
