@@ -44,3 +44,17 @@ test('later exact search titles go first without replacing the focused card, and
  await expect(titles).toHaveText(['星河','星河外传']);await expect(original).toBeFocused();
  await expect(original.locator('.poster-meta')).toContainText('2022');
 });
+
+test('a selected year stays in view when returning to explore or refreshing a narrow screen',async({page})=>{
+ await page.setViewportSize({width:390,height:844});
+ await page.route('**/api/catalog/tmdb?**',r=>r.fulfill({json:{indexed:true,filtered:true,rawCount:1,items:[{provider:'tmdb',id:481,title:'年份测试',year:'1995'}],total:1,totalPages:1,hasNext:false}}));
+ await page.goto('/#discover');
+ const year=chip(page,'year','1995'), strip=page.locator('[data-strip=year]');
+ await year.click();
+ await expect(year).toHaveAttribute('aria-pressed','true');
+ const inStrip=()=>strip.evaluate(s=>{const a=s.querySelector('[aria-pressed=true]').getBoundingClientRect(),b=s.getBoundingClientRect();return a.left>=b.left-2&&a.right<=b.right+2;});
+ await expect.poll(inStrip).toBe(true);
+ await page.locator('[data-nav=history]:visible').first().click();await expect(page.getByRole('heading',{name:'观看历史'})).toBeVisible();
+ await page.locator('[data-nav=discover]:visible').first().click();await expect(year).toHaveAttribute('aria-pressed','true');await expect.poll(inStrip).toBe(true);
+ await page.reload();await expect(year).toHaveAttribute('aria-pressed','true');await expect.poll(inStrip).toBe(true);
+});

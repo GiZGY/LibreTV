@@ -172,13 +172,24 @@
     const years=['全部',...Array.from({length:Math.max(0,currentYear-1990+1)},(_,i)=>String(currentYear-i))];
     return `<div class="discovery-heading"><h1>探索影片</h1><button class="text-button" data-action="reset">重置筛选</button></div><div class="discovery-filters">${filterStrip('分类','type',['电影','电视剧','动漫','综艺','纪录片'])}${filterStrip('题材','genre',!['电影','纪录片'].includes(filters.type)?['全部','剧情','喜剧','悬疑','犯罪','动画','家庭']:['全部','剧情','爱情','喜剧','动作','科幻','悬疑','惊悚','犯罪','冒险','动画','战争','历史','奇幻','家庭'])}${filterStrip('地区','region',['全部','中国大陆','中国香港','中国台湾','美国','英国','法国','德国','日本','韩国','印度','泰国'])}${filterStrip('年份','year',years)}</div><div class="results-head"><span id="discovery-count"></span><div class="sort-options">${chips(['精选','最新上映','评分最高'],filters.sort,'sort','',{'精选':'热门优先','评分最高':'高分佳作'})}</div></div><div id="discovery-cards">${status('正在寻找影片…',false)}</div><div class="pagination"><button data-live-page="-1" ${discoverPage===1?'disabled':''}>上一页</button><span>第 ${discoverPage} 页</span><button data-live-page="1" disabled>下一页</button></div>`;
   }
+  function showDiscoveryControls(){
+    $('#main').innerHTML=discoveryControls();
+    // Move the strip, not the viewport or keyboard focus, when restoring a saved choice.
+    for(const strip of document.querySelectorAll('[data-strip]')){
+      const active=strip.querySelector('[aria-pressed="true"]');if(!active)continue;
+      strip.scrollLeft=filterScroll[strip.dataset.strip]||0;
+      const item=active.getBoundingClientRect(),bounds=strip.getBoundingClientRect();
+      if(item.left<bounds.left)strip.scrollLeft+=item.left-bounds.left;
+      else if(item.right>bounds.right)strip.scrollLeft+=item.right-bounds.right;
+    }
+  }
   async function fetchDiscovery(signal,token) {
     if(!['电影','纪录片'].includes(filters.type)&&!['全部','剧情','喜剧','悬疑','犯罪','动画','家庭'].includes(filters.genre))filters.genre='全部';
     save('discovery',{filters,page:discoverPage});
     const condition=JSON.stringify([catalogProvider,filters]),page=discoverPage;
     // An older page is useful during pagination, never as the result of different filters.
     const retained=lastDiscoveryView?.condition===condition?lastDiscoveryView:null;
-    $('#main').innerHTML=discoveryControls();
+    showDiscoveryControls();
     if(retained){$('#discovery-cards').innerHTML=retained.html;$('#discovery-cards').setAttribute('aria-busy','true');$('#discovery-count').textContent='正在更新影片…';}
     document.querySelectorAll('[data-live-page]').forEach(button=>button.disabled=true);
     try{
@@ -201,7 +212,7 @@
       if(previous){
         discoverPage=previous.page;discoveryHasNext=previous.hasNext;
         save('discovery',{filters,page:discoverPage});
-        $('#main').innerHTML=discoveryControls();
+        showDiscoveryControls();
         $('#discovery-cards').innerHTML=previous.html;
         $('#discovery-count').textContent='本页 '+previous.count+' 部影片 · 暂未加载新页，已保留当前内容';
         document.querySelector('.pagination span').textContent=previous.totalPages?'第 '+previous.page+' / '+previous.totalPages+' 页':'第 '+previous.page+' 页';
