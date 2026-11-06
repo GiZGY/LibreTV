@@ -1,4 +1,5 @@
 import {test,expect} from '@playwright/test';
+import {expectMediaFrame,expectPlaybackProgress} from './media-assertions.mjs';
 async function seed(page,{mixed=false,complete=false,last=false,noLines=false}={}){
  await page.addInitScript(options=>{
   const {mixed,complete,last,noLines}=options,p='openstream_live_',id='film-canonical';
@@ -13,7 +14,7 @@ async function seed(page,{mixed=false,complete=false,last=false,noLines=false}={
   const mute=()=>document.querySelectorAll('video').forEach(v=>{v.muted=true;v.volume=0;});addEventListener('DOMContentLoaded',()=>{mute();new MutationObserver(mute).observe(document.body,{childList:true,subtree:true});});
  },{mixed,complete,last,noLines});
 }
-async function current(page,key){await expect.poll(()=>page.evaluate(()=>LivePlayback.current()?.episodeKey)).toBe(key);await expect(page.locator('video')).toHaveJSProperty('readyState',4);await expect(page.locator('video')).toHaveJSProperty('muted',true);}
+async function current(page,key){await expect.poll(()=>page.evaluate(()=>LivePlayback.current()?.episodeKey)).toBe(key);await expectMediaFrame(page);if(!(await page.locator('video').evaluate(v=>v.paused)))await expectPlaybackProgress(page,{episodeKey:key});await expect(page.locator('video')).toHaveJSProperty('muted',true);}
 test('mixed seasons use real season and episode labels across history, home, watchlist and the picker',async({page})=>{
  await seed(page,{mixed:true});await page.goto('/#history');await expect(page.locator('.history-item')).toContainText('第 2 季 · 第 1 集');await expect(page.locator('.history-item')).not.toContainText('第 2 季 · 第 2 集');
  await page.goto('/#home');await expect(page.locator('.continue-item')).toContainText('第 2 季 · 第 1 集');await page.goto('/#library');await expect(page.locator('.watchlist-detail')).toContainText('看到 第 2 季 · 第 1 集');

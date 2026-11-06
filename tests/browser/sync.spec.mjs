@@ -1,4 +1,5 @@
 import {test,expect} from '@playwright/test';
+import {expectMediaFrame} from './media-assertions.mjs';
 import {startDeviceSyncAcceptance} from '../../scripts/device-sync-acceptance.mjs';
 let fixture;
 const origin='http://127.0.0.1:18450';
@@ -33,7 +34,7 @@ test('two independent devices explicitly pair, continue progress, resolve offlin
   await pageB.getByRole('button',{name:'关闭设备同步',exact:true}).click();if(await pageB.locator('#settings').isVisible())await pageB.getByRole('button',{name:'完成',exact:true}).click();
   await pageB.evaluate(()=>{const f=films.find(f=>f.id==='film-syncshow');f.lines=[{key:'sync-media',sourceKey:'qa',name:'本地验收线路',health:'fast',episodes:Array.from({length:8},(_,i)=>({name:'第'+(i+1)+'集',url:'/media/sample.mp4?episode='+i}))}];f.candidatesComplete=true;});
   await pageB.locator('.continue-item').filter({hasText:'配对验收剧'}).locator('.primary').click();
-  await expect(pageB.locator('video')).toHaveJSProperty('readyState',4,{timeout:15000});
+  await expectMediaFrame(pageB);
   expect(await pageB.locator('video').evaluate(v=>v.currentTime)).toBeGreaterThanOrEqual(11.8);
   expect(await pageB.locator('video').evaluate(v=>v.currentTime)).toBeLessThan(14);
   expect(await pageB.evaluate(()=>LivePlayback.current().episode)).toBe(2);

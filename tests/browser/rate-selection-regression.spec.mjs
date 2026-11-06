@@ -1,4 +1,5 @@
 import {test,expect} from '@playwright/test';
+import {expectMediaFrame} from './media-assertions.mjs';
 
 test('pointer-selected speed reaches real media while popup focus and keyboard dismissal remain correct',async({page})=>{
  await page.addInitScript(()=>{
@@ -8,7 +9,7 @@ test('pointer-selected speed reaches real media while popup focus and keyboard d
   const mute=()=>document.querySelectorAll('video').forEach(video=>{video.muted=true;video.volume=0;});
   addEventListener('DOMContentLoaded',()=>{mute();new MutationObserver(mute).observe(document.body,{childList:true,subtree:true});});
  });
- await page.goto('/#player/film-rateselect');await expect(page.locator('video')).toHaveJSProperty('readyState',4);
+ await page.goto('/#player/film-rateselect');await expectMediaFrame(page);
  const panel=page.locator('.fine-speed'),summary=panel.locator('summary');
  await summary.click();await panel.locator('[data-rate="1.75"]').click();
  await expect(page.locator('video')).toHaveJSProperty('playbackRate',1.75);
