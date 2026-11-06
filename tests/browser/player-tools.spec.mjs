@@ -95,8 +95,11 @@ test('local subtitles are text-only, adjustable, reject malformed files and clea
 test('bounded source failure stops with retry and a later manual retry recovers real playback',async({page})=>{
  await open(page);await page.evaluate(()=>{window.__qaSwitches=0;document.addEventListener('playback-ready',()=>window.__qaSwitches++);});let requests=0;await page.route('**/media/sample.mp4?**',route=>{requests++;return route.abort('failed');});await page.locator('video').evaluate(v=>v.load());await expect(page.locator('.player-inline-status')).toContainText('播放暂未恢复',{timeout:15000});expect(await page.evaluate(()=>window.__qaSwitches)).toBe(1);const stoppedRequests=requests;await page.waitForTimeout(1500);expect(requests).toBe(stoppedRequests);await page.unroute('**/media/sample.mp4?**');await page.locator('[data-player-retry]').click();await expectMediaFrame(page);await expect(page.locator('video')).toHaveJSProperty('muted',true);await expect(page.locator('video')).toHaveJSProperty('playbackRate',1.75);await sampleRealPlayback(page,{episode:1});
 });
+test.describe('touchscreen player',()=>{
+ test.use({hasTouch:true,isMobile:true});
 test('narrow touch layout keeps panels scrollable, touch targets usable and reduced motion still interactive',async({page})=>{
  await page.setViewportSize({width:390,height:844});await page.emulateMedia({reducedMotion:'reduce',colorScheme:'dark'});await open(page,{skip:true});await settings(page,'local-subtitle');const panelBox=await page.locator('.art-settings').boundingBox();expect(panelBox.x).toBeGreaterThanOrEqual(0);expect(panelBox.x+panelBox.width).toBeLessThanOrEqual(390);expect(panelBox.y).toBeGreaterThanOrEqual(0);expect(panelBox.y+panelBox.height).toBeLessThanOrEqual(844);await expect(page.locator('[data-player-view="options"]')).toHaveCount(0);await expect(page.locator('.player-mobile-sheet[open]')).toHaveCount(0);await page.locator('[data-name="subtitle-file"]').scrollIntoViewIfNeeded();const buttonBox=await page.locator('[data-name="subtitle-file"]').boundingBox();expect(buttonBox.height).toBeGreaterThanOrEqual(44);await closeSettings(page);await panel(page,'episodes');await page.locator('[data-player-episode="3"]').click();await episode(page,3);
+});
 });
 
 test('real HLS non-progress performs one bounded recovery then changes to a working source',async({page})=>{
