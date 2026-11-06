@@ -458,5 +458,6 @@ html.video-web-fullscreen{overflow:hidden}
 [data-copy-diagnostics]{min-height:44px}
 
 /* Hit areas stay separate from the visual switch. */
-.switch-target{display:grid;place-items:center;min-width:44px;min-height:44px;flex:none;cursor:pointer}dialog .icon-button{min-width:44px;min-height:44px}.filter-strip .chip,.sort-options .chip{min-height:44px}.strip-arrow{min-width:44px;min-height:44px}.filter-tabs .chip{min-height:44px}
+.switch-target{display:grid;place-items:center;min-width:44px;min-height:44px;flex:none;cursor:pointer}dialog .icon-button{min-width:44px;min-height:44px}
+@media(pointer:coarse){.filter-strip .chip,.sort-options .chip{min-height:44px}.strip-arrow{min-width:44px;min-height:44px}.filter-tabs .chip{min-height:44px}}
 @media(hover:none),(pointer:coarse){.poster-art img{transition:none}.watch-play:hover{transform:none}.quick-favorite{min-width:44px;min-height:44px}}

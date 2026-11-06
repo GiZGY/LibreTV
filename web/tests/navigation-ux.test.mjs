@@ -18,7 +18,7 @@ test('history is progressively disclosed and route restoration waits for content
  assert.match(app,/historyOlderLimit\+=20/);
  assert.match(app,/try\{await render\(\);\}finally/);
  assert.match(live,/if\(retained\).*aria-busy/);
- assert.match(live,/filters=JSON.parse\(previous.condition\)\[1\]/);
+ assert.match(live,/lastDiscoveryView\?\.condition===condition/);
  assert.match(live,/shelfPositions.set\(shelf.dataset.shelfKey,shelf.scrollLeft\)/);
  assert.match(live,/recentSearchViews.size>8/);
 });
