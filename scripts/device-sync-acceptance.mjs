@@ -21,6 +21,7 @@ export async function startDeviceSyncAcceptance(port=18450){
    if(pathname==='/api/sync/device'){
     const chunks=[];let bytes=0;for await(const chunk of req){bytes+=chunk.length;if(bytes>65536){res.status(413).json({message:'too large'});return;}chunks.push(chunk);}req.body=Buffer.concat(chunks).toString()||undefined;await handler(req,res);return;
    }
+   if(pathname.startsWith('/media/')){const upstream=await fetch('http://127.0.0.1:18448'+req.url,{headers:req.headers.range?{Range:req.headers.range}:{}});res.statusCode=upstream.status;for(const key of ['content-type','content-length','content-range','accept-ranges'])if(upstream.headers.has(key))res.setHeader(key,upstream.headers.get(key));res.end(Buffer.from(await upstream.arrayBuffer()));return;}
    if(pathname==='/api/auth/status'){res.status(200).json({authenticated:true,publicAccess:true});return;}
    if(pathname==='/api/security/human'){res.status(200).json({enabled:false,ready:true,verified:true});return;}
    if(pathname.startsWith('/api/catalog/')){res.status(200).json({items:[],total:0});return;}

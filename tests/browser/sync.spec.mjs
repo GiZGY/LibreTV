@@ -29,6 +29,19 @@ test('two independent devices explicitly pair, continue progress, resolve offlin
   await expect.poll(()=>pageB.evaluate(()=>OpenStreamLocalData.snapshot().data.progress['film-syncshow']?.position)).toBe(12);
   expect(await pageB.evaluate(()=>OpenStreamLocalData.snapshot().data.favorites)).toContain('film-syncshow');
   expect(await pageB.evaluate(()=>OpenStreamLocalData.snapshot().data.watchlist['film-planned'].status)).toBe('planned');expect(await pageB.evaluate(()=>OpenStreamLocalData.snapshot().data.films.find(f=>f.id==='film-syncshow').catalogId)).toBe('tv:321');
+  // The paired device must resume real media, not only show a synchronized record.
+  await pageB.getByRole('button',{name:'关闭设备同步',exact:true}).click();if(await pageB.locator('#settings').isVisible())await pageB.getByRole('button',{name:'完成',exact:true}).click();
+  await pageB.evaluate(()=>{const f=films.find(f=>f.id==='film-syncshow');f.lines=[{key:'sync-media',sourceKey:'qa',name:'本地验收线路',health:'fast',episodes:Array.from({length:8},(_,i)=>({name:'第'+(i+1)+'集',url:'/media/sample.mp4?episode='+i}))}];f.candidatesComplete=true;});
+  await pageB.locator('.continue-item').filter({hasText:'配对验收剧'}).locator('.primary').click();
+  await expect(pageB.locator('video')).toHaveJSProperty('readyState',4,{timeout:15000});
+  expect(await pageB.locator('video').evaluate(v=>v.currentTime)).toBeGreaterThanOrEqual(11.8);
+  expect(await pageB.locator('video').evaluate(v=>v.currentTime)).toBeLessThan(14);
+  expect(await pageB.evaluate(()=>LivePlayback.current().episode)).toBe(2);
+  await pageB.locator('.fine-speed summary').click();await pageB.locator('.fine-speed [data-rate="1.75"]').click();await pageB.locator('.fine-speed summary').click();
+  await pageB.locator('video').evaluate(v=>v.play());
+  const actual=await pageB.locator('video').evaluate(async v=>{let waits=0;const waiting=()=>waits++;v.addEventListener('waiting',waiting);const start=v.currentTime,t=performance.now();await new Promise(r=>setTimeout(r,10000));v.removeEventListener('waiting',waiting);v.pause();return {ratio:(v.currentTime-start)/((performance.now()-t)/1000),rate:v.playbackRate,muted:v.muted,waits};});
+  expect(actual.waits).toBe(0);expect(actual.ratio).toBeGreaterThan(1.65);expect(actual.ratio).toBeLessThan(1.85);expect(actual.rate).toBe(1.75);expect(actual.muted).toBe(true);console.log(JSON.stringify({path:'paired-device-real-resume',episode:2,startSeconds:12,...actual}));
+  await pageB.locator('[data-nav="home"]').click();await openSync(pageB);
   await localData(pageB,{progress:{[film.id]:{...progress,position:25,watchedAt:'2026-11-06T02:00:00.000Z'}}});await pageB.getByRole('button',{name:'立即同步',exact:true}).click();await expect.poll(()=>pageB.evaluate(()=>OpenStreamDeviceSync.status.pending)).toBe(0);
   await pageA.getByRole('button',{name:'立即同步',exact:true}).click();await expect.poll(()=>pageA.evaluate(()=>OpenStreamLocalData.snapshot().data.progress['film-syncshow']?.position)).toBe(25);
   // A committed response can be lost; a later local update must retry the same frozen operation first.
