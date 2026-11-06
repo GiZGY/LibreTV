@@ -291,18 +291,21 @@ let ribbonDrag=null;
 let suppressRibbonClick=false;
 document.addEventListener('pointerdown',event=>{
  const ribbon=event.target.closest(draggableShelfSelector);
- if(!ribbon||event.pointerType!=='mouse'||event.button!==0||(event.target.closest('button')&&!ribbon.matches('.watch-source-list')))return;
+ if(ribbonDrag||!ribbon||event.isPrimary===false||event.button!==0||(event.target.closest('button')&&!ribbon.matches('.watch-source-list')))return;
  const track=ribbon.querySelector('.film-ribbon-track');
  const animation=track?.getAnimations()[0];
+ // Touch shelves without a running track keep native scrolling and momentum.
+ if(event.pointerType!=='mouse'&&!animation)return;
  const duration=animation?.effect.getTiming().duration;
  const distance=track?track.getBoundingClientRect().width/2:0;
- if(!ribbon.matches('.watch-source-list'))event.preventDefault();
+ if(event.pointerType==='mouse'&&!ribbon.matches('.watch-source-list'))event.preventDefault();
  suppressRibbonClick=false;
- ribbonDrag={ribbon,id:event.pointerId,x:event.clientX,scroll:ribbon.scrollLeft,animation,duration,distance,time:Number(animation?.currentTime)||0,moved:false};
+ ribbonDrag={ribbon,id:event.pointerId,x:event.clientX,y:event.clientY,scroll:ribbon.scrollLeft,animation,duration,distance,time:Number(animation?.currentTime)||0,moved:false};
 });
 document.addEventListener('pointermove',event=>{
  if(!ribbonDrag||event.pointerId!==ribbonDrag.id)return;
  const delta=event.clientX-ribbonDrag.x;
+ if(!ribbonDrag.moved&&Math.abs(event.clientY-ribbonDrag.y)>Math.max(6,Math.abs(delta))){ribbonDrag.moved=true;finishRibbonDrag(event);return;}
  if(!ribbonDrag.moved&&Math.abs(delta)<6)return;
  if(!ribbonDrag.moved){ribbonDrag.moved=true;ribbonDrag.ribbon.setPointerCapture(event.pointerId);ribbonDrag.ribbon.classList.add('is-dragging');}
  event.preventDefault();
@@ -315,6 +318,7 @@ function finishRibbonDrag(event){
  const {ribbon,id,moved}=ribbonDrag;
  suppressRibbonClick=moved;
  ribbon.classList.remove('is-dragging');
+ ribbon.classList.remove('is-held');
  if(ribbon.hasPointerCapture(id))ribbon.releasePointerCapture(id);
  ribbonDrag=null;
 }

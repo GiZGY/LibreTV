@@ -325,6 +325,9 @@ html.theme-changing .theme-glyph,html.theme-changing .theme-glyph svg{transition
 .settings-sources ul{max-height:220px;overflow:auto;overscroll-behavior:contain;margin-top:12px}
 .poster-ribbon{cursor:grab}.poster-ribbon .poster-art img{-webkit-user-drag:none;user-select:none}
 .film-ribbon.is-dragging .film-ribbon-track{animation-play-state:paused}
+.poster-ribbon{touch-action:pan-y pinch-zoom}
+.reduce-motion .poster-ribbon{touch-action:auto}
+@media(prefers-reduced-motion:reduce){.poster-ribbon{touch-action:auto}}
 /* A programmatic page landmark focus is not an interactive control focus. */
 #main:focus{outline:none}
 #watch-player .art-video-player:focus:not(:focus-visible){outline:none}
