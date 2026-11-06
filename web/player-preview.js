@@ -270,7 +270,8 @@
     const duration=instance.duration;
     if(restored||!Number.isFinite(duration)||duration<=0)return;
     restored=true;
-    const intro=skip.intro+skip.outro<duration&&!window.OpenStreamPlayerTools?.overrideFor(media).intro?skip.intro:0;
+    const keep=window.OpenStreamPlayerTools?.overrideFor(media);
+    const intro=!keep?.intro&&skip.intro+(keep?.outro?0:skip.outro)<duration?skip.intro:0;
     const ratio=media?.resumeRatio;
     const comparable=!media?.resumeDuration||Math.abs(duration-media.resumeDuration)/media.resumeDuration<=.1;
     const position=Number.isFinite(ratio)&&comparable?duration*ratio:(media?.resume||0);
@@ -290,8 +291,9 @@
    instance.on('video:durationchange',restorePosition);
    instance.on('video:timeupdate',()=>{
     const duration=instance.duration;
-    if(!Number.isFinite(duration)||duration<=0||instance.video.paused||!skip.outro||skip.intro+skip.outro>=duration)return;
-    if(window.OpenStreamPlayerTools&&(OpenStreamPlayerTools.overrideFor(media).outro||OpenStreamPlayerTools.sleep.applies(media)))return;
+    if(!Number.isFinite(duration)||duration<=0||instance.video.paused||!skip.outro)return;
+    const keep=window.OpenStreamPlayerTools?.overrideFor(media);
+    if(keep?.outro||(keep?.intro?0:skip.intro)+skip.outro>=duration||window.OpenStreamPlayerTools?.sleep.applies(media))return;
     if(window.OpenStreamPlayerTools?.sleep.blocked()){instance.pause();return;}
     if(instance.currentTime>=duration-skip.outro){if(!advance(false,'outro'))instance.pause();}
    });

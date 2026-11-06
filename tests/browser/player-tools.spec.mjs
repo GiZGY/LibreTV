@@ -67,6 +67,14 @@ test('ratio is inline, custom sleep accepts minutes, submenus visibly go back an
  await page.locator('.routes-heading').click();await expect(page.locator('#watch-player .art-video-player')).not.toHaveClass(/art-setting-show/);await gear.click();await expect(ratio('16:9')).toBeVisible();await expect(page.locator('[data-skip-seconds="outro"]')).toBeVisible();
  await ratio('4:3').click();await closeSettings(page);await page.locator('.player-next-episode').click();await episode(page,2);await settings(page);await expect(ratio('4:3')).toHaveAttribute('aria-pressed','true');expect(await page.evaluate(()=>Artplayer.instances[0].aspectRatio)).toBe('4:3');
 });
+test('a disabled intro retains its seconds but cannot suppress an independently enabled outro',async({page})=>{
+ await open(page);await settings(page);
+ for(const [which,value] of [['intro','58'],['outro','5']]){const input=page.locator(`[data-skip-seconds="${which}"]`);await input.fill(value);await input.press('Enter');}
+ await page.locator('[data-skip-enabled="intro"]').click();await expect(page.locator('[data-skip-enabled="outro"]')).toHaveAttribute('aria-checked','true');await closeSettings(page);
+ await page.locator('video').evaluate(async v=>{v.currentTime=55.4;await v.play();});
+ await expect.poll(()=>page.evaluate(()=>({ep:LivePlayback.current()?.episode,trigger:OpenStreamPlayback.diagnostic().current?.trigger})),{timeout:8000}).toEqual({ep:2,trigger:'outro'});
+ expect(await page.evaluate(()=>JSON.parse(localStorage.getItem('openstream_live_skip_film-qa1')))).toEqual({intro:58,outro:5});
+});
 test('outside dismissal never reopens a stale settings subpage',async({page})=>{
  await open(page);await settings(page,'local-subtitle');await expect(page.locator('.art-setting-panel.art-current [data-name="subtitle-file"]')).toBeVisible();
  await page.locator('.routes-heading').click();
