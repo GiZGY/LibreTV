@@ -70,9 +70,8 @@ function certificationMarkup(f){const c=f.certification;if(c?.country!=='US'||![
 const card=(f,featured=false)=>window.OPENSTREAM_LIVE&&window.LiveData&&!LiveData.allowed(f)?'':`<article class="poster-card"><a href="#detail/${f.id}"><div class="poster-art"><img class="poster-ambient" ${posterAttributes(f,featured?'(max-width:700px) 190px, 280px':undefined)} alt="" aria-hidden="true" loading="lazy" referrerpolicy="no-referrer"><img ${posterAttributes(f,featured?'(max-width:700px) 190px, 280px':undefined)} alt="${esc(f.name)}海报" referrerpolicy="no-referrer" loading="${featured?'eager':'lazy'}" width="500" height="750"><span class="play-hint" aria-hidden="true">▷</span></div><h3 title="${esc(f.name)}">${esc(f.name)}</h3><p class="poster-meta"><span>${esc([f.year||'年份未收录',f.genre||f.type].filter(Boolean).join(' / '))}</span>${Number(f.rating)>0?`<span class="poster-score ${scoreClass(f.rating)}" title="${esc(f.ratingSource||'评分')}">${f.ratingSource==='TMDB'?'<span class="rating-provider">TMDB </span>':''}★ ${esc(f.rating)}</span>`:''}${certificationMarkup(f)}</p></a><button class="quick-favorite favorite-button" aria-label="${favorites.has(f.id)?'取消收藏':'收藏'}${esc(f.name)}" aria-pressed="${favorites.has(f.id)}" data-action="favorite" data-id="${f.id}">${icon('bookmark')}</button></article>`;
 const grid=list=>{list=list.filter(f=>!window.OPENSTREAM_LIVE||!window.LiveData||LiveData.allowed(f));return list.length?`<div class="poster-grid">${list.map(f=>card(f)).join('')}</div>`:`<div class="empty"><h2>暂时没有找到影片</h2><p>换个关键词，或试试其他筛选条件。</p><button class="primary" data-action="reset">查看全部影片</button></div>`;};
 function chips(items,current,key,style='',labels={}){return items.map(x=>`<button class="chip ${style} ${x===current?'selected':''}" data-filter="${key}" data-value="${x}" aria-pressed="${x===current}">${labels[x]||x}</button>`).join('')}
-function heroMarkup(){
- const featured=films.filter(f=>(f.type||'电影')==='电影'&&Number(f.rating)>=7);
- // Repeating the set keeps each loop group wider than the visible canvas.
+function heroMarkup(featured=films.filter(f=>(f.type||'电影')==='电影'&&Number(f.rating)>=7)){
+ // Each physical group includes a second set before responsive coverage is measured.
  const items=[...featured,...featured];
  const group=duplicate=>`<div class="film-ribbon-group" ${duplicate?'aria-hidden="true"':''}>${items.map((film,i)=>{
   let markup=card(film,true).replace('<article class="poster-card"',i>=featured.length?'<article data-loop-copy="true" class="poster-card"':'<article class="poster-card"');
@@ -83,8 +82,45 @@ function heroMarkup(){
 }
 
 
-
-
+let heroRibbonObserver;
+function setupHeroRibbon(){
+ heroRibbonObserver?.disconnect();
+ const ribbon=document.querySelector('.film-ribbon'),track=ribbon?.querySelector('.film-ribbon-track');
+ const groups=track?[...track.children]:[],originals=groups[0]?[...groups[0].children].filter(card=>!card.hasAttribute('data-loop-copy')):[];
+ if(!originals.length)return;
+ if(!document.body.classList.contains('reduce-motion')&&!matchMedia('(prefers-reduced-motion:reduce)').matches)ribbon.scrollLeft=0;
+ let previous,observer;
+ const fit=()=>{
+  if(!ribbon.isConnected){observer?.disconnect();return;}
+  const gap=parseFloat(getComputedStyle(groups[0]).columnGap)||0;
+  const setWidth=originals.reduce((width,card)=>width+card.getBoundingClientRect().width+gap,0);
+  if(!setWidth)return;
+  const copies=Math.max(groups[0].children.length/originals.length,Math.ceil(ribbon.clientWidth/setWidth)+1,2);
+  const animations=ribbonAnimations(track);
+  const duration=Number(animations[0]?.effect.getTiming().duration)||280000;
+  const phase=(((Number(animations[0]?.currentTime)||0)/duration)%1+1)%1;
+  for(const group of groups){
+   while(group.children.length<copies*originals.length){
+    for(const original of originals){
+     const copy=original.cloneNode(true);copy.dataset.loopCopy='true';
+     copy.querySelectorAll('a,button').forEach(control=>control.tabIndex=-1);
+     group.append(copy);
+    }
+   }
+  }
+  // Extra coverage must not accelerate a short list or expose a group while it recycles.
+  const period=70000*copies;
+  ribbon.style.setProperty('--ribbon-period',`${period}ms`);
+  const width=groups[0].getBoundingClientRect().width;
+  if(previous&&animations.length){
+   const half=phase>=.5?1:0,offset=(phase*2-half)*previous.width/previous.setWidth*setWidth;
+   const time=(half*width+offset)/(2*width)*(2*period);
+   ribbonAnimations(track).forEach(animation=>{animation.currentTime=time;});
+  }
+  previous={width,setWidth};
+ };
+ fit();heroRibbonObserver=observer=new ResizeObserver(fit);observer.observe(ribbon);
+}
 
 function home(){window.OpenStreamLibrary?.notifyResume();return `<div id="hero-slot">${heroMarkup()}</div><div class="section-head"><h2>推荐影片</h2><a class="text-button" href="#discover">发现更多 ${icon('arrow')}</a></div><div class="filter-tabs">${chips(['全部','科幻','悬疑','剧情','传记'],homeGenre,'home')}</div><div id="home-recommendations" class="poster-grid">${films.filter(f=>(f.type||'电影')==='电影').map(f=>card(f).replace('<article class="poster-card"',`<article data-home-genre="${esc(f.genre)}" ${homeGenre!=='全部'&&f.genre!==homeGenre?'hidden':''} class="poster-card"`)).join('')}</div><div class="section-head"><h2>剧集与动漫</h2></div>${grid(films.filter(f=>['电视剧','动漫'].includes(f.type)))}<div class="section-head"><h2>综艺</h2></div>${grid(films.filter(f=>f.type==='综艺'))}`;}
 const filterScroll = {};
@@ -136,11 +172,11 @@ function historyPage(){
 document.addEventListener('toggle',event=>{if(event.target.matches?.('.history-older'))historyOlderOpen=event.target.open;},true);
 document.addEventListener('click',event=>{if(event.target.closest('[data-history-more]')){historyOlderOpen=true;historyOlderLimit+=20;render();}});
 
-function render(){let [page='home',id='']=(location.hash.slice(1)||'home').split('/');let f=films.find(x=>x.id===id);document.querySelectorAll('[data-nav]').forEach(a=>a.classList.toggle('active',a.dataset.nav===page));$('#crumb').textContent=({home:'发现 / 为你推荐',discover:'发现 / 全部影片',library:'我的空间 / 收藏',history:'我的空间 / 观看历史',detail:'发现 / 影片详情',player:'正在观看',search:'发现 / 搜索',about:'关于 OpenStream'})[page]||'发现';if(page==='home')$('#main').innerHTML=home();else if(page==='discover')$('#main').innerHTML=discover();else if(page==='library')$('#main').innerHTML=library();else if(page==='history')$('#main').innerHTML=historyPage();else if(['detail','player'].includes(page)&&f)$('#main').innerHTML=page==='detail'?detail(f):player(f);else if(page==='search'){let q;try{q=decodeURIComponent(id)}catch{q=''}$('#search').value=q;let list=films.filter(f=>(f.name+f.en+f.director).toLowerCase().includes(q.toLowerCase()));$('#main').innerHTML=`<div class="page-title"><h1>搜索结果</h1><p>“${esc(q)}” · 找到 ${list.length} 部影片</p></div>${grid(list)}`}else if(page==='about')$('#main').innerHTML='<article class="article"><div class="page-title"><h1>关于 OpenStream</h1></div><p>OpenStream 提供影片搜索、分类浏览与播放功能。</p><h2>隐私</h2><p>收藏和偏好仅保存在当前浏览器，不向服务器发送。</p><h2>内容与版权</h2><p>电影海报和剧照用于本地界面展示，版权归各自权利方所有。影片资料与图片来源：TMDB。OpenStream 不属于 TMDB 官方产品。</p></article>';else $('#main').innerHTML='<div class="empty"><h2>没有找到这个页面</h2><a class="primary" href="#home">返回首页</a></div>';document.title=(f?f.name+' · ':'')+'OpenStream';}
+function render(){let [page='home',id='']=(location.hash.slice(1)||'home').split('/');let f=films.find(x=>x.id===id);document.querySelectorAll('[data-nav]').forEach(a=>a.classList.toggle('active',a.dataset.nav===page));$('#crumb').textContent=({home:'发现 / 为你推荐',discover:'发现 / 全部影片',library:'我的空间 / 收藏',history:'我的空间 / 观看历史',detail:'发现 / 影片详情',player:'正在观看',search:'发现 / 搜索',about:'关于 OpenStream'})[page]||'发现';if(page==='home')$('#main').innerHTML=home();else if(page==='discover')$('#main').innerHTML=discover();else if(page==='library')$('#main').innerHTML=library();else if(page==='history')$('#main').innerHTML=historyPage();else if(['detail','player'].includes(page)&&f)$('#main').innerHTML=page==='detail'?detail(f):player(f);else if(page==='search'){let q;try{q=decodeURIComponent(id)}catch{q=''}$('#search').value=q;let list=films.filter(f=>(f.name+f.en+f.director).toLowerCase().includes(q.toLowerCase()));$('#main').innerHTML=`<div class="page-title"><h1>搜索结果</h1><p>“${esc(q)}” · 找到 ${list.length} 部影片</p></div>${grid(list)}`}else if(page==='about')$('#main').innerHTML='<article class="article"><div class="page-title"><h1>关于 OpenStream</h1></div><p>OpenStream 提供影片搜索、分类浏览与播放功能。</p><h2>隐私</h2><p>收藏和偏好仅保存在当前浏览器，不向服务器发送。</p><h2>内容与版权</h2><p>电影海报和剧照用于本地界面展示，版权归各自权利方所有。影片资料与图片来源：TMDB。OpenStream 不属于 TMDB 官方产品。</p></article>';else $('#main').innerHTML='<div class="empty"><h2>没有找到这个页面</h2><a class="primary" href="#home">返回首页</a></div>';document.title=(f?f.name+' · ':'')+'OpenStream';setupHeroRibbon();}
 $('#search-form').addEventListener('submit',e=>{e.preventDefault();openCommand()});
 document.addEventListener('click',e=>{const filter=e.target.closest('[data-filter]');if(filter){if(filter.dataset.filter==='home'){if(homeGenre===filter.dataset.value)return;homeGenre=filter.dataset.value;document.querySelectorAll('[data-filter="home"]').forEach(button=>{const selected=button.dataset.value===homeGenre;button.classList.toggle('selected',selected);button.setAttribute('aria-pressed',String(selected))});document.querySelectorAll('#home-recommendations [data-home-genre]').forEach(card=>{card.hidden=homeGenre!=='全部'&&card.dataset.homeGenre!==homeGenre});return}discoverPage=1;document.querySelectorAll('[data-strip]').forEach(el=>filterScroll[el.dataset.strip]=el.scrollLeft);const focusKey=filter.dataset.filter,focusValue=filter.dataset.value;if(filter.dataset.filter==='home')homeGenre=filter.dataset.value;else filters[filter.dataset.filter]=filter.dataset.value;render();document.querySelectorAll('[data-strip]').forEach(el=>el.scrollLeft=filterScroll[el.dataset.strip]||0);const selected=[...document.querySelectorAll('[data-filter]')].find(el=>el.dataset.filter===focusKey&&el.dataset.value===focusValue);selected?.focus({preventScroll:true});return}const b=e.target.closest('[data-action]');if(!b)return;const a=b.dataset.action;if(a==='settings')$('#settings').showModal();if(a==='close')$('#settings').close();if(a==='favorite')toggleFavorite(b.dataset.id);if(a==='reset'){discoverPage=1;filters={type:'电影',genre:'全部',year:'全部',region:'全部',sort:'精选'};location.hash='discover';render()}if(a==='scifi'){filters={type:'电影',genre:'科幻',year:'全部',region:'全部',sort:'精选'};location.hash='discover'}if(a==='preview-play'){const panel=$('.screen-center');if(panel){panel.innerHTML='<p role="status">正在加载…</p>';const screen=$('#screen');setTimeout(()=>{if(screen.isConnected)panel.innerHTML='<p role="alert">影片暂不可播放</p><button class="secondary" data-action="preview-play">重试</button>';},650)}else toast('影片暂不可播放，请稍后再试')}if(a==='source'){document.querySelectorAll('.source-button').forEach(x=>{x.classList.remove('active');x.setAttribute('aria-pressed','false')});b.classList.add('active');b.setAttribute('aria-pressed','true');toast('已切换'+b.textContent)}if(a==='fullscreen'){if(document.fullscreenElement)document.exitFullscreen();else $('#screen')?.requestFullscreen?.().catch(()=>toast('当前浏览器不支持全屏'))}if(a==='clear-history'){if(confirm('清空全部观看记录？')){undoHistory=[...history];history=[];save('history',history);render();showUndo()}}if(a==='remove-history'){undoHistory=[...history];history=history.filter(x=>x!==b.dataset.id);save('history',history);render();showUndo()}});
 document.addEventListener('change',e=>{if(e.target.id==='year'){filters.year=e.target.value;render()}if(e.target.id==='sort'){filters.sort=e.target.value;render()}});
-for(const id of ['autoplay','motion']){$('#'+id).checked=load(id,id!=='motion');$('#'+id).addEventListener('change',e=>{save(id,e.target.checked);if(id==='motion')document.body.classList.toggle('reduce-motion',e.target.checked)})}document.body.classList.toggle('reduce-motion',load('motion',false));$('#settings').addEventListener('click',e=>{if(e.target===$('#settings')){const r=e.target.getBoundingClientRect();if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)e.target.close()}});
+for(const id of ['autoplay','motion']){$('#'+id).checked=load(id,id!=='motion');$('#'+id).addEventListener('change',e=>{save(id,e.target.checked);if(id==='motion'){document.body.classList.toggle('reduce-motion',e.target.checked);setupHeroRibbon();}})}document.body.classList.toggle('reduce-motion',load('motion',false));matchMedia('(prefers-reduced-motion:reduce)').addEventListener('change',setupHeroRibbon);$('#settings').addEventListener('click',e=>{if(e.target===$('#settings')){const r=e.target.getBoundingClientRect();if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)e.target.close()}});
 document.addEventListener('keydown',e=>{if(((e.key.toLowerCase()==='k'&&(e.metaKey||e.ctrlKey))||(e.key==='/'&&!['INPUT','TEXTAREA','SELECT'].includes(document.activeElement.tagName)))&&!$('#settings').open){e.preventDefault();openCommand()}});let listOrigin='#home';
 document.querySelectorAll('[data-icon]').forEach(el=>el.insertAdjacentHTML('afterbegin',icon(el.dataset.icon)));if(!window.OPENSTREAM_LIVE)render();
 
@@ -297,20 +333,21 @@ refreshAppearance();
 
 // Drag the running animation from its current phase; reduced motion uses native scrolling.
 const draggableShelfSelector='.poster-ribbon, #home-recommendations > .poster-grid, #live-tv > .poster-grid, .watch-source-list';
+function ribbonAnimations(track){return track?[...track.children].flatMap(group=>group.getAnimations().filter(animation=>animation.animationName==='ribbon-travel')):[];}
 let ribbonDrag=null;
 let suppressRibbonClick=false;
 document.addEventListener('pointerdown',event=>{
  const ribbon=event.target.closest(draggableShelfSelector);
  if(ribbonDrag||!ribbon||event.isPrimary===false||event.button!==0||(event.target.closest('button')&&!ribbon.matches('.watch-source-list')))return;
  const track=ribbon.querySelector('.film-ribbon-track');
- const animation=track?.getAnimations()[0];
+ const animations=ribbonAnimations(track),animation=animations[0];
  // Touch shelves without a running track keep native scrolling and momentum.
  if(event.pointerType!=='mouse'&&!animation)return;
  const duration=animation?.effect.getTiming().duration;
- const distance=track?track.getBoundingClientRect().width/2:0;
+ const distance=track?.firstElementChild?track.firstElementChild.getBoundingClientRect().width*2:0;
  if(event.pointerType==='mouse'&&!ribbon.matches('.watch-source-list'))event.preventDefault();
  suppressRibbonClick=false;
- ribbonDrag={ribbon,id:event.pointerId,x:event.clientX,y:event.clientY,scroll:ribbon.scrollLeft,animation,duration,distance,time:Number(animation?.currentTime)||0,moved:false};
+ ribbonDrag={ribbon,id:event.pointerId,x:event.clientX,y:event.clientY,scroll:ribbon.scrollLeft,animations,animation,duration,distance,time:Number(animation?.currentTime)||0,moved:false};
 });
 document.addEventListener('pointermove',event=>{
  if(!ribbonDrag||event.pointerId!==ribbonDrag.id)return;
@@ -320,7 +357,7 @@ document.addEventListener('pointermove',event=>{
  if(!ribbonDrag.moved){ribbonDrag.moved=true;ribbonDrag.ribbon.setPointerCapture(event.pointerId);ribbonDrag.ribbon.classList.add('is-dragging');}
  event.preventDefault();
  const drag=ribbonDrag;
- if(drag.animation&&drag.distance>0){const time=drag.time-delta/drag.distance*drag.duration;drag.animation.currentTime=((time%drag.duration)+drag.duration)%drag.duration;}
+ if(drag.animation&&drag.distance>0){const time=drag.time-delta/drag.distance*drag.duration;drag.animations.forEach(animation=>{animation.currentTime=((time%drag.duration)+drag.duration)%drag.duration;});}
  else drag.ribbon.scrollLeft=drag.scroll-delta;
 });
 function finishRibbonDrag(event){

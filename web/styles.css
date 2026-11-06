@@ -79,15 +79,15 @@ html[data-theme=dark]{color-scheme:dark;--bg:#222426;--soft:#2c2f32;--ink:#e4e5e
 [data-theme=dark] .shelf{background:var(--soft)}
 [data-theme=dark] .favorite-button:hover{background:var(--soft)}
 
-/* Equal-width repeated groups make the loop seam independent of frame timing. */
+/* Groups recycle only outside the clip; the visible group never jumps at a loop boundary. */
 .film-ribbon{overflow:hidden;margin:0 0 30px;border-radius:14px;mask-image:linear-gradient(90deg,transparent,#000 2%,#000 98%,transparent)}
-.film-ribbon-track{display:flex;width:max-content;animation:ribbon-travel 90s linear infinite}
-.film-ribbon-group{display:flex;gap:20px;padding-right:20px;flex:none}
-.film-ribbon:hover .film-ribbon-track,.film-ribbon:focus-within .film-ribbon-track,.film-ribbon.is-held .film-ribbon-track{animation-play-state:paused}
-@keyframes ribbon-travel{to{transform:translateX(-50%)}}
+.film-ribbon-track{display:grid;width:max-content}
+.film-ribbon-group{grid-area:1/1;display:flex;gap:20px;padding-right:20px;animation:ribbon-travel calc(var(--ribbon-period,140s) * 2) linear infinite}.film-ribbon-group:first-child{animation-delay:calc(var(--ribbon-period,140s) * -1)}
+.film-ribbon:hover .film-ribbon-group,.film-ribbon:focus-within .film-ribbon-group,.film-ribbon.is-held .film-ribbon-group{animation-play-state:paused}
+@keyframes ribbon-travel{from{transform:translateX(100%)}to{transform:translateX(-100%)}}
 @media(max-width:700px){.film-ribbon-group{gap:14px;padding-right:14px}}
-@media(prefers-reduced-motion:reduce){.film-ribbon-track{animation:none}.film-ribbon{overflow-x:auto}.film-ribbon-group[aria-hidden=true]{display:none}}
-.reduce-motion .film-ribbon-track{animation:none}.reduce-motion .film-ribbon{overflow-x:auto}.reduce-motion .film-ribbon-group[aria-hidden=true]{display:none}
+@media(prefers-reduced-motion:reduce){.film-ribbon-group{animation:none}.film-ribbon{overflow-x:auto}.film-ribbon-group[aria-hidden=true]{display:none}}
+.reduce-motion .film-ribbon-group{animation:none}.reduce-motion .film-ribbon{overflow-x:auto}.reduce-motion .film-ribbon-group[aria-hidden=true]{display:none}
 .film-ribbon{max-width:2000px;margin-inline:auto}
 /* The wordmark alone uses a flared, lightly spaced display face. */
 .mobile-brand{font-family:Optima,"Palatino Linotype",Palatino,serif;font-weight:600;font-size:21px;letter-spacing:1.1px;line-height:1;white-space:nowrap}
@@ -110,7 +110,7 @@ html[data-theme=dark]{color-scheme:dark;--bg:#222426;--soft:#2c2f32;--ink:#e4e5e
  .nav-collapsed .sidebar .about-link{opacity:0;visibility:hidden}
  .nav-collapsed .sidebar nav a.active{background:linear-gradient(90deg,var(--accent-bg) 44px,transparent 44px)}
 }
-.film-ribbon-track{will-change:transform}
+.film-ribbon-group{will-change:transform}
 html{scrollbar-gutter:stable}
 
 @media(prefers-reduced-motion:reduce){.sidebar,.sidebar .nav-label,.sidebar .about-link{transition:none!important}}
@@ -142,7 +142,7 @@ body,.sidebar,.topbar{transition:background-color 220ms ease,color 220ms ease}
 
 /* Clip normally: a full-width alpha mask repeatedly rerasterizes during resizing. */
 .film-ribbon{mask-image:none}
-.film-ribbon-track{backface-visibility:hidden}
+.film-ribbon-group{backface-visibility:hidden}
 .poster-meta{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding-right:30px}
 .poster-score{font-weight:600;white-space:nowrap;background:none;color:var(--muted)}
 .poster-score.score-high{color:#a77814}
@@ -154,7 +154,6 @@ body,.sidebar,.topbar{transition:background-color 220ms ease,color 220ms ease}
 .poster-ribbon .poster-art{aspect-ratio:2/3}
 .poster-ribbon .poster-art img{object-fit:contain}
 .poster-ribbon .poster-card h3{font-size:14px}
-.poster-ribbon .film-ribbon-track{animation-duration:140s}
 .poster-ribbon .poster-card>a:focus-visible{outline-offset:-3px}
 @media(max-width:700px){.poster-ribbon .poster-card{width:190px}}
 /* Keep the selected rail item inside its own rounded hit target. */
@@ -168,8 +167,8 @@ body,.sidebar,.topbar{transition:background-color 220ms ease,color 220ms ease}
 .poster-ribbon{width:100%;max-width:none}
 @media(max-width:700px){#hero-slot{margin-inline:-16px}}
 /* Pause only over a poster, not the ribbon's captions, gaps or padding. */
-.film-ribbon:hover .film-ribbon-track{animation-play-state:running}
-.film-ribbon:has(.poster-art:hover) .film-ribbon-track,.film-ribbon:focus-within .film-ribbon-track,.film-ribbon.is-held .film-ribbon-track{animation-play-state:paused}
+.film-ribbon:hover .film-ribbon-group{animation-play-state:running}
+.film-ribbon:has(.poster-art:hover) .film-ribbon-group,.film-ribbon:focus-within .film-ribbon-group,.film-ribbon.is-held .film-ribbon-group{animation-play-state:paused}
 /* Keep mobile branding and search on a single compact row. */
 @media(max-width:700px){
  .topbar{height:64px;min-height:64px;padding:0 16px;flex-wrap:nowrap;gap:14px;align-items:center}
@@ -320,7 +319,7 @@ html.theme-changing .theme-glyph,html.theme-changing .theme-glyph svg{transition
 .settings-sources summary small{font-weight:400;color:var(--muted);margin-left:8px}
 .settings-sources ul{max-height:220px;overflow:auto;overscroll-behavior:contain;margin-top:12px}
 .poster-ribbon{cursor:grab}.poster-ribbon .poster-art img{-webkit-user-drag:none;user-select:none}
-.film-ribbon.is-dragging .film-ribbon-track{animation-play-state:paused}
+.film-ribbon.is-dragging .film-ribbon-group{animation-play-state:paused}
 .poster-ribbon{touch-action:pan-y pinch-zoom}
 .reduce-motion .poster-ribbon{touch-action:auto}
 @media(prefers-reduced-motion:reduce){.poster-ribbon{touch-action:auto}}

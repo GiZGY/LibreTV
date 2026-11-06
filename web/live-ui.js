@@ -142,13 +142,8 @@
     if(token!==generation)return;
     const featured=featuredFilms(), rest=homeRecommendations();
     // The featured strip and the recommendation grid use disjoint lists.
-    const group=copy=>`<div class="film-ribbon-group" ${copy?'aria-hidden="true"':''}>${[...featured,...featured].map((f,i)=>{
-      let html=card(f,true);
-      if(copy||i>=featured.length)html=html.replace('<a ','<a tabindex="-1" ').replace('<button ','<button tabindex="-1" ');
-      if(i>=featured.length)html=html.replace('<article ','<article data-loop-copy="true" ');
-      return html;
-    }).join('')}</div>`;
-    window.OpenStreamLibrary?.notifyResume();$('#main').innerHTML=`<div id="hero-slot"><section class="film-ribbon poster-ribbon" aria-label="精选影片"><div class="film-ribbon-track">${group(false)}${group(true)}</div></section></div><div class="section-head"><h2>推荐影片</h2><a class="text-button" href="#discover">发现更多 ${icon('arrow')}</a></div><div class="filter-tabs">${['全部','科幻','悬疑','剧情','历史'].map(genre=>`<button class="chip ${homeGenre===genre?'selected':''}" data-live-home-genre="${genre}" aria-pressed="${homeGenre===genre}">${genre}</button>`).join('')}</div><div id="home-recommendations">${homeGenre==='全部'?grid(rest):status('正在加载影片…',false)}</div><div class="section-head"><h2>热门剧集</h2></div><div id="live-tv">${status('正在加载剧集…',false)}</div>`;
+    window.OpenStreamLibrary?.notifyResume();$('#main').innerHTML=`<div id="hero-slot">${heroMarkup(featured)}</div><div class="section-head"><h2>推荐影片</h2><a class="text-button" href="#discover">发现更多 ${icon('arrow')}</a></div><div class="filter-tabs">${['全部','科幻','悬疑','剧情','历史'].map(genre=>`<button class="chip ${homeGenre===genre?'selected':''}" data-live-home-genre="${genre}" aria-pressed="${homeGenre===genre}">${genre}</button>`).join('')}</div><div id="home-recommendations">${homeGenre==='全部'?grid(rest):status('正在加载影片…',false)}</div><div class="section-head"><h2>热门剧集</h2></div><div id="live-tv">${status('正在加载剧集…',false)}</div>`;
+    setupHeroRibbon();
     if(homeGenre!=='全部')await updateHomeGenre(homeGenre);
     try {
       const {items:tv}=await data.discoverTMDB({type:'电视剧',genre:'全部',year:'全部',sort:'精选',minRating:6.5,page:1,signal});
