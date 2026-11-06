@@ -4,8 +4,8 @@
  const id=value=>typeof value==='string'&&/^[a-z0-9][a-z0-9_-]{0,79}$/i.test(value);
  const object=value=>!!value&&typeof value==='object'&&!Array.isArray(value);
  const string=(value,max=160)=>typeof value==='string'?value.replace(/<[^>]*>/g,'').slice(0,max):'';
- const integer=(value,min=0,max=1000000)=>Number.isFinite(Number(value))?Math.max(min,Math.min(max,Math.floor(Number(value)))):min;
- const stamp=value=>typeof value==='string'&&Number.isFinite(Date.parse(value))?new Date(value).toISOString():new Date(0).toISOString();
+ const integer=(value,min=0,max=1000000)=>{if(value===undefined)return min;if((typeof value!=='number'&&typeof value!=='string')||value===''||!Number.isFinite(Number(value))||Number(value)<min||Number(value)>max)throw Error('数据中的数值不正确');return Math.floor(Number(value));};
+ const stamp=value=>{if(value===undefined)return new Date(0).toISOString();if(typeof value!=='string'||!Number.isFinite(Date.parse(value)))throw Error('数据中的时间不正确');return new Date(value).toISOString();};
  const preferences={autoplay:'boolean',motion:'boolean',darkMode:'boolean',mobileAutoTheme:'boolean',playbackRate:'number'};
  let applying=false;
  function cleanFilm(value){
@@ -16,10 +16,14 @@
   try{const url=new URL(value.cover||value.art);if(url.protocol==='https:'&&/^(image\.tmdb\.org|img\d*\.doubanio\.com)$/.test(url.hostname)&&!url.search&&!url.hash&&!url.username&&!url.password)film.cover=film.art=url.href;}catch{}
   return film;
  }
+ const episodeKey=value=>{if(typeof value!=='string'||value.length>160||!value.length||/[<>\x00-\x1f]|:\/\//.test(value)||! /^(?:feature$|s\d{1,3}:e\d{1,4}(?::[上中下])?$|(?:special|label|unresolved):)/.test(value))throw Error('剧集标识不正确');return value;};
  function cleanProgress(value){
   if(!object(value))throw Error('观看进度格式不正确');
   const duration=integer(value.duration,0,86400),position=integer(value.position,0,duration||86400);
-  return{watchedAt:stamp(value.watchedAt),position,duration,season:integer(value.season,1,200),episode:integer(value.episode,1,5000),totalEpisodes:integer(value.totalEpisodes,1,5000),completed:value.completed===true};
+  const result={watchedAt:stamp(value.watchedAt),position,duration,season:integer(value.season,1,200),episode:integer(value.episode,1,5000),totalEpisodes:integer(value.totalEpisodes,1,5000),completed:value.completed===true};
+  if(value.episodeKey!==undefined)result.episodeKey=episodeKey(value.episodeKey);
+  if(value.completedEpisodes!==undefined){if(!Array.isArray(value.completedEpisodes)||value.completedEpisodes.length>1000)throw Error('已看集数记录不正确');result.completedEpisodes=[...new Set(value.completedEpisodes.map(episodeKey))];}
+  return result;
  }
  function cleanMap(value,clean){
   if(value===undefined)return{};if(!object(value)||Object.keys(value).length>MAX_RECORDS)throw Error('记录数量超出范围');
@@ -43,12 +47,12 @@
  function snapshot(){
   const ids=new Set([...favorites,...history]),kept=films.filter(f=>ids.has(f.id)).slice(0,MAX_RECORDS),skip={};
   for(const f of kept){const value=load('skip_'+f.id,null);if(value)skip[f.id]=value;}
-  return validateBackup({format:FORMAT,version:VERSION,createdAt:new Date().toISOString(),data:{films:kept,favorites:[...favorites],history,progress:historyMetadata,watchlist:load('watchlist',{}),preferences:Object.fromEntries(Object.keys(preferences).map(key=>[key,load(key,key==='playbackRate'?1:['autoplay','mobileAutoTheme'].includes(key))])),skip}});
+  return validateBackup({format:FORMAT,version:VERSION,createdAt:new Date().toISOString(),data:{films:kept,favorites:[...favorites],history,progress:Object.fromEntries(Object.entries(historyMetadata).filter(([key])=>ids.has(key))),watchlist:Object.fromEntries(Object.entries(load('watchlist',{})).filter(([key])=>ids.has(key))),preferences:Object.fromEntries(Object.keys(preferences).map(key=>[key,load(key,key==='playbackRate'?1:['autoplay','mobileAutoTheme'].includes(key))])),skip}});
  }
  function preview(raw){const backup=validateBackup(raw),current=snapshot();return{backup,counts:{favorites:backup.data.favorites.length,history:backup.data.history.length,films:backup.data.films.length,newFavorites:backup.data.favorites.filter(key=>!current.data.favorites.includes(key)).length}};}
  function mergeData(current,incoming){
   const byId=new Map(current.films.map(f=>[f.id,f]));for(const f of incoming.films)byId.set(f.id,{...byId.get(f.id),...f});
-  const progress={...current.progress};for(const[key,value]of Object.entries(incoming.progress))if(!progress[key]||Date.parse(value.watchedAt)>=Date.parse(progress[key].watchedAt))progress[key]=value;
+  const progress={...current.progress};for(const[key,value]of Object.entries(incoming.progress)){const previous=progress[key],completedEpisodes=[...new Set([...(previous?.completedEpisodes||[]),...(value.completedEpisodes||[])])].slice(-1000);if(!previous||Date.parse(value.watchedAt)>=Date.parse(previous.watchedAt))progress[key]={...value,...(completedEpisodes.length?{completedEpisodes}:{})};else if(completedEpisodes.length)progress[key]={...previous,completedEpisodes};}
   const watchlist={...current.watchlist};for(const[key,value]of Object.entries(incoming.watchlist))if(!watchlist[key]||Date.parse(value.updatedAt)>=Date.parse(watchlist[key].updatedAt))watchlist[key]=value;
   return{films:[...byId.values()].slice(-MAX_RECORDS),favorites:[...new Set([...current.favorites,...incoming.favorites])],history:[...new Set([...incoming.history,...current.history])].sort((a,b)=>Date.parse(progress[b]?.watchedAt||0)-Date.parse(progress[a]?.watchedAt||0)),progress,watchlist,preferences:{...current.preferences,...incoming.preferences},skip:{...current.skip,...incoming.skip}};
  }
