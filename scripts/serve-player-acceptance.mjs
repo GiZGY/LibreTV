@@ -7,6 +7,8 @@ import os from 'node:os';
 import {execFileSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 const root=fileURLToPath(new URL('../',import.meta.url));
+const entry=await fs.readFile(path.join(root,'public/index.html'),'utf8');
+if(!entry.includes('live-ui.js?v='))throw Error('Acceptance requires the new UI build; run npm run test:browser without --no-build');
 const media=mkdtempSync(path.join(os.tmpdir(),'openstream-player-'));
 process.on('exit',()=>rmSync(media,{recursive:true,force:true}));
 process.once('SIGTERM',()=>process.exit(0));process.once('SIGINT',()=>process.exit(0));

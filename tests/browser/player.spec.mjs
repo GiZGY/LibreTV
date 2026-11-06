@@ -20,6 +20,7 @@ async function speed(page){
   const ratio=(v.currentTime-start)/((performance.now()-t)/1000);v.removeEventListener('waiting',onWait);v.pause();
   return{ratio,stalls,rate:v.playbackRate,defaultRate:v.defaultPlaybackRate,muted:v.muted};
  });
+ console.log(JSON.stringify({test:test.info().title,project:test.info().project.name,sampleSeconds:10,...reading}));
  expect(reading.stalls).toBe(0);expect(reading.ratio).toBeGreaterThan(1.65);expect(reading.ratio).toBeLessThan(1.85);expect(reading.rate).toBe(1.75);expect(reading.defaultRate).toBe(1.75);expect(reading.muted).toBe(true);
  await expect(page.locator('.fine-speed summary')).toHaveText('1.75×');
 }
