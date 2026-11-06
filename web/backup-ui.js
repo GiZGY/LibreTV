@@ -1,0 +1,24 @@
+(() => {
+ function backupControls(){
+  const settings=document.querySelector('#settings');if(!settings||settings.querySelector('[data-library-backup]'))return;
+  const section=document.createElement('section');section.className='backup-controls';section.dataset.libraryBackup='';section.innerHTML='<h3>数据备份</h3><p>收藏、观看进度和偏好保存在本机，可导出留存。</p><div class="backup-actions"><button class="secondary" data-backup-export>导出备份</button><button class="secondary" data-backup-import>导入备份</button><button class="text-button" data-backup-restore>恢复导入前数据</button></div><input type="file" accept="application/json,.json" data-backup-file hidden><p role="status" data-backup-status></p>';
+  settings.querySelector('.setting-note')?.before(section);
+ }
+ let pendingBackup=null,backupOpener=null;
+ function backupDialog(){
+  let dialog=document.querySelector('#backup-preview');if(dialog)return dialog;dialog=document.createElement('dialog');dialog.id='backup-preview';dialog.setAttribute('aria-labelledby','backup-title');dialog.innerHTML='<div class="modal-head"><h2 id="backup-title">导入备份</h2><button class="icon-button" data-backup-cancel aria-label="关闭备份预览">×</button></div><p data-backup-impact></p><fieldset><legend>导入方式</legend><label><input type="radio" name="backup-mode" value="merge" checked>合并，保留本机记录</label><label><input type="radio" name="backup-mode" value="replace">替换本机记录</label></fieldset><p>应用前会保留恢复点。验证状态和设备配对不会导入。</p><p role="alert" data-backup-error></p><div class="backup-actions"><button class="secondary" data-backup-cancel>取消</button><button class="primary" data-backup-confirm>确认导入</button></div>';document.body.append(dialog);dialog.addEventListener('close',()=>{pendingBackup=null;backupOpener?.focus();});dialog.addEventListener('click',event=>{if(event.target===dialog){const r=dialog.getBoundingClientRect();if(event.clientX<r.left||event.clientX>r.right||event.clientY<r.top||event.clientY>r.bottom)dialog.close();}});return dialog;
+ }
+ function backupStatus(message){const host=document.querySelector('[data-backup-status]');if(host)host.textContent=message;}
+ document.addEventListener('click',async event=>{
+  if(event.target.closest('[data-backup-export]'))try{const bytes=JSON.stringify(OpenStreamLocalData.snapshot(),null,2),url=URL.createObjectURL(new Blob([bytes],{type:'application/json'})),link=document.createElement('a');link.href=url;link.download='OpenStream-backup-'+new Date().toISOString().slice(0,10)+'.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);backupStatus('备份已导出');}catch(error){backupStatus(error.message);}
+  if(event.target.closest('[data-backup-import]')){backupOpener=event.target.closest('button');document.querySelector('[data-backup-file]').click();}
+  if(event.target.closest('[data-backup-cancel]'))document.querySelector('#backup-preview')?.close();
+  if(event.target.closest('[data-backup-confirm]')&&pendingBackup)try{const dialog=document.querySelector('#backup-preview'),mode=dialog.querySelector('[name="backup-mode"]:checked').value;OpenStreamLocalData.applyBackup(pendingBackup,{mode});dialog.close();backupStatus('备份已导入，可恢复导入前的数据');}catch(error){document.querySelector('[data-backup-error]').textContent=error.message;}
+  if(event.target.closest('[data-backup-restore]'))try{if(!load('localDataRecovery',null)){backupStatus('还没有可恢复的数据');return;}if(confirm('恢复导入前的收藏和观看记录？')){OpenStreamLocalData.restore();backupStatus('已恢复导入前的数据');}}catch(error){backupStatus(error.message);}
+ });
+ document.addEventListener('change',async event=>{
+  if(event.target.matches('[data-backup-file]')){const file=event.target.files?.[0];event.target.value='';if(!file)return;try{if(file.size>OpenStreamLocalData.MAX_BYTES)throw Error('备份文件超过 2 MB');const result=OpenStreamLocalData.preview(await file.text());pendingBackup=result.backup;const dialog=backupDialog();dialog.querySelector('[data-backup-impact]').textContent=`备份包含 ${result.counts.favorites} 部收藏、${result.counts.history} 条观看记录。合并后新增 ${result.counts.newFavorites} 部收藏。`;dialog.querySelector('[data-backup-error]').textContent='';dialog.showModal();dialog.querySelector('[data-backup-cancel]').focus();}catch(error){backupStatus(error.message);}}
+ });
+ document.addEventListener('openstream:data-restored',()=>{if(!location.hash.startsWith('#player/'))void render();document.querySelector('#autoplay').checked=load('autoplay',true);document.querySelector('#motion').checked=load('motion',false);document.body.classList.toggle('reduce-motion',load('motion',false));window.refreshAppearance?.();});
+ backupControls();
+})();
