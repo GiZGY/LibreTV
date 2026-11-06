@@ -62,13 +62,33 @@
         return fallback ? fallback[0] : '';
     }
 
-    function getResultKey(item) {
+    function getVersion(item) {
+        const title = String(item?.vod_name || '').toLowerCase();
+        const tags = [];
+        for (const [label, pattern] of [['cantonese', /粤语|粵語|cantonese/], ['mandarin', /国语|國語|普通话|mandarin/], ['dubbed', /配音版|译制版|dubbed/], ['extended', /加长版|加長版|extended/], ['directors-cut', /导演剪辑|導演剪輯|director.?s.?cut/], ['uncut', /未删减|未刪減|无删减|uncut/], ['theatrical', /院线版|院線版|theatrical/], ['remastered', /修复版|修復版|重制版|remaster/]]) {
+            if (pattern.test(title)) tags.push(label);
+        }
+        const language = normalizeText(item?.vod_lang || '');
+        if (language && !['未知', '其他'].includes(language)) {
+            const canonical = /粤语|粵語|cantonese/.test(language) ? 'cantonese' : /国语|國語|普通话|mandarin/.test(language) ? 'mandarin' : 'lang:' + language;
+            tags.push(canonical);
+        }
+        return [...new Set(tags)].sort().join(',');
+    }
+
+    function getVersionLabel(item) {
+        const labels = {cantonese:'粤语',mandarin:'国语',dubbed:'配音版',extended:'加长版','directors-cut':'导演剪辑版',uncut:'未删减版',theatrical:'院线版',remastered:'修复版'};
+        return getVersion(item).split(',').filter(Boolean).map(key => labels[key] || key.replace(/^lang:/, '')).join(' / ');
+    }
+
+    function getLegacyResultKey(item) {
         const title = normalizeTitle(item?.vod_name);
-        const year = getYear(item);
-        const type = normalizeType(item);
-        const season = getSeason(item);
-        const director = normalizeText(item?.vod_director || '');
-        return `${title}|${year}|${type}|${season}|${director}`;
+        return `${title}|${getYear(item)}|${normalizeType(item)}|${getSeason(item)}|${normalizeText(item?.vod_director || '')}`;
+    }
+
+    function getResultKey(item) {
+        const legacy = getLegacyResultKey(item), version = getVersion(item);
+        return version ? legacy + '|version:' + version : legacy;
     }
 
     function getIdentity(item) {
@@ -77,34 +97,37 @@
             year: getYear(item),
             type: normalizeType(item),
             season: getSeason(item),
-            director: normalizeText(item?.vod_director || '')
+            director: normalizeText(item?.vod_director || ''),
+            version: getVersion(item)
         };
         identity.specificity = [
             identity.year,
             identity.type,
             identity.season,
-            identity.director
+            identity.director,
+            identity.version
         ].filter(Boolean).length;
         return identity;
     }
 
     function identitiesCompatible(left, right) {
-        return ['year', 'type', 'season', 'director'].every((key) => (
+        if (left.version !== right.version) return false;
+        return ['year', 'type', 'season', 'director', 'version'].every((key) => (
             !left[key] || !right[key] || left[key] === right[key]
         ));
     }
 
     function mergeIdentity(base, incoming) {
-        ['year', 'type', 'season', 'director'].forEach((key) => {
+        ['year', 'type', 'season', 'director', 'version'].forEach((key) => {
             if (!base[key] && incoming[key]) base[key] = incoming[key];
         });
-        base.specificity = ['year', 'type', 'season', 'director']
+        base.specificity = ['year', 'type', 'season', 'director', 'version']
             .filter((key) => base[key])
             .length;
     }
 
     function compatibilityScore(left, right) {
-        return ['year', 'type', 'season', 'director']
+        return ['year', 'type', 'season', 'director', 'version']
             .reduce((score, key) => score + (left[key] && left[key] === right[key] ? 1 : 0), 0);
     }
 
@@ -229,6 +252,7 @@
                     cluster.identity.type,
                     cluster.identity.season,
                     cluster.identity.director,
+                    cluster.identity.version,
                     index
                 ].join('|');
                 cluster.result.aggregate_key = key;
@@ -247,6 +271,11 @@
         aggregateResults,
         normalizeTitle,
         normalizeType,
-        getResultKey
+        getResultKey,
+        getLegacyResultKey,
+        getSeason,
+        getYear,
+        getVersion,
+        getVersionLabel
     };
 })();
