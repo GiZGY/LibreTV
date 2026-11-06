@@ -11,7 +11,15 @@ test('pointer-selected speed reaches real media while popup focus and keyboard d
  });
  await page.goto('/#player/film-rateselect');await expectMediaFrame(page);
  const panel=page.locator('.fine-speed'),summary=panel.locator('summary');
- await summary.click();await panel.locator('[data-rate="1.75"]').click();
+ await summary.click();
+ const ticks=await panel.locator('[data-rate]').evaluateAll(nodes=>nodes.map(node=>{const rect=node.getBoundingClientRect();return {top:rect.top,x:rect.left+rect.width/2,rate:Number(node.dataset.rate)};}));
+ expect(ticks.length).toBe(7);
+ for(const tick of ticks){
+  expect(Math.abs(tick.top-ticks[0].top)).toBeLessThan(1);
+  const fraction=(tick.rate-ticks[0].rate)/(ticks.at(-1).rate-ticks[0].rate);
+  expect(Math.abs(tick.x-(ticks[0].x+fraction*(ticks.at(-1).x-ticks[0].x)))).toBeLessThan(2);
+ }
+ await panel.locator('[data-rate="1.75"]').click();
  await expect(page.locator('video')).toHaveJSProperty('playbackRate',1.75);
  await expect(page.locator('video')).toHaveJSProperty('defaultPlaybackRate',1.75);
  await expect(summary).toHaveText('1.75×');await expect(panel.locator('[data-rate="1.75"]')).toHaveAttribute('aria-pressed','true');
