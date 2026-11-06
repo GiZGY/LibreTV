@@ -64,10 +64,10 @@ test('detail shows line discovery and playback evidence once beside the watch ac
 });
 
 test('episode numbers for a long series line up in compact equal-sized columns',async({page})=>{
- await page.setViewportSize({width:1440,height:900});await seed(page);
+ await page.setViewportSize({width:1440,height:900});
  await page.addInitScript(()=>{
   const episodes=Array.from({length:76},(_,i)=>({name:'第'+(i+1)+'集',url:'/media/sample.mp4?ep='+i}));
-  localStorage.setItem('openstream_live_filmRecords',JSON.stringify([{id:'film-grid',name:'长剧集',type:'电视剧',episodes:76,lines:[{name:'线路',key:'qa',sourceKey:'qa',episodes}],candidatesComplete:true}]));
+  localStorage.setItem('openstream_live_filmRecords',JSON.stringify([{id:'film-grid',name:'长剧集',type:'电视剧',episodes:76,linesCheckedAt:Date.now(),lines:[{name:'线路',key:'qa',sourceKey:'qa',episodes}],candidatesComplete:true}]));
  });
  await page.goto('/#detail/film-grid');const buttons=page.locator('.detail-section .episode');await expect(buttons).toHaveCount(76);
  const boxes=await buttons.evaluateAll(es=>es.map(e=>{const r=e.getBoundingClientRect();return [r.x,r.y,r.width,r.height]}));
