@@ -456,3 +456,5 @@ html.video-web-fullscreen{overflow:hidden}
 .watch-credits dd{margin:0;line-height:1.7;overflow-wrap:anywhere}
 
 .watch-aside.has-episodes{padding-bottom:14px}
+
+[data-copy-diagnostics]{min-height:44px}

@@ -36,6 +36,14 @@ jobs:
       - name: Verify new UI production build
         run: npm run quality:new-ui && npm run smoke:native-ads
 
+      - name: Install media acceptance runtime
+        run: |
+          npx playwright install --with-deps chromium webkit
+          command -v ffmpeg || (sudo apt-get update && sudo apt-get install -y ffmpeg)
+
+      - name: Real media browser regression
+        run: npm run test:browser -- --no-build
+
       - name: Verify catalogue database and incremental refresh
         run: npm run test:catalog-index
 
