@@ -62,3 +62,17 @@ for(const [width,touch] of [[1440,false],[320,true]]) test('search cards reserve
  await original.getByRole('link').click();await expect(page.locator('.detail-content h1')).toHaveText('金刚狼3：殊死一战');
  }finally{await ctx.close();}
 });
+
+test('a cold search loads the verified certificate before all sources finish, caches it, and keeps real titles ending in 预告',async({page})=>{
+ let details=0;
+ await page.route('**/api/catalog/tmdb?kind=lookup*',route=>route.fulfill({json:{items:[{id:'movie:77',title:'死亡预告',year:'2024',type_name:'电影'}]}}));
+ await page.route('**/api/catalog/tmdb?kind=detail*',route=>{details++;return route.fulfill({json:{item:{id:'movie:77',title:'死亡预告',year:'2024',certification:{country:'US',label:'R'}}}});});
+ await page.goto('/#home');
+ const search=async()=>page.evaluate(()=>{
+   window.OpenStreamStreamingSearch.runStreamingSearch=async opts=>{const results=['死亡预告','预告犯','死亡预告【预告片】'].map((vod_name,i)=>({vod_name,vod_id:i+1,type_name:'电影',vod_year:'2024',source_code:'qa'}));opts.onUpdate({results});await new Promise(r=>window.finishSourceTest=r);opts.onSourceDone({status:'ready'});return {results};};
+   location.hash='search/'+encodeURIComponent('预告');
+ });
+ await search();const card=page.locator('#live-results article').filter({hasText:'死亡预告'});await expect(card.locator('.film-certification')).toHaveText('R');
+ await expect(page.locator('#live-results h3')).toHaveCount(2);await expect(page.locator('#live-results')).not.toContainText('预告片');await expect(page.locator('#live-results article').filter({hasText:'预告犯'}).locator('.film-certification')).toHaveCount(0);
+ await expect(page.locator('#search-progress')).toContainText('正在补充');await page.evaluate(()=>window.finishSourceTest());await page.goto('/#home');await page.reload();await search();await expect(card.locator('.film-certification')).toHaveText('R');expect(details).toBe(1);await page.evaluate(()=>window.finishSourceTest());
+});

@@ -1,4 +1,5 @@
 (() => {
+ const trailer=value=>window.OpenStreamContent?.trailerEpisode(value);
  const catalogs=new WeakMap();
  const digits={'零':0,'〇':0,'一':1,'二':2,'两':2,'三':3,'四':4,'五':5,'六':6,'七':7,'八':8,'九':9};
  const clean=value=>String(value||'').normalize('NFKC').replace(/<[^>]*>/g,'').replace(/\s+/g,' ').trim();
@@ -27,7 +28,7 @@
 
  function catalog(f){
   const entries=new Map();
-  for(const line of f.lines||[])for(const episode of line.episodes||[]){const item=describe(episode.name,{series:serial(f),season:defaultSeason(f)});if(item.key!=='label:'&&!entries.has(item.key))entries.set(item.key,item);}
+  for(const line of f.lines||[])for(const episode of line.episodes||[]){if(trailer(episode.name))continue;const item=describe(episode.name,{series:serial(f),season:defaultSeason(f)});if(item.key!=='label:'&&!entries.has(item.key))entries.set(item.key,item);}
   if(!serial(f))return[{key:'feature',label:'正片',season:1,number:1,kind:'feature'}];
   const known=[...entries.values()].filter(item=>item.kind==='episode');
   const wholeSeasons=new Set(known.map(item=>item.season));
@@ -39,7 +40,7 @@
  function sync(f,state,key){
   if(!serial(f)&&f.lines){
    const selected=f.lines[f.lineIndex||0]?.key,lines=new Map();
-   for(const line of f.lines){if(line.episodes?.length>1){line.episodes.forEach((episode,index)=>{const key=line.key+':version:'+index;if(!lines.has(key))lines.set(key,{...line,key,name:line.name+' · '+(episode.name||'版本 '+(index+1)),version:episode.name,episodes:[episode]});});}else if(!lines.has(line.key))lines.set(line.key,line);}
+   for(const line of f.lines){if(line.episodes?.length>1){line.episodes.forEach((episode,index)=>{if(trailer(episode.name))return;const key=line.key+':version:'+index;if(!lines.has(key))lines.set(key,{...line,key,name:line.name+' · '+(episode.name||'版本 '+(index+1)),version:episode.name,episodes:[episode]});});}else if(!trailer(line.episodes?.[0]?.name)&&!lines.has(line.key))lines.set(line.key,line);}
    f.lines=[...lines.values()];const index=f.lines.findIndex(line=>line.key===selected||line.key===selected+':version:0');if(index>=0)f.lineIndex=index;
   }
   const previous=catalogs.get(f),keep=key||previous?.[Math.max(0,(state?.episode||1)-1)]?.key,list=catalog(f);catalogs.set(f,list);f.episodes=list.length;
@@ -49,7 +50,7 @@
  function selection(f,state){return catalog(f)[Math.max(0,(state?.episode||1)-1)]||null;}
  function indexFor(f,line,state){
   const key=typeof state==='string'?state:selection(f,state)?.key;if(!key)return -1;
-  const matches=(line?.episodes||[]).map((episode,index)=>({index,item:describe(episode.name,{series:serial(f),season:defaultSeason(f)})})).filter(({item})=>item.key===key);
+  const matches=(line?.episodes||[]).map((episode,index)=>({index,item:describe(episode.name,{series:serial(f),season:defaultSeason(f)})})).filter(({item})=>!trailer(item.label)&&item.key===key);
   return matches.length===1?matches[0].index:-1;
  }
  function display(f,value){
@@ -63,7 +64,7 @@
  function nextOrdinal(f,state){const list=catalog(f),current=state?.episodeKey?list.findIndex(item=>item.key===state.episodeKey):Math.max(0,(state?.episode||1)-1);if(current<0)return null;for(let index=current+1;index<list.length;index++){const item=list[index],active=list[current];if(item.kind==='special')continue;if(active?.kind==='episode'&&!active.part&&item.season===active.season&&item.number===active.number)continue;return index+1;}return null;}
  function legacyKey(f,record){
   if(record?.episodeKey)return record.episodeKey;if(!record?.source||!Number.isInteger(record.episode)||record.episode<1)return null;
-  const keys=new Set((f.lines||[]).filter(line=>line.sourceKey===record.source).map(line=>line.episodes?.[record.episode-1]).filter(Boolean).map(episode=>describe(episode.name,{series:serial(f),season:defaultSeason(f)}).key));return keys.size===1?[...keys][0]:null;
+  const keys=new Set((f.lines||[]).filter(line=>line.sourceKey===record.source).map(line=>line.episodes?.find((ep,i)=>(ep.sourceIndex??i)===record.episode-1)).filter(Boolean).map(episode=>describe(episode.name,{series:serial(f),season:defaultSeason(f)}).key));return keys.size===1?[...keys][0]:null;
  }
  function cut(line){const label=clean([line?.name,line?.label,line?.version].filter(Boolean).join(' '));return label.match(/导演剪辑|加长|未删减|删减|精简|剧场版|电视版|修复版/)?.[0]||'标准版';}
  window.OpenStreamEpisodes={describe,catalog,sync,selection,indexFor,legacyKey,defaultSeason,display,nextOrdinal,cut};

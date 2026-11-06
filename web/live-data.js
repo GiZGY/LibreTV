@@ -55,6 +55,7 @@
     };
   }
   const allowed = item => {
+    if(window.OpenStreamContent?.trailerItem(item))return false;
     const title=String(item.vod_name||item.title||item.name||'').replace(/<[^>]*>/g,'').trim();
     const score=Number(item.rate??item.vod_douban_score??item.rating);
     // CMS commonly uses zero for an unrated title, not an actual zero-star score.
@@ -137,9 +138,9 @@
       episodes: line.split('#').map((entry, n) => {
         const delimiter = entry.indexOf('$');
         const url = safeURL(delimiter < 0 ? entry : entry.slice(delimiter + 1));
-        return { name: text(delimiter < 0 ? '第 ' + (n + 1) + ' 集' : entry.slice(0, delimiter)), url };
-      }).filter(episode => episode.url && !/\.html?(?:[?#]|$)/i.test(episode.url) && !OpenStreamSourceAdapter.isLoginRequiredUrl(episode.url))
-    })).filter(line => line.episodes.length);
+        return { sourceIndex:n,name: text(delimiter < 0 ? '第 ' + (n + 1) + ' 集' : entry.slice(0, delimiter)), url };
+      }).filter(episode => !window.OpenStreamContent?.trailerEpisode(episode.name) && episode.url && !/\.html?(?:[?#]|$)/i.test(episode.url) && !OpenStreamSourceAdapter.isLoginRequiredUrl(episode.url))
+    })).filter(line => line.episodes.length&&!window.OpenStreamContent?.trailerEpisode(line.flag));
   }
   async function detail(line, signal) {
     const key = line.source_code + ':' + line.vod_id;
@@ -148,12 +149,16 @@
       const result = await OpenStreamSourceAdapter.detail(line.source_code, line.vod_id, {signal});
       if(result.status !== 'ready') throw new Error(({unsupported:'此来源暂未连接',timeout:'此来源响应超时',login_required:'此来源需要登录，暂不支持',no_result:'此来源暂无影片'})[result.status] || '此来源暂不可用');
       const info=result.data?.videoInfo||{};
-      const groups=new Map();
+      if(window.OpenStreamContent?.trailerItem({title:info.title,vod_remarks:info.remarks}))throw new Error('此来源暂无正片');
+      const groups=new Map(),positions=new Map();
       result.episodes.forEach((entry,index)=>{
         const flag=entry.flag||'';
+        const sourceIndex=positions.get(flag)||0;positions.set(flag,sourceIndex+1);
+        if(window.OpenStreamContent?.trailerEpisode(entry.name)||window.OpenStreamContent?.trailerEpisode(flag))return;
         if(!groups.has(flag))groups.set(flag,{key:line.source_code+':'+flag,sourceKey:line.source_code,videoId:String(line.vod_id),flag,name:API_SITES[line.source_code]?.name||line.source_code,label:flag||'默认',episodes:[]});
-        groups.get(flag).episodes.push({name:text(entry.name)||'第 '+(index+1)+' 集',url:'',bridgeEpisode:entry.episode??index});
+        groups.get(flag).episodes.push({sourceIndex,name:text(entry.name)||'第 '+(index+1)+' 集',url:'',bridgeEpisode:entry.episode??index});
       });
+      if(!groups.size)throw new Error('此来源暂无正片');
       return {item:{vod_name:info.title,vod_content:info.desc,vod_director:info.director,vod_actor:info.actor,vod_remarks:info.remarks},lines:[...groups.values()]};
     }
     const site = API_SITES[line.source_code];
@@ -273,7 +278,7 @@
       result=await request();
     }
     if(result.indexed&&result.revision)snapshot.revision=result.revision;
-    if(result.filtered)return result;
+    if(result.filtered)return {...result,items:result.items.filter(item=>!window.OpenStreamContent?.trailerItem(item))};
     // An already-running preview or older deployment may still serve raw pages.
     const start=(page-1)*pageSize,batches=[];
     for(let sourcePage=Math.floor(start/20)+1;sourcePage<=Math.ceil((start+pageSize)/20);sourcePage++){

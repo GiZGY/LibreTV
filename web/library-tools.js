@@ -23,7 +23,7 @@
   const after=(f,r)=>f.lines?.length&&window.OpenStreamEpisodes?OpenStreamEpisodes.nextOrdinal(f,{episodeKey:OpenStreamEpisodes.display(f,r).key}):((r?.episode||1)<(f.episodes||1)?true:null);
   const watchlist=load('watchlist',{}),byId=new Map(films.map(f=>[f.id,f]));
   const rows=history.map(id=>({f:byId.get(id),r:historyMetadata[id]})).filter(({f,r})=>{
-   if(!f||!r||watchlist[f.id]?.status==='completed'||window.OPENSTREAM_LIVE&&window.LiveData&&!LiveData.allowed(f))return false;
+   if(!f||!r||window.OpenStreamContent?.trailerRecord(r)||watchlist[f.id]?.status==='completed'||window.OPENSTREAM_LIVE&&window.LiveData&&!LiveData.allowed(f))return false;
    const stamp=Date.parse(r.watchedAt);if(!Number.isFinite(stamp))return false;
    if(!Number.isFinite(r.position)||!Number.isFinite(r.duration)||r.position<=0||r.duration<=0||r.position>r.duration)return false;
    return !watchedComplete(r)||isSeries(f)&&after(f,r);

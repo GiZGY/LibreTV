@@ -7,7 +7,7 @@ const source=fs.readFileSync(new URL('../live-data.js',import.meta.url),'utf8');
 const ui=fs.readFileSync(new URL('../live-ui.js',import.meta.url),'utf8');
 const fn=source.slice(source.indexOf('  async function discoverTMDB'),source.indexOf('  async function discover({'));
 function fixture(total){
- const context=vm.createContext({crypto:webcrypto,discoveryGenerations:new Map(),allowed:()=>true,catalogRequest:async({page,pageSize,filtered})=>{
+ const context=vm.createContext({window:{},crypto:webcrypto,discoveryGenerations:new Map(),allowed:()=>true,catalogRequest:async({page,pageSize,filtered})=>{
   assert.equal(filtered,'1');const size=Number(pageSize),start=(Number(page)-1)*size;
   return {filtered:true,items:Array.from({length:Math.max(0,Math.min(size,total-start))},(_,i)=>({id:start+i})),total,totalPages:Math.ceil(total/size),hasNext:Number(page)<Math.ceil(total/size)};
  }});

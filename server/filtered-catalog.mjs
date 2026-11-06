@@ -1,7 +1,9 @@
 import { createHash } from 'node:crypto';
 
+import policy from '../js/content-kind.cjs';
 const fail=(status,message)=>Object.assign(new Error(message),{status});
 export function catalogItemAllowed(item){
+  if(policy.trailerItem(item))return false;
   const title=String(item.title||'').replace(/<[^>]*>/g,'').trim();
   const score=Number(item.rate);
   return /[\u3400-\u9fff]/u.test(title)&&!/[\u3040-\u30ff\uac00-\ud7af]/u.test(title)

@@ -128,5 +128,5 @@ test('canonical season display and legacy resume stay correct, and autoplay neve
  // Selection labels commit before the replacement media necessarily has metadata.
  await expectPlaybackProgress(page,{episode:2,episodeKey:'s2:e2',rate:1});expect(await page.locator('video').evaluate(v=>v.currentSrc)).toContain('ep=2');
  await page.locator('video').evaluate(v=>{v.currentTime=v.duration-.3;});await expect(page.locator('video')).toHaveJSProperty('ended',true);expect(await page.evaluate(()=>LivePlayback.current().episodeKey)).toBe('s2:e2');
- await panel(page,'episodes');await page.locator('[data-player-episode="3"]').click();await expectMediaFrame(page);expect(await page.locator('video').evaluate(v=>v.currentSrc)).toContain('ep=preview');await expect(page.locator('[data-player-target]')).toHaveText('第1集预告');
+ await panel(page,'episodes');await expect(page.locator('.player-episode-grid')).not.toContainText('预告');await page.locator('[data-player-episode="3"]').click();await expectMediaFrame(page);await expect(page.locator('[data-player-target]')).toHaveText('番外');
 });

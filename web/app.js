@@ -55,7 +55,7 @@ const historyMetadata=load('historyMetadataV2',window.OPENSTREAM_LIVE?{}:history
 if(!window.OPENSTREAM_LIVE&&!load('historyExamplesV2',false)){history=[...new Set([...history,...Object.keys(historyExamples)])];save('history',history);save('historyMetadataV2',historyMetadata);save('historyExamplesV2',true);}
 function playbackTime(seconds){const m=Math.floor(seconds/60);return m+':'+String(seconds%60).padStart(2,'0');}
 function watchedComplete(record){return !!record&&(record.completed===true||(record.duration>0&&record.position/record.duration>=.99));}
-function newEpisode(f){const r=historyMetadata[f.id],target=isSeries(f)&&r&&r.totalEpisodes>0&&f.episodes>r.totalEpisodes?r.totalEpisodes+1:0;if(target&&typeof window!=='undefined'&&window.OpenStreamEpisodes&&f.lines?.length&&OpenStreamEpisodes.selection(f,{episode:target})?.kind==='special')return 0;return target;}
+function newEpisode(f){const r=historyMetadata[f.id],target=isSeries(f)&&r&&r.totalEpisodes>0&&f.episodes>r.totalEpisodes?r.totalEpisodes+1:0;if(target&&typeof window!=='undefined'&&window.OpenStreamEpisodes&&f.lines?.length&&!['episode','label'].includes(OpenStreamEpisodes.selection(f,{episode:target})?.kind))return 0;return target;}
 function historyLabel(id){const record=historyMetadata[id];return watchedComplete(record)?'重新观看':record?'继续播放 · '+playbackTime(record.position):'立即观看';}
 function watchedTime(value){if(!value)return '观看时间未知';return new Date(value).toLocaleString('zh-CN',{year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false});}
 function toast(s){$('#toast').textContent=s;$('#toast').classList.add('visible');clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('#toast').classList.remove('visible'),2300)}
@@ -161,7 +161,7 @@ function historyRow({film:f,record:r}){
 
 }
 function historyPage(){
- const records=history.map(id=>({film:films.find(f=>f.id===id),record:historyMetadata[id]||{}})).filter(x=>x.film&&(!window.OPENSTREAM_LIVE||!window.LiveData||LiveData.allowed(x.film))).sort((a,b)=>new Date(b.record.watchedAt||0)-new Date(a.record.watchedAt||0));
+ const records=history.map(id=>({film:films.find(f=>f.id===id),record:historyMetadata[id]||{}})).filter(x=>x.film&&!window.OpenStreamContent?.trailerRecord(x.record)&&(!window.OPENSTREAM_LIVE||!window.LiveData||LiveData.allowed(x.film))).sort((a,b)=>new Date(b.record.watchedAt||0)-new Date(a.record.watchedAt||0));
  const groups=new Map(['今天','昨天','近 7 天','7 天以前'].map(label=>[label,[]]));
  for(const row of records)groups.get(historyBucket(row.record)).push(row);
  const sections=[...groups].filter(([,rows])=>rows.length).map(([label,rows])=>{
@@ -202,7 +202,7 @@ function renderCommand() {
   cancelSuggestions();
   const query=commandInput.value.trim(),term=query.toLowerCase();
   const matches=window.LiveData?.titleMatcher(query)||(f=>[f.name,f.en].some(value=>String(value||'').toLowerCase().includes(term)));
-  const local=query?films.filter(matches)
+  const local=query?films.filter(f=>!window.OpenStreamContent?.trailerItem(f)&&matches(f))
     .sort((a,b)=>Number(b.name.toLowerCase()===term)-Number(a.name.toLowerCase()===term))
     .slice(0,6).map(f=>({label:f.name,film:f,meta:[f.year,f.genre].filter(Boolean).join(' · ')})):recentQueries.map(label=>({label}));
   commandIndex=-1;
