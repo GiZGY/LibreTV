@@ -29,6 +29,7 @@
  function catalog(f){
   const entries=new Map();
   for(const line of f.lines||[])for(const episode of line.episodes||[]){if(trailer(episode.name))continue;const item=describe(episode.name,{series:serial(f),season:defaultSeason(f)});if(item.key!=='label:'&&!entries.has(item.key))entries.set(item.key,item);}
+  if(!entries.size&&f.lines?.some(line=>line.episodes?.length))return [];
   if(!serial(f))return[{key:'feature',label:'正片',season:1,number:1,kind:'feature'}];
   const known=[...entries.values()].filter(item=>item.kind==='episode');
   const wholeSeasons=new Set(known.map(item=>item.season));

@@ -1,6 +1,7 @@
 (() => {
  const ttl=7*86400000,valid=c=>c?.country==='US'&&['G','PG','PG-13','R','NC-17'].includes(c.label);
- const key=f=>f.type==='电影'&&/^\d{4}$/.test(String(f.year))?JSON.stringify([f.name.normalize('NFKC').trim(),String(f.year)]):'';
+ const key=f=>f.type!=='电影'?'':f.catalogProvider==='tmdb'&&/^movie:\d+$/.test(f.catalogId)?f.catalogId:
+   f.name&&/^\d{4}$/.test(String(f.year))?JSON.stringify([f.name.normalize('NFKC').trim(),String(f.year)]):'';
  const rows=load('searchCertificates',[]),cache=new Map((Array.isArray(rows)?rows:[]).filter(r=>Array.isArray(r)&&typeof r[0]==='string'&&valid(r[1]?.certificate)&&r[1].at<=Date.now()&&Date.now()-r[1].at<ttl).slice(-160));
  const peek=f=>{const hit=cache.get(key(f));return hit&&Date.now()-hit.at<ttl?hit.certificate:null;};
  function remember(f,certificate){
