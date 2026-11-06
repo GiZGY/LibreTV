@@ -88,7 +88,8 @@ for (const file of ['styles.css', 'library-tools.css', 'player-tools.css', 'devi
       if (process.env.NEW_UI_TEST_NATIVE === '1') {
         const capability = 'if(window.Hls?.isSupported())';
         if (!source.includes(capability)) throw new Error('Native test capability marker changed');
-        source = source.replace(capability, 'if(false)');
+        // Exercise native HLS for both the active player and a recovery probe.
+        source = source.replaceAll(capability, 'if(false)');
         const attach = 'guard=window.OpenStreamNativeAdSession?.attach({video,host:next,url});';
         if (!source.includes(attach)) throw new Error('Native session test marker changed');
         source = source.replace(attach, attach + "guard?.ready.then(()=>fetch('/__qa/native-status',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({status:guard?.getStatus().status,muted:video.muted,volume:video.volume,duration:video.duration,position:video.currentTime})})).catch(()=>{});");
