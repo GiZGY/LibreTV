@@ -58,3 +58,20 @@ test('a selected year stays in view when returning to explore or refreshing a na
  await page.locator('[data-nav=discover]:visible').first().click();await expect(year).toHaveAttribute('aria-pressed','true');await expect.poll(inStrip).toBe(true);
  await page.reload();await expect(year).toHaveAttribute('aria-pressed','true');await expect.poll(inStrip).toBe(true);
 });
+
+test('when the catalogue changes and the saved next page disappears, the first page restores the same filter',async({page})=>{
+ let expired=false;const calls=[];
+ await page.route('**/api/catalog/tmdb?**',async r=>{
+  const q=new URL(r.request().url()).searchParams,n=Number(q.get('page')),rev=q.get('revision');
+  if(q.get('type')==='电视剧')calls.push([n,rev]);
+  if(n===2&&rev==='12'){expired=true;return r.fulfill({status:410,json:{}});}
+  if(n===2&&expired)return r.fulfill({status:404,json:{}});
+  return r.fulfill({json:{filtered:true,indexed:true,revision:expired?'13':'12',rawCount:1,total:expired?1:60,totalPages:expired?1:2,hasNext:!expired,items:[{id:10,provider:'tmdb',title:q.get('type')+(expired?'新目录':'旧目录'),year:'2022'}]}});
+ });
+ await page.goto('/#discover');await chip(page,'type','电视剧').click();
+ const cards=page.locator('#discovery-cards');await expect(cards.getByRole('heading',{name:'电视剧旧目录'})).toBeVisible();
+ await page.locator('[data-live-page="1"]').click();
+ await expect(cards.getByRole('heading',{name:'电视剧新目录'})).toBeVisible();await expect(chip(page,'type','电视剧')).toHaveAttribute('aria-pressed','true');
+ await expect(page.locator('.pagination span')).toHaveText('第 1 / 1 页');await expect(page.locator('[data-live-page="1"]')).toBeDisabled();
+ expect(calls).toEqual([[1,null],[2,'12'],[2,null],[1,null]]);
+});
