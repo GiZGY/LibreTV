@@ -44,6 +44,16 @@
       return url.href;
     } catch { return ''; }
   };
+  // A source can return matches from its synopsis, tags or cast. Those are not title matches.
+  function titleMatcher(query){
+    const fold=value=>text(value).normalize('NFKC').toLowerCase().replace(/[\p{P}\p{Z}\s]+/gu,'');
+    const term=fold(query);
+    return item=>{
+      if(!term)return false;
+      if([item.vod_name,item.title,item.original_title,item.name,item.en].some(value=>value&&fold(value).includes(term)))return true;
+      return String(item.vod_sub||'').split(/[,，、/|；;]/).some(alias=>alias&&fold(alias)===term);
+    };
+  }
   const allowed = item => {
     const title=String(item.vod_name||item.title||item.name||'').replace(/<[^>]*>/g,'').trim();
     const score=Number(item.rate??item.vod_douban_score??item.rating);
@@ -210,7 +220,8 @@
   }
   async function suggestTitles(title,signal,includeSources){
     const replies=await Promise.allSettled(['电影','电视剧'].map(type=>catalogRequest({kind:'lookup',title,type},signal)));
-    const titles=replies.flatMap(reply=>reply.status==='fulfilled'?reply.value.items.filter(allowed).slice(0,6):[]);
+    const matches=titleMatcher(title);
+    const titles=replies.flatMap(reply=>reply.status==='fulfilled'?reply.value.items.filter(allowed).filter(matches).slice(0,6):[]);
     if(titles.length||!includeSources||signal.aborted)return titles;
     // A catalogue miss is not a source miss. Reuse the full search adapter's first-page cache.
     await window.HumanAccess?.ensure();
@@ -218,7 +229,7 @@
     const plan=window.OpenStreamSourceHealth.getSearchPlan(sources()).slice(0,2);
     const budget=AbortSignal.any([signal,AbortSignal.timeout(2500)]);
     const batches=await Promise.allSettled(plan.map(({sourceKey})=>window.OpenStreamSourceAdapter.search(sourceKey,title,{}, {maxPages:1,signal:budget})));
-    const hits=batches.flatMap(r=>r.status==='fulfilled'?(r.value.list||[]).filter(allowed):[]);
+    const hits=batches.flatMap(r=>r.status==='fulfilled'?(r.value.list||[]).filter(allowed).filter(matches):[]);
     return window.OpenStreamResultAggregator.aggregateResults(hits,plan).slice(0,6).map(item=>({title:text(item.vod_name),year:item.vod_year,type_name:item.type_name,sourceItem:item}));
   }
   async function lookupTMDB(f,signal){
@@ -284,5 +295,5 @@
     const state=catalogState.get(url.href)||{};
     return {items,rawCount:data.data.length,hasNext:data.data.length===20,total:null,...state};
   }
-  window.LiveData = { json, proxied, image, sources, detail, firstDetail, recommend, discover, discoverTMDB, suggestTitles, lookupTMDB, detailTMDB, relatedTMDB, subjectMetadata, resolveEpisode, parseLines, safeURL, text, allowed };
+  window.LiveData = { json, proxied, image, sources, detail, firstDetail, recommend, discover, discoverTMDB, suggestTitles, lookupTMDB, detailTMDB, relatedTMDB, subjectMetadata, resolveEpisode, parseLines, safeURL, text, allowed, titleMatcher };
 })();

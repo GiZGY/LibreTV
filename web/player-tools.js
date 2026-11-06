@@ -106,7 +106,8 @@
   mobileSheet.addEventListener('cancel',event=>{event.preventDefault();closePanel();});
   root.querySelector('.player-tool-title strong').textContent=film.name;
   const target=root.querySelector('[data-player-target]'),status=root.querySelector('.player-inline-status');
-  instance.template.$player.querySelector('.art-notice')?.setAttribute('data-player-message','');
+  const notice=instance.template.$player.querySelector('.art-notice'),rightControls=instance.template.$player.querySelector('.art-controls-right');
+  if(notice&&rightControls){rightControls.before(notice);notice.setAttribute('data-player-message','');notice.setAttribute('role','status');}
   const notify=text=>{instance.notice.show=text;};
   const item=name=>instance.setting.find(name);
   function setStatus(text,{error=false,busy=false}={}){status.hidden=!text;status.querySelector('span').textContent=text||'';status.classList.toggle('is-error',error);for(const node of status.querySelectorAll('[data-player-retry],[data-player-panel],a'))node.hidden=!error;status.querySelector('[data-player-play]').hidden=true;root.setAttribute('aria-busy',String(busy));}

@@ -68,3 +68,15 @@ for(const width of [320,390])test('touch '+width+' settings retain compact bound
   const back=current(page).locator('button[data-settings-back]');await back.scrollIntoViewIfNeeded();const b=await back.boundingBox();expect(b.width).toBeGreaterThanOrEqual(44);expect(b.height).toBeGreaterThanOrEqual(44);await back.tap();await expect(current(page).locator('[data-name="local-subtitle"]')).toBeFocused();await current(page).locator('button[data-aspect-ratio="default"]').scrollIntoViewIfNeeded();await expect(current(page).locator('button[data-aspect-ratio="default"]')).toHaveAttribute('aria-pressed','true');
  }finally{await context.close();}
 });
+
+test('series ratio notice fits the free space between control groups, without covering the controls or title',async({page})=>{
+ await page.setViewportSize({width:1440,height:900});await open(page);await settings(page);
+ const ratio=value=>current(page).locator('[data-aspect-ratio="'+value+'"]');
+ for(const value of ['4:3','16:9','default']){
+   await ratio(value).click();const notice=page.locator('#watch-player .art-notice-inner');
+   await expect(notice).toBeVisible();await expect(ratio(value)).toHaveAttribute('aria-pressed','true');
+   const [n,left,right,bar]=await Promise.all([notice,...['.art-controls-left','.art-controls-right','.art-controls'].map(s=>page.locator('#watch-player '+s))].map(l=>l.boundingBox()));
+   expect(n.x).toBeGreaterThanOrEqual(left.x+left.width-1);expect(n.x+n.width).toBeLessThanOrEqual(right.x+1);
+   expect(n.y).toBeGreaterThanOrEqual(bar.y);expect(n.y+n.height).toBeLessThanOrEqual(bar.y+bar.height+1);
+ }
+});

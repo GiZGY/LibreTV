@@ -465,3 +465,8 @@ html.video-web-fullscreen{overflow:hidden}
 #command-search-all[hidden],#command-results:empty{display:none}
 #command-search-all{border-radius:0;padding:12px 18px}
 #command-search-all span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* Fixed tracks keep single- and double-digit episode numbers aligned across rows. */
+.detail-section .episodes{--episode-width:44px;--episode-height:32px;display:grid;grid-template-columns:repeat(auto-fill,var(--episode-width));grid-auto-rows:var(--episode-height);gap:6px;margin-top:12px}
+.detail-section .episode{min-width:0;width:100%;height:100%;padding:0 3px;border-radius:5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-variant-numeric:tabular-nums}
+@media(pointer:coarse){.detail-section .episodes{--episode-height:44px}}

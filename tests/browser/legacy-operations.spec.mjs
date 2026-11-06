@@ -62,3 +62,17 @@ test('detail shows line discovery and playback evidence once beside the watch ac
  await expect(detail.locator('.actions + .availability-note')).toHaveText('已找到 1 条播放线路 · 近期播放成功');
  await expect(detail.locator('.playability-note,time')).toHaveCount(0);await expect(detail).not.toContainText('尚未验证');
 });
+
+test('episode numbers for a long series line up in compact equal-sized columns',async({page})=>{
+ await page.setViewportSize({width:1440,height:900});await seed(page);
+ await page.addInitScript(()=>{
+  const episodes=Array.from({length:76},(_,i)=>({name:'第'+(i+1)+'集',url:'/media/sample.mp4?ep='+i}));
+  localStorage.setItem('openstream_live_filmRecords',JSON.stringify([{id:'film-grid',name:'长剧集',type:'电视剧',episodes:76,lines:[{name:'线路',key:'qa',sourceKey:'qa',episodes}],candidatesComplete:true}]));
+ });
+ await page.goto('/#detail/film-grid');const buttons=page.locator('.detail-section .episode');await expect(buttons).toHaveCount(76);
+ const boxes=await buttons.evaluateAll(es=>es.map(e=>{const r=e.getBoundingClientRect();return [r.x,r.y,r.width,r.height]}));
+ expect(new Set(boxes.map(b=>b.slice(2).join()))).toEqual(new Set(['44,32']));
+ const columns=boxes.filter(b=>b[1]===boxes[0][1]).length;expect(columns).toBeGreaterThan(1);
+ for(const [i,b] of boxes.entries())expect(b[0]).toBe(boxes[i%columns][0]);
+ await buttons.nth(75).click();await expect(page).toHaveURL(/#player\/film-grid$/);
+});

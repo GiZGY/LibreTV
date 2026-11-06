@@ -24,3 +24,17 @@ test('home resume uses the bottom notification area for thirty seconds without r
  await page.reload();await expect(notice).toHaveCount(0);
  expect(await page.evaluate(()=>localStorage.getItem('openstream_live_historyMetadataV2'))).toBe(progress);
 });
+
+test('unrelated source hits never appear while results stream, after completion or from cache',async({page})=>{
+ await seed(page);await page.goto('/#home');await page.evaluate(()=>{
+   const make=(vod_name,i)=>({vod_id:i+1,source_code:'qa',vod_name,type_name:'电视剧',vod_year:'2011',vod_content:'甄嬛传'});
+   const results=['北京地铁','甄嬛传','如懿传','后宫·甄嬛传'].map(make);
+   window.OpenStreamStreamingSearch.runStreamingSearch=async opts=>{opts.onUpdate({results});
+     await new Promise(resolve=>window.finishTitleSearch=resolve);opts.onSourceDone({status:'ready'});return{results};};
+   location.hash='search/'+encodeURIComponent('甄嬛传');
+ });
+ const titles=page.locator('#live-results h3');await expect(titles).toHaveText(['甄嬛传','后宫·甄嬛传']);
+ await page.evaluate(()=>window.finishTitleSearch());await expect(page.locator('#search-progress')).toHaveText('“甄嬛传” · 2 部影片');
+ await page.evaluate(()=>location.hash='history');await expect(page.locator('#search-progress')).toHaveCount(0);await page.goBack();
+ await expect(titles).toHaveText(['甄嬛传','后宫·甄嬛传']);
+});

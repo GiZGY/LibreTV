@@ -227,12 +227,13 @@
     await window.HumanAccess?.ensure();
     if(signal?.aborted)throw signal.reason;
     window.OpenStreamSourceHealth?.recoverSearchFailures(data.sources());
-    const statuses=[];
+    const statuses=[],matches=data.titleMatcher(query);
+    const accepted=items=>items.filter(data.allowed).filter(matches);
     const result=await OpenStreamStreamingSearch.runStreamingSearch({sources:data.sources(),query,filters:{},signal,
       onSourceDone: result=>statuses.push(result.status),
-      onUpdate: payload=>onUpdate?.(payload.results.filter(data.allowed)),
-      onDone: payload=>onUpdate?.(payload.results.filter(data.allowed))});
-    return {...result,statuses};
+      onUpdate: payload=>onUpdate?.(accepted(payload.results)),
+      onDone: payload=>onUpdate?.(accepted(payload.results))});
+    return {...result,results:accepted(result.results),statuses};
   }
   const recentSearchViews=new Map(),searchConditions=new Map();
   async function fetchSearch(query,signal,token) {
