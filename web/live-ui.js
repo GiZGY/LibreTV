@@ -245,9 +245,9 @@
       updateOptions();applyFilters();
     };
     document.querySelectorAll('[data-search-filter]').forEach(select=>select.addEventListener('change',()=>{filters[select.dataset.searchFilter]=select.value;searchConditions.set(query,{...filters});if(searchConditions.size>8)searchConditions.delete(searchConditions.keys().next().value);applyFilters();}));
+    const typeSelect=document.querySelector('[data-search-filter="type"]');typeSelect.value=filters.type;
     const cacheKey=JSON.stringify([query,data.sources()]),cached=recentSearchViews.get(cacheKey);
     if(cached&&Date.now()-cached.time<300000){addFilms(cached.ids.map(id=>films.find(f=>f.id===id)).filter(Boolean),false);$('#search-progress').textContent='“'+query+'” · '+cached.ids.length+' 部影片';return;}
-    const typeSelect=document.querySelector('[data-search-filter="type"]');typeSelect.value=filters.type;
     const result=await searchFilms(query,signal,items=>{if(token!==generation)return;addFilms(items);$('#search-progress').textContent=`“${query}” · ${itemsById.size} 部影片，正在补充线路…`;});
     if(token!==generation)return;
     const accepted=result.results.filter(data.allowed);addFilms(accepted);const count=itemsById.size;
