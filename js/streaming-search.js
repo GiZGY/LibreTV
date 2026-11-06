@@ -161,7 +161,7 @@
                 parentSignal
             );
             const ms = Math.round(now() - startedAt);
-            const list = Array.isArray(adapterResult?.list) ? adapterResult.list : [];
+            const list = Array.isArray(adapterResult?.list) ? adapterResult.list.filter(item => !window.OpenStreamContent?.trailerItem(item)) : [];
             const nextStatus = adapterResult?.status || (list.length > 0 ? status.READY : status.NO_RESULT);
             window.OpenStreamSourceHealth?.recordSourceEvent(source.sourceKey, { status: nextStatus, ms });
             return { source, status: nextStatus, ms, results: list };
