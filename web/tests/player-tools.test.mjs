@@ -5,7 +5,7 @@ import vm from 'node:vm';
 const context={window:{},setInterval,clearInterval};vm.runInNewContext(readFileSync(new URL('../player-tools.js',import.meta.url),'utf8'),context);const tools=context.window.OpenStreamPlayerTools;
 function watch(){let now=0,recovered=0,failed=0,hidden=false;const video={currentTime:0,paused:false,seeking:false,ended:false};const watch=tools.createStallWatch({video,now:()=>now,hidden:()=>hidden,onRecover:()=>recovered++,onFailed:()=>failed++});return{video,watch,advance(ms){now+=ms;watch.poll();},hidden(value){hidden=value;},counts:()=>[recovered,failed]};}
 test('startup and sustained non-progress use separate bounds and recover only once',()=>{const a=watch();a.watch.arm();a.advance(24000);assert.deepEqual(a.counts(),[0,0]);a.advance(1000);assert.deepEqual(a.counts(),[1,0]);a.advance(14000);assert.deepEqual(a.counts(),[1,0]);a.advance(1000);assert.deepEqual(a.counts(),[1,1]);a.advance(999999);assert.deepEqual(a.counts(),[1,1]);const b=watch();b.watch.arm();b.video.currentTime=1;b.advance(1000);b.advance(11000);assert.deepEqual(b.counts(),[0,0]);b.advance(1000);assert.deepEqual(b.counts(),[1,0]);});
-test('pause, seeking, hidden tabs, short buffering and disposal do not trigger self-heal',()=>{for(const kind of ['paused','seeking','hidden']){const a=watch();a.watch.arm();if(kind==='hidden')a.hidden(true);else a.video[kind]=true;a.advance(60000);if(kind==='hidden')a.hidden(false);else a.video[kind]=false;a.advance(1000);assert.deepEqual(a.counts(),[0,0]);a.watch.dispose();a.advance(999999);assert.deepEqual(a.counts(),[0,0]);}const a=watch();a.watch.arm();for(let i=0;i<10;i++){a.video.currentTime++;a.advance(3000);}assert.deepEqual(a.counts(),[0,0]);});
+test('pause, seeking, hidden tabs, short buffering and disposal do not trigger self-heal',()=>{for(const kind of ['paused','seeking','hidden']){const a=watch();a.watch.arm();if(kind==='hidden')a.hidden(true);else a.video[kind]=true;a.advance(60000);if(kind==='hidden')a.hidden(false);else a.video[kind]=false;a.advance(1000);assert.deepEqual(a.counts(),[0,0]);a.watch.dispose();a.advance(999999);assert.deepEqual(a.counts(),[0,0]);}const a=watch();a.watch.arm();for(let i=0;i<10;i++){a.video.currentTime+=3;a.advance(3000);}assert.deepEqual(a.counts(),[0,0]);});
 test('local subtitle parsing supports SRT/VTT timing, text-only output and overlaps',()=>{const cues=tools.parseSubtitles('1\n00:00:01,000 --> 00:00:04,000\n<b>hello</b><script>window.hacked=true</script>\n\n2\n00:00:03,000 --> 00:00:05,000\nworld');assert.equal(cues[0].text,'hellowindow.hacked=true');assert.equal(tools.cuesAt(cues,3.5),'hellowindow.hacked=true\nworld');assert.equal(tools.cuesAt(cues,6),'');const vtt=tools.parseSubtitles('WEBVTT\n\nNOTE ignored\nanything\n\n00:01.000 --> 00:02.000 align:center\n字幕');assert.equal(vtt[0].start,1);assert.equal(vtt[0].text,'字幕');});
 test('malformed, unrecognized, oversized and invalid subtitle files fail without state changes',()=>{for(const value of ['nothing','1\n00:61:00,000 --> 00:62:00,000\ntext','1\n00:00:03,000 --> 00:00:02,000\ntext','\uFFFD', 'x'.repeat(2*1024*1024+1)])assert.throws(()=>tools.parseSubtitles(value));});
 test('sleep deadline fires once, blocks automatic advance and recovers only on explicit cancel',()=>{let now=0,paused=0,timer=0,cleared=0;const sleep=tools.createSleep({now:()=>now,schedule:()=>++timer,unschedule:()=>cleared++});const media={filmId:'f',episodeKey:'s1:e1'},instance={pause:()=>paused++};sleep.bind(instance);sleep.setMinutes(1);now=59000;sleep.tick();assert.equal(paused,0);sleep.extend();now=60000;sleep.tick();assert.equal(paused,0);now=16*60000;sleep.tick();assert.equal(paused,1);sleep.tick();assert.equal(paused,1);assert.equal(sleep.beforeAdvance(media,false),false);assert.equal(sleep.blocked(),true);sleep.cancel();assert.equal(sleep.blocked(),false);assert.equal(sleep.beforeAdvance(media,false),true);assert.ok(cleared>=1);});
@@ -62,3 +62,29 @@ test('editable subtitle values validate whole font sizes and signed half-second 
 test('recovery-induced pause cannot disable its deadline, but an explicit pause cancels recovery',()=>{const a=watch();a.watch.arm();a.video.currentTime=1;a.advance(1000);a.advance(12000);a.video.paused=true;a.advance(15000);assert.deepEqual(a.counts(),[1,1]);const b=watch();b.watch.arm();b.advance(25000);b.video.paused=true;b.watch.suspend();b.advance(99999);assert.deepEqual(b.counts(),[1,0]);});
 
 test('third-party reconnects do not compete with application-owned recovery budgets',()=>{const source=readFileSync(new URL('../player-preview.js',import.meta.url),'utf8');assert.ok(source.indexOf('Artplayer.RECONNECT_TIME_MAX=0')<source.indexOf('art=new Artplayer('));});
+
+test('small repeated progress and playing events cannot postpone sustained-starvation recovery',()=>{
+ const a=watch();a.watch.arm();a.video.currentTime=1;a.advance(1000);
+ for(let i=0;i<4;i++){a.video.currentTime+=.06;a.watch.arm();a.advance(5000);}
+ assert.deepEqual(a.counts(),[1,0]);
+ for(let i=0;i<3;i++){a.video.currentTime+=.06;a.watch.arm();a.advance(5000);}
+ assert.deepEqual(a.counts(),[1,1]);a.advance(60000);assert.deepEqual(a.counts(),[1,1]);
+});
+test('a genuine stable recovery replenishes the bounded budget, while brief bursts do not',()=>{
+ const a=watch();a.watch.arm();a.video.currentTime=1;a.advance(1000);a.advance(12000);assert.deepEqual(a.counts(),[1,0]);
+ for(let i=0;i<8;i++){a.video.currentTime++;a.watch.arm();a.advance(1000);}
+ assert.equal(a.watch.snapshot().recovering,false);assert.deepEqual(a.counts(),[1,0]);
+ a.advance(12000);assert.deepEqual(a.counts(),[2,0]);
+});
+test('the rolling starvation budget respects selected speed and forgives isolated short waits',()=>{
+ for(const rate of [.5,1,1.75,2]){
+  const a=watch();a.video.playbackRate=rate;a.watch.arm();
+  for(let i=0;i<40;i++){if(i!==10&&i!==11&&i!==28)a.video.currentTime+=rate;a.advance(1000);}
+  assert.deepEqual(a.counts(),[0,0]);
+ }
+});
+test('the current stream keeps proving recovery while an alternative is pending',()=>{
+ const a=watch();a.watch.arm();a.video.currentTime=1;a.advance(1000);a.advance(12000);a.advance(15000);assert.deepEqual(a.counts(),[1,1]);assert.equal(a.watch.snapshot().terminal,true);
+ for(let i=0;i<8;i++){a.video.currentTime++;a.watch.arm();a.advance(1000);}
+ assert.equal(a.watch.snapshot().recovering,false);assert.equal(a.watch.snapshot().terminal,false);assert.deepEqual(a.counts(),[1,1]);
+});

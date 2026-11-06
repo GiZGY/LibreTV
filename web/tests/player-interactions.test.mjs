@@ -79,7 +79,7 @@ test('manual next ignores autoplay, saves progress once, and stops at the final 
 test('live episode refresh retains the fullscreen host and recovers a resolution failure',async()=>{
   const live=readFileSync(new URL('../live-ui.js',import.meta.url),'utf8');
   const block=live.slice(live.indexOf('  render = async function ()'),live.indexOf('  searchAll = function ()'));
-  const film={id:'series',episodes:3},state={episode:2},events=[];
+  const film={id:'series',type:'电视剧',episodes:3,lines:[{episodes:[{},{},{}]}]},state={episode:2},events=[];
   const host={isConnected:true};let mainWrites=0,sideUpdates=0,fail=false;
   const main={set innerHTML(value){mainWrites++;}};
   const document={querySelector:selector=>selector==='#watch-player'?host:{replaceWith(){sideUpdates++;}},createRange:()=>({createContextualFragment:()=>({querySelector:()=>({})})}),dispatchEvent:event=>events.push(event.type)};
