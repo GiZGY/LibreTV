@@ -50,14 +50,14 @@ const core = ['config.js', 'proxy-auth.js', 'source-catalog.js', 'search.js', 's
 for (const file of core) app.get('/core/' + file, (_req, res) => res.sendFile(path.join(root, 'js', file)));
 app.get('/libs/hls.min.js', (_req, res) => res.sendFile(path.join(root, 'libs/hls.min.js')));
 app.get(['/', '/index.html'], async (_req, res) => {
-  const scripts = ['core/config.js', 'live-mode.js', 'human-access.js', ...core.slice(1).map(file => 'core/' + file), 'app.js', 'local-data.js', 'library-tools.js', 'watchlist.js', 'backup-ui.js', 'film-metadata.js', 'live-data.js', 'playback-session.js', 'live-ui.js', 'player-preview.js'];
+  const scripts = ['core/config.js', 'live-mode.js', 'human-access.js', ...core.slice(1).map(file => 'core/' + file), 'app.js', 'local-data.js', 'library-tools.js', 'watchlist.js', 'backup-ui.js', 'film-metadata.js', 'live-data.js', 'episode-identity.js', 'playback-session.js', 'live-ui.js', 'player-tools.js', 'player-preview.js'];
   let html = await readFile(path.join(ui, 'index.html'), 'utf8');
   html = html.replace(/<script defer src="(?:app|player-preview|playback-session)\.js"><\/script>/g, '');
-  html=html.replace('</head>','<link rel="stylesheet" href="library-tools.css"></head>');
+  html=html.replace('</head>','<link rel="stylesheet" href="library-tools.css"><link rel="stylesheet" href="player-tools.css"></head>');
   res.type('html').send(html.replace('</head>', scripts.map(src => `<script defer src="${src}"></script>`).join('') + '</head>'));
 });
 // Explicit public directories: never expose environment files or repository files.
-for (const file of ['styles.css', 'library-tools.css', 'app.js', 'local-data.js', 'library-tools.js', 'watchlist.js', 'backup-ui.js', 'playback-session.js', 'live-mode.js', 'human-access.js', 'film-metadata.js', 'live-data.js', 'live-ui.js', 'player-preview.js']) {
+for (const file of ['styles.css', 'library-tools.css', 'player-tools.css', 'app.js', 'local-data.js', 'library-tools.js', 'watchlist.js', 'backup-ui.js', 'playback-session.js', 'live-mode.js', 'human-access.js', 'film-metadata.js', 'live-data.js', 'episode-identity.js', 'live-ui.js', 'player-tools.js', 'player-preview.js']) {
   app.get('/' + file, async (_req, res, next) => {
     if (file !== 'player-preview.js' || process.env.NEW_UI_TEST_MUTED !== '1') {
       return res.sendFile(path.join(ui, file));
@@ -72,7 +72,7 @@ for (const file of ['styles.css', 'library-tools.css', 'app.js', 'local-data.js'
         if (!source.includes(attach)) throw new Error('Native session test marker changed');
         source = source.replace(attach, attach + "guard?.ready.then(()=>fetch('/__qa/native-status',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({status:guard?.getStatus().status,muted:video.muted,volume:video.volume,duration:video.duration,position:video.currentTime})})).catch(()=>{});");
       }
-      const marker = 'volume:.8,setting:true';
+      const marker = "volume:previousSound?.volume??load('volume',.8),muted:previousSound?.muted??load('muted',false),setting:true";
       const beforeSource = 'customType:{m3u8(video,url){';
       const afterConstructor = 'const instance=art;';
       if (![marker,beforeSource,afterConstructor].every(value=>source.includes(value))) throw new Error('Silent test player configuration changed');
