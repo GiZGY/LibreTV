@@ -57,3 +57,12 @@
 #watch-player :is(.player-bottom-trigger,.player-skip-mark):focus-visible{outline:2px solid var(--player-focus);outline-offset:-2px}
 #watch-player .art-settings{max-height:min(300px,calc(100% - var(--art-control-height) - 8px))}
 @media(pointer:coarse){#watch-player .player-skip-mark{min-height:32px}}
+
+#watch-player{container:watch-surface / inline-size}
+@container watch-surface (max-width:540px){
+ #watch-player .art-control-pip,#watch-player .art-control-fullscreenWeb{display:none!important}
+ #watch-player .art-controls .art-controls-left,#watch-player .art-controls .art-controls-right{display:contents}
+ #watch-player .art-controls .art-control{flex:1 1 0;min-width:0;width:auto!important;padding-inline:0}
+ #watch-player .art-controls .art-control-time{position:absolute;bottom:calc(var(--art-control-height) + 8px);left:0;min-height:0;height:auto;line-height:1.4;text-shadow:0 1px 3px #000;pointer-events:none}
+ #watch-player .fine-speed summary,#watch-player .player-next-episode{min-width:0;width:100%}
+}

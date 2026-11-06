@@ -40,4 +40,12 @@ test('pointer-selected speed reaches real media while popup focus and keyboard d
  expect(actual.waits).toBe(0);expect(actual.ratio).toBeGreaterThan(1.65);expect(actual.ratio).toBeLessThan(1.85);
  expect(actual.rate).toBe(1.75);expect(actual.defaultRate).toBe(1.75);expect(actual.muted).toBe(true);
  console.log(JSON.stringify({path:'pointer-selected-real-speed',...actual}));
+ for(const width of [320,390]){
+  await page.setViewportSize({width,height:844});await page.locator('#watch-player').hover();
+  const overflow=await page.locator('#watch-player').evaluate(host=>{
+   const bounds=host.getBoundingClientRect();
+   return [...host.querySelectorAll('.art-controls .art-control')].filter(el=>el.getClientRects().length).some(el=>{const r=el.getBoundingClientRect();return r.left<bounds.left-1||r.right>bounds.right+1;});
+  });
+  expect(overflow).toBe(false);
+ }
 });
