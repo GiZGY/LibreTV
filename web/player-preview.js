@@ -99,7 +99,7 @@
     volume:previousSound?.volume??load('volume',.8),muted:previousSound?.muted??load('muted',false),setting:true,airplay:true,aspectRatio:false,pip:true,fullscreen:true,fullscreenWeb:true,playsInline:true,
     hotkey:true,fastForward:false,playbackRate:false,autoPlayback:false,
     settings:[...(isSeries(film)?[{html:'自动连播',switch:load('autoplay',true),onSwitch(item){const enabled=!item.switch;save('autoplay',enabled);document.querySelectorAll('#autoplay,[data-watch-autoplay]').forEach(el=>el.checked=enabled);return enabled;}}]:[]),skipSetting('intro','跳过片头'),skipSetting('outro','跳过片尾')],
-    controls:[...(isSeries(film)?[{name:'next-episode',position:'left',index:11,html:'<button type="button" class="player-next-episode" aria-label="下一集" title="下一集" '+(window.OpenStreamEpisodes?!OpenStreamEpisodes.nextOrdinal(film,episodeFor(film))?'disabled':'':episodeFor(film).episode>=film.episodes?'disabled':'')+'><svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor" aria-hidden="true"><path d="M5 4v16l11-8L5 4zm12 0h3v16h-3z"/></svg></button>',click:()=>advance(true)}]:[]),...(isSeries(film)?[{name:'episode-picker',position:'right',index:5,html:'<button type="button" class="player-bottom-trigger" data-player-panel="episodes" aria-expanded="false">选集</button>',click:(_controls,event)=>{event.stopPropagation();tools?.openPanel('episodes',event.target.closest('button'));}}]:[]),{name:'route-picker',position:'right',index:6,html:'<button type="button" class="player-bottom-trigger" data-player-panel="lines" aria-expanded="false">线路</button>',click:(_controls,event)=>{event.stopPropagation();tools?.openPanel('lines',event.target.closest('button'));}},{name:'fine-speed',position:'right',index:8,html:'<details class="fine-speed"><summary aria-label="调整播放速度">1×</summary><div class="fine-speed-panel"><div class="fine-speed-heading"><span>播放速度</span><div class="rate-stepper"><button type="button" data-step="-0.05" aria-label="减慢 0.05 倍">−</button><output>1×</output><button type="button" data-step="0.05" aria-label="加快 0.05 倍">＋</button></div></div><input type="range" min="0.5" max="2" step="0.05" value="1" aria-label="播放速度" aria-valuetext="1 倍"><div class="fine-speed-presets">'+[.5,.75,1,1.25,1.5,1.75,2].map(n=>'<button type="button" style="--tick:'+((n-.5)/1.5*100)+'%" data-rate="'+n+'">'+n+'×</button>').join('')+'</div></div></details>'}],
+    controls:[...(isSeries(film)?[{name:'next-episode',position:'left',index:11,html:'<button type="button" class="player-next-episode" aria-label="下一集" title="下一集" '+(window.OpenStreamEpisodes?!OpenStreamEpisodes.nextOrdinal(film,episodeFor(film))?'disabled':'':episodeFor(film).episode>=film.episodes?'disabled':'')+'><svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor" aria-hidden="true"><path d="M5 4v16l11-8L5 4zm12 0h3v16h-3z"/></svg></button>',click:()=>advance(true)}]:[]),...(isSeries(film)?[{name:'episode-picker',position:'right',index:5,html:'<button type="button" class="player-bottom-trigger" data-player-panel="episodes" aria-expanded="false">选集</button>',click:(_controls,event)=>{event.stopPropagation();tools?.openPanel('episodes',event.target.closest('button'));}}]:[]),{name:'route-picker',position:'right',index:6,html:'<button type="button" class="player-bottom-trigger" data-player-panel="lines" aria-expanded="false">线路</button>',click:(_controls,event)=>{event.stopPropagation();tools?.openPanel('lines',event.target.closest('button'));}},{name:'fine-speed',position:'right',index:8,html:'<details class="fine-speed"><summary aria-label="调整播放速度" aria-haspopup="dialog" aria-controls="player-speed-popover" aria-expanded="false">1×</summary><div class="fine-speed-panel" id="player-speed-popover" role="dialog" aria-label="播放速度"><div class="fine-speed-heading"><div class="rate-stepper"><button type="button" data-step="-0.05" aria-label="减慢 0.05 倍">−</button><output>1×</output><button type="button" data-step="0.05" aria-label="加快 0.05 倍">＋</button></div></div><div class="fine-speed-track"><input type="range" min="0.5" max="2" step="0.05" value="1" aria-label="播放速度" aria-valuetext="1 倍"><div class="fine-speed-presets">'+[.5,.75,1,1.25,1.5,1.75,2].map(n=>'<button type="button" style="--tick:'+((n-.5)/1.5*100)+'%" data-rate="'+n+'">'+n+'×</button>').join('')+'</div></div></div></details>'}],
     layers:mediaUrl?[]:[{name:'empty-media',html:'<div class="watch-empty"><span>暂未获取到播放地址</span><p>请选择其他线路，或返回影片详情</p></div>',style:{inset:'0',display:'grid',placeItems:'center',pointerEvents:'none'}}]
    });
    const instance=art;
@@ -178,14 +178,20 @@
    panel.addEventListener('click',event=>{event.stopPropagation();instance.setting.show=false;const button=event.target.closest('[data-rate]');if(button)updateRate(button.dataset.rate);const step=event.target.closest('[data-step]');if(step)updateRate(Number(slider.value)+Number(step.dataset.step));});
    // Safari may blur details before a non-focusable mouse button dispatches its click.
    panel.addEventListener('mousedown',event=>{if(event.target.closest('[data-rate],[data-step]'))event.preventDefault();});
+   // A drag-release click can land outside; a fresh press starts a new dismissal.
+   let rangePointer=null,ignoreRangeClick=false;
+   const resetRangeClick=()=>{ignoreRangeClick=false;},endRange=event=>{if(event.pointerId===rangePointer)rangePointer=null;};
+   slider.addEventListener('pointerdown',event=>{rangePointer=event.pointerId;ignoreRangeClick=true;instance.controls.show=true;});
+   document.addEventListener('pointerdown',resetRangeClick,true);document.addEventListener('pointerup',endRange,true);document.addEventListener('pointercancel',endRange,true);
    function fitSpeedPanel(){
-    const popup=panel.querySelector?.('.fine-speed-panel');if(!popup||typeof next==='undefined'||!panel.open)return;
+    const popup=panel.querySelector?.('.fine-speed-panel');if(!popup||typeof next==='undefined'||!panel.open||rangePointer!==null)return;
     popup.style.maxHeight=Math.max(80,next.clientHeight-66)+'px';popup.style.maxWidth=Math.max(160,next.clientWidth-16)+'px';popup.style.overflowY='auto';popup.style.right='';
     const rect=popup.getBoundingClientRect(),bounds=next.getBoundingClientRect(),right=parseFloat(getComputedStyle(popup).right)||0;
     if(rect.right>bounds.right-8)popup.style.right=(right+rect.right-bounds.right+8)+'px';
     else if(rect.left<bounds.left+8)popup.style.right=(right-(bounds.left+8-rect.left))+'px';
    }
-   panel.addEventListener('toggle',()=>{if(panel.open){instance.setting.show=false;fitSpeedPanel();}});
+   panel.addEventListener('toggle',()=>{panel.querySelector('summary').setAttribute('aria-expanded',String(panel.open));if(panel.open){tools?.closePanel(false);instance.setting.show=false;instance.controls.show=true;fitSpeedPanel();}});
+   instance.on('control',visible=>{if(!visible&&panel.open&&!instance.isDestroy)instance.controls.show=true;});
    instance.on('resize',fitSpeedPanel);
    instance.on('setting',visible=>{if(visible)panel.open=false;});
    const playerElement=instance.template.$player;
@@ -227,12 +233,17 @@
     event.stopPropagation();const summary=panel.querySelector('summary');
     if(event.key==='Escape'){event.preventDefault();panel.open=false;summary.focus();return;}
     if(event.key==='Tab'&&panel.open){
-     const controls=[summary,...panel.querySelectorAll('button:not(:disabled),input:not(:disabled)')],index=controls.indexOf(document.activeElement),target=index+(event.shiftKey?-1:1);
+     const controls=[summary,...panel.querySelectorAll('button:not(:disabled):not([aria-hidden="true"]),input:not(:disabled)')],index=controls.indexOf(document.activeElement),target=index+(event.shiftKey?-1:1);
      if(index>=0&&target>=0&&target<controls.length){event.preventDefault();controls[target].focus();}
-     else{summary.focus();panel.open=false;}
+     else{event.preventDefault();summary.focus();panel.open=false;}
     }
    });
-   panel.addEventListener('focusout',event=>{if(!panel.contains(event.relatedTarget))panel.open=false;});
+   function closeSpeed(){if(!panel.open)return;panel.open=false;instance.controls.show=true;panel.querySelector('summary').focus({preventScroll:true});}
+   const outsideSpeed=event=>{if(!panel.open)return;if(ignoreRangeClick){ignoreRangeClick=false;return;}if(!panel.contains(event.target))closeSpeed();},escapeSpeed=event=>{if(panel.open&&event.key==='Escape'){event.preventDefault();event.stopImmediatePropagation();closeSpeed();}};
+   document.addEventListener('click',outsideSpeed,true);document.addEventListener('keydown',escapeSpeed,true);
+   const touchTicks=matchMedia('(pointer:coarse)'),syncTickTargets=()=>{for(const button of panel.querySelectorAll('[data-rate]')){button.tabIndex=touchTicks.matches?-1:0;if(touchTicks.matches)button.setAttribute('aria-hidden','true');else button.removeAttribute('aria-hidden');}};
+   syncTickTargets();touchTicks.addEventListener('change',syncTickTargets);
+   instance.on('destroy',()=>{document.removeEventListener('click',outsideSpeed,true);document.removeEventListener('keydown',escapeSpeed,true);document.removeEventListener('pointerdown',resetRangeClick,true);document.removeEventListener('pointerup',endRange,true);document.removeEventListener('pointercancel',endRange,true);touchTicks.removeEventListener('change',syncTickTargets);});
    slider.addEventListener('input',()=>updateRate(slider.value));
    syncRate();
    function endHold(seek=false){
