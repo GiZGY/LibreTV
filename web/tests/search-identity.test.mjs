@@ -16,3 +16,17 @@ test('source tombstones yield to a real cover only within the same result',()=>{
  const same=item('third','蜘蛛侠：平行宇宙2','2020',{vod_pic:'https://example.org/2020.jpg'});
  for(const rows of [[...base,same,newer],[newer,same,...base]])assert.equal(get(rows).vod_pic,same.vod_pic);
 });
+
+test('shared work combines inconsistent CMS languages and credits, not cuts or remakes; conflicting source scores stay blank',()=>{
+ const row=(s,lang,score,extra={})=>item(s,'蜘蛛侠：纵横宇宙','2023',{vod_douban_id:30391186,vod_director:'导演甲,导演乙',vod_lang:lang,vod_douban_score:score,...extra});
+ const rows=[row('a','英语 / 他加禄语','8.5'),row('b','英语,他加禄语','8.3',{vod_director:'导演甲'}),row('c','其它','0')];
+ const keys=[];
+ for(const data of [rows,[...rows].reverse()]){
+  const [work]=aggregate.aggregateResults(data);assert.equal(work.source_count,3);assert.equal(work.vod_douban_score,'');assert.equal(work.score_conflict,true);
+  assert.deepEqual([...work.work_languages].sort(),['他加禄语','英语']);keys.push(aggregate.getResultKey(work));
+ }
+ assert.equal(keys[0],keys[1]);
+ for(const extra of [{vod_name:'蜘蛛侠：纵横宇宙加长版'},{vod_name:'蜘蛛侠：纵横宇宙国语'},{vod_year:'2020'},{vod_douban_id:12345678}]){
+  assert.equal(aggregate.aggregateResults([...rows,row('d','英语','7',extra)]).length,2);
+ }
+});

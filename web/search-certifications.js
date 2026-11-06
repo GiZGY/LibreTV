@@ -9,6 +9,7 @@
    cache.delete(k);cache.set(k,{at:Date.now(),certificate});while(cache.size>160)cache.delete(cache.keys().next().value);
    save('searchCertificates',[...cache]);
  }
+ const needsScore=f=>f.scoreConflict&&f.ratingSource!=='TMDB';
  function watch(host,signal){
    const films=new WeakMap(),visible=new Set(),attempted=new WeakMap();let active=0;
    const observer=new IntersectionObserver(entries=>{
@@ -19,11 +20,16 @@
      f.certification=certificate;const html=posterMeta(f);node.querySelector('.poster-meta').innerHTML=html;node._posterMeta=html;
    }
    async function fetchOne(node,f,k){
-     const cached=peek(f);if(cached){update(node,f,k,cached);return;}
+     const cached=peek(f);if(cached){update(node,f,k,cached);if(!needsScore(f))return;}
      const match=f.catalogProvider==='tmdb'&&/^movie:\d+$/.test(f.catalogId)?{id:f.catalogId}:await LiveData.lookupTMDB(f,signal);
      if(signal.aborted||!match||!/^movie:\d+$/.test(match.id)||key(f)!==k)return;
      const details=await LiveData.detailTMDB(match.id,signal);
-     if(signal.aborted||key(f)!==k||!valid(details.certification))return;
+     if(signal.aborted||key(f)!==k||!host.contains(node)||films.get(node)!==f)return;
+     if(Number(details.rate)>0&&Number(details.rate)<=10&&details.rating_source==='TMDB'){
+       f.rating=details.rate;f.ratingSource='TMDB';
+       const html=posterMeta(f);node.querySelector('.poster-meta').innerHTML=html;node._posterMeta=html;
+     }
+     if(!valid(details.certification))return;
      remember(f,details.certification);update(node,f,k,details.certification);
    }
    function pump(){
@@ -32,13 +38,14 @@
        if(active>=2)break;
        if(!host.contains(node)){visible.delete(node);observer.unobserve(node);continue;}
        const f=films.get(node),k=f&&key(f);
-       if(!k||valid(f.certification)||attempted.get(node)===k)continue;
-       attempted.set(node,k);active++;
+       const attempt=k+':'+Number(!!needsScore(f));
+       if(!k||(valid(f.certification)&&!needsScore(f))||attempted.get(node)===attempt)continue;
+       attempted.set(node,attempt);active++;
        fetchOne(node,f,k).catch(()=>{}).finally(()=>{active--;pump();});
      }
    }
    signal.addEventListener('abort',()=>{observer.disconnect();visible.clear();},{once:true});
-   return (node,f)=>{films.set(node,f);if(!valid(f.certification)&&key(f)){observer.observe(node);pump();}};
+   return (node,f)=>{films.set(node,f);if((!valid(f.certification)||needsScore(f))&&key(f)){observer.observe(node);pump();}};
  }
  window.OpenStreamSearchCertificates={peek,remember,watch};
 })();

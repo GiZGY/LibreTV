@@ -62,12 +62,19 @@
         return fallback ? fallback[0] : '';
     }
 
-    function getVersion(item) {
+    function editionTags(item) {
         const title = String(item?.vod_name || '').toLowerCase();
         const tags = [];
         for (const [label, pattern] of [['cantonese', /粤语|粵語|cantonese/], ['mandarin', /国语|國語|普通话|mandarin/], ['dubbed', /配音版|译制版|dubbed/], ['extended', /加长版|加長版|extended/], ['directors-cut', /导演剪辑|導演剪輯|director.?s.?cut/], ['uncut', /未删减|未刪減|无删减|uncut/], ['theatrical', /院线版|院線版|theatrical/], ['remastered', /修复版|修復版|重制版|remaster/]]) {
             if (pattern.test(title)) tags.push(label);
         }
+        return tags;
+    }
+    function languages(item) {
+        return [...new Set(String(item.vod_lang || '').split(/[,，/、|;；]+/).map(s=>s.trim()).filter(s=>s&&!['未知','其它','其他'].includes(s)))];
+    }
+    function getVersion(item) {
+        const tags = editionTags(item);
         const language = normalizeText(item?.vod_lang || '');
         if (language && !['未知', '其他'].includes(language)) {
             const canonical = /粤语|粵語|cantonese/.test(language) ? 'cantonese' : /国语|國語|普通话|mandarin/.test(language) ? 'mandarin' : 'lang:' + language;
@@ -78,6 +85,7 @@
 
     function getVersionLabel(item) {
         const labels = {cantonese:'粤语',mandarin:'国语',dubbed:'配音版',extended:'加长版','directors-cut':'导演剪辑版',uncut:'未删减版',theatrical:'院线版',remastered:'修复版'};
+        if(item.work_languages)return [...editionTags(item).map(tag=>labels[tag]),...item.work_languages].filter((s,i,a)=>a.indexOf(s)===i).join(' / ');
         return getVersion(item).split(',').filter(Boolean).map(key => labels[key] || key.replace(/^lang:/, '')).join(' / ');
     }
 
@@ -87,12 +95,16 @@
     }
 
     function getResultKey(item) {
+        if(item.work_key)return item.work_key;
         const legacy = getLegacyResultKey(item), version = getVersion(item);
         return version ? legacy + '|version:' + version : legacy;
     }
 
     function getIdentity(item) {
         const identity = {
+            subject: /^[1-9]\d{3,10}$/.test(String(item?.vod_douban_id))?String(item.vod_douban_id):'',
+            edition: editionTags(item).join(','),
+            directors: String(item?.vod_director||'').split(/[,，/、|]/).map(normalizeText).filter(x=>x&&!['未知','暂无','佚名'].includes(x)),
             title: normalizeTitle(item?.vod_name),
             year: getYear(item),
             type: normalizeType(item),
@@ -111,6 +123,12 @@
     }
 
     function identitiesCompatible(left, right) {
+        if(left.subject&&right.subject&&left.subject!==right.subject)return false;
+        if(left.edition!==right.edition)return false;
+        if(left.year&&left.year===right.year&&left.season===right.season&&(!left.type||!right.type||left.type===right.type)){
+            const includes=(a,b)=>a.length&&a.every(d=>b.includes(d));
+            if((left.subject&&left.subject===right.subject)||includes(left.directors,right.directors)||includes(right.directors,left.directors))return true;
+        }
         if (left.version !== right.version) return false;
         return ['year', 'type', 'season', 'director', 'version'].every((key) => (
             !left[key] || !right[key] || left[key] === right[key]
@@ -118,6 +136,7 @@
     }
 
     function mergeIdentity(base, incoming) {
+        if(!base.subject)base.subject=incoming.subject;
         ['year', 'type', 'season', 'director', 'version'].forEach((key) => {
             if (!base[key] && incoming[key]) base[key] = incoming[key];
         });
@@ -215,7 +234,7 @@
                     ));
                     const compatible = clusters
                         .filter((cluster) => identitiesCompatible(cluster.identity, identity))
-                        .filter((cluster) => !cluster.result.source_lines.some((line) => (
+                        .filter((cluster) => (identity.subject&&identity.subject===cluster.identity.subject&&identity.year&&identity.year===cluster.identity.year) || !cluster.result.source_lines.some((line) => (
                             line.source_code === item.source_code &&
                             String(line.vod_id) !== String(item.vod_id)
                         )))
@@ -251,6 +270,10 @@
                     } else {
                         mergeIdentity(cluster.identity, identity);
                     }
+                    cluster.languages??=new Set();
+                    for(const language of languages(item))cluster.languages.add(language);
+                    const rating=Number(item.vod_douban_score);
+                    if(rating>0&&rating<=10)(cluster.scores??=new Set()).add(rating);
                     mergeResultItem(cluster.result, item, sourcePlanMap);
                 });
 
@@ -264,6 +287,12 @@
                     cluster.identity.version,
                     index
                 ].join('|');
+                const id=cluster.identity;
+                if(id.subject&&id.year)cluster.result.work_key=['work',title,id.year,id.subject,id.type,id.season,id.edition].join('|');
+                cluster.result.work_languages=[...cluster.languages].sort();
+                cluster.result.source_count=new Set(cluster.result.source_lines.map(l=>l.source_code)).size;
+                cluster.result.score_conflict=cluster.scores?.size>1;
+                if(cluster.result.score_conflict)cluster.result.vod_douban_score='';
                 cluster.result.aggregate_key = key;
                 grouped.push(cluster.result);
             });

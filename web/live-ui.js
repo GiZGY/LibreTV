@@ -68,11 +68,16 @@
     const name = data.text(item.vod_name || item.title);
     let id = douban ? identity((item.provider||'douban')+':' + item.id) : identity(OpenStreamResultAggregator.getResultKey?.(item) || name + '|' + item.vod_year + '|' + item.type_name);
     if(!douban&&OpenStreamResultAggregator.getVersion?.(item)){const legacyId=identity(OpenStreamResultAggregator.getLegacyResultKey(item)),legacy=films.find(f=>f.id===legacyId);if(legacy&&legacy.name===name&&OpenStreamResultAggregator.getVersion({vod_name:legacy.name})===OpenStreamResultAggregator.getVersion(item))id=legacyId;}
+    if(item.work_key&&!films.some(f=>f.id===id)){
+      // Keep a saved card's history when its former language group joins the work.
+      const saved=films.find(f=>(favorites.has(f.id)||history.includes(f.id))&&f.name===name&&String(f.year)===String(item.vod_year)&&f.candidates?.some(c=>item.source_lines?.some(l=>l.source_code===c.source_code&&String(l.vod_id)===String(c.vod_id))));
+      if(saved)id=saved.id;
+    }
     if(stableId)id=stableId;
     const old = films.find(f => f.id === id);
     const film = Object.assign(old || {}, {
       id, name, certification:item.certification||old?.certification, ratingSource:item.rating_source||old?.ratingSource||'', catalogProvider:item.provider||old?.catalogProvider||'', catalogId:douban?String(item.id):old?.catalogId, en: item.original_title||old?.en||'',
-      ...FilmMetadata.merge(item,old), rating: String(item.rate || item.vod_douban_score || old?.rating || ''),
+      ...FilmMetadata.merge(item,old), scoreConflict:!!item.score_conflict, rating: String(item.rate || (old?.ratingSource==='TMDB'?old.rating:'') || (item.score_conflict?'':item.vod_douban_score) || ''),
       type: /剧|连续/.test(item.type_name)?'电视剧':/动漫/.test(item.type_name)?'动漫':/综艺/.test(item.type_name)?'综艺':'电影',
       director: data.text(item.vod_director) || old?.director || '暂无资料', cast: data.text(item.vod_actor) || old?.cast || '暂无资料',
       description: data.text(item.vod_content) || old?.description || '暂无简介', length: data.text(item.vod_remarks) || old?.length || '',
@@ -250,9 +255,9 @@
       const specificity=item=>Number(!!item.vod_year)+Number(!!item.vod_director)+Number(!!OpenStreamResultAggregator.getSeason?.(item));
       const ordered=items.slice().sort((a,b)=>Number((b.vod_name||b.name)===query)-Number((a.vod_name||a.name)===query)||specificity(b)-specificity(a)),visible=new Set(),claimed=new Set();
       for(const item of ordered){
-        let stableId=null;const sources=raw?(item.source_lines||[item]).map(line=>line.source_code+':'+line.vod_id):[],year=String(item.vod_year||''),season=raw?OpenStreamResultAggregator.getSeason?.(item)||'':'',version=raw?OpenStreamResultAggregator.getVersion?.(item)||'':'';
+        let stableId=null;const sources=raw?(item.source_lines||[item]).map(line=>line.source_code+':'+line.vod_id):[],year=String(item.vod_year||''),season=raw?OpenStreamResultAggregator.getSeason?.(item)||'':'',version=raw?item.work_key||OpenStreamResultAggregator.getVersion?.(item)||'':'';
         if(raw){const matches=[...itemsById.values()].filter(f=>!claimed.has(f.id)&&f.searchSources?.some(key=>sources.includes(key))&&(!year||!f.year||String(f.year)===year)&&(!season||!f.searchSeason||f.searchSeason===season)&&f.searchVersion===version);if(matches.length===1)stableId=matches[0].id;}
-        const f=raw?register(item,false,stableId):item;claimed.add(f.id);visible.add(f.id);if(raw){f.searchSources=sources;f.searchSeason=season;f.searchVersion=version;f.searchVersionLabel=OpenStreamResultAggregator.getVersionLabel?.(item)||'';f.sourceCount=item.source_lines?.length||1;}if(!f.certification)f.certification=window.OpenStreamSearchCertificates.peek(f);itemsById.set(f.id,f);
+        const f=raw?register(item,false,stableId):item;claimed.add(f.id);visible.add(f.id);if(raw){f.searchSources=sources;f.searchSeason=season;f.searchVersion=version;f.searchVersionLabel=OpenStreamResultAggregator.getVersionLabel?.(item)||'';f.sourceCount=item.source_count||item.source_lines?.length||1;}if(!f.certification)f.certification=window.OpenStreamSearchCertificates.peek(f);itemsById.set(f.id,f);
         let node=nodes.get(f.id);if(!node){const template=document.createElement('template');template.innerHTML=card(f);node=template.content.firstElementChild;if(!node){itemsById.delete(f.id);visible.delete(f.id);continue;}node.dataset.film=f.id;const badge=document.createElement('p');badge.className='search-version-note';badge.textContent=[f.searchSeason?'第 '+f.searchSeason+' 季':'',f.searchVersionLabel||'',f.sourceCount+' 个来源'].filter(Boolean).join(' · ');node.querySelector('a').append(badge);nodes.set(f.id,node);host.append(node);}else{const meta=node.querySelector('.poster-meta'),html=posterMeta(f);if(node._posterMeta!==html){meta.innerHTML=html;node._posterMeta=html;}const badge=node.querySelector('.search-version-note');if(badge)badge.textContent=[f.searchSeason?'第 '+f.searchSeason+' 季':'',f.searchVersionLabel||'',f.sourceCount+' 个来源'].filter(Boolean).join(' · ');}
         // A later source can supply the real cover while this card stays mounted.
         if(node._posterArt==='assets/poster-unavailable.svg'&&node._posterArt!==img(f)){
