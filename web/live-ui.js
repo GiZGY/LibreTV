@@ -227,12 +227,12 @@
       onDone: payload=>onUpdate?.(payload.results.filter(data.allowed))});
     return {...result,statuses};
   }
-  const recentSearchViews=new Map();
+  const recentSearchViews=new Map(),searchConditions=new Map();
   async function fetchSearch(query,signal,token) {
     $('#main').innerHTML=`<div class="page-title"><h1>搜索结果</h1><p id="search-progress">正在搜索“${esc(query)}”…</p></div><div class="search-result-filters"><label>类型<select data-search-filter="type"><option value="all">全部类型</option><option>电影</option><option>电视剧</option><option>动漫</option><option>综艺</option></select></label><label>年份<select data-search-filter="year"><option value="all">全部年份</option></select></label><label>季<select data-search-filter="season"><option value="all">全部季</option></select></label></div><div id="live-results" class="poster-grid"></div><p id="search-empty" class="search-empty" hidden>没有符合筛选条件的影片</p>`;
-    const host=$('#live-results'),itemsById=new Map(),nodes=new Map(),filters={type:'all',year:'all',season:'all'};
+    const host=$('#live-results'),itemsById=new Map(),nodes=new Map(),filters={type:'all',year:'all',season:'all',...searchConditions.get(query)};
     const applyFilters=()=>{let visible=0;for(const[id,f]of itemsById){const show=(filters.type==='all'||f.type===filters.type)&&(filters.year==='all'||String(f.year)===filters.year)&&(filters.season==='all'||String(f.searchSeason||'unknown')===filters.season);nodes.get(id).hidden=!show;if(show)visible++;}$('#search-empty').hidden=visible>0||!itemsById.size;};
-    const updateOptions=()=>{for(const[key,values]of [['year',[...new Set([...itemsById.values()].map(f=>f.year).filter(Boolean))].sort((a,b)=>Number(b)-Number(a))],['season',[...new Set([...itemsById.values()].map(f=>f.searchSeason||'unknown'))].sort((a,b)=>Number(a)-Number(b))]]){const select=document.querySelector(`[data-search-filter="${key}"]`);for(const value of values)if(![...select.options].some(option=>option.value===String(value))){const option=document.createElement('option');option.value=value;option.textContent=key==='season'?(value==='unknown'?'季号未标注':'第 '+value+' 季'):value;select.append(option);}}};
+    const updateOptions=()=>{for(const[key,values]of [['year',[...new Set([...itemsById.values()].map(f=>f.year).filter(Boolean))].sort((a,b)=>Number(b)-Number(a))],['season',[...new Set([...itemsById.values()].map(f=>f.searchSeason||'unknown'))].sort((a,b)=>Number(a)-Number(b))]]){const select=document.querySelector(`[data-search-filter="${key}"]`);for(const value of values)if(![...select.options].some(option=>option.value===String(value))){const option=document.createElement('option');option.value=value;option.textContent=key==='season'?(value==='unknown'?'季号未标注':'第 '+value+' 季'):value;select.append(option);}select.value=filters[key];}};
     const addFilms=(items,raw=true)=>{
       const specificity=item=>Number(!!item.vod_year)+Number(!!item.vod_director)+Number(!!OpenStreamResultAggregator.getSeason?.(item));
       const ordered=items.slice().sort((a,b)=>Number((b.vod_name||b.name)===query)-Number((a.vod_name||a.name)===query)||specificity(b)-specificity(a)),visible=new Set(),claimed=new Set();
@@ -244,9 +244,10 @@
       for(const[id,node]of nodes)if(!visible.has(id)){if(node.contains(document.activeElement)){node.setAttribute('aria-busy','true');node.addEventListener('focusout',()=>{if(!node.contains(document.activeElement)&&!itemsById.has(id)){node.remove();nodes.delete(id);}},{once:true});}else{node.remove();nodes.delete(id);}itemsById.delete(id);}
       updateOptions();applyFilters();
     };
-    document.querySelectorAll('[data-search-filter]').forEach(select=>select.addEventListener('change',()=>{filters[select.dataset.searchFilter]=select.value;applyFilters();}));
+    document.querySelectorAll('[data-search-filter]').forEach(select=>select.addEventListener('change',()=>{filters[select.dataset.searchFilter]=select.value;searchConditions.set(query,{...filters});if(searchConditions.size>8)searchConditions.delete(searchConditions.keys().next().value);applyFilters();}));
     const cacheKey=JSON.stringify([query,data.sources()]),cached=recentSearchViews.get(cacheKey);
     if(cached&&Date.now()-cached.time<300000){addFilms(cached.ids.map(id=>films.find(f=>f.id===id)).filter(Boolean),false);$('#search-progress').textContent='“'+query+'” · '+cached.ids.length+' 部影片';return;}
+    const typeSelect=document.querySelector('[data-search-filter="type"]');typeSelect.value=filters.type;
     const result=await searchFilms(query,signal,items=>{if(token!==generation)return;addFilms(items);$('#search-progress').textContent=`“${query}” · ${itemsById.size} 部影片，正在补充线路…`;});
     if(token!==generation)return;
     const accepted=result.results.filter(data.allowed);addFilms(accepted);const count=itemsById.size;
