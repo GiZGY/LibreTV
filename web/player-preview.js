@@ -26,13 +26,14 @@
  async function mount(){
   const next=document.querySelector('#watch-player');
   const currentMedia=window.LivePlayback?.current();
+  const metric=window.OpenStreamPlayback?.forMedia(currentMedia);
   if(next===host&&currentMedia===mountedMedia)return;
   const webFullscreen=!!art?.fullscreenWeb;
   const previousSound=art?.video?{muted:art.video.muted,volume:art.video.volume}:null;
   if(art){art.destroy(false);art=null;}
   host=next;mountedMedia=currentMedia;if(!host)return;
   try{
-   await loadPlayer();if(host!==next||currentMedia!==mountedMedia||!next.isConnected)return;
+   metric?.segment('engine');await loadPlayer();if(host!==next||currentMedia!==mountedMedia||!next.isConnected)return;
    const film=films.find(f=>f.id===location.hash.split('/')[1]);
    const media=window.LivePlayback?.current();
    const mediaUrl=media?.url||'';
@@ -43,7 +44,8 @@
     }
     if(host!==next||currentMedia!==mountedMedia||!next.isConnected)return;
    }
-   let hls=null,guard=null,recoveries=0,failed=false,nativePlayback=false,overlayNotice=null,overlayTimer,session=null,tools=null;
+   metric?.segment('render');
+   let hls=null,guard=null,recoveries=0,failed=false,nativePlayback=false,overlayNotice=null,overlayTimer,session=metric,tools=null;
    const reportHealth=health=>{if(media)document.dispatchEvent(new CustomEvent('playback-health',{detail:{filmId:media.filmId,lineKey:media.lineKey,health}}));};
    const fail=()=>{if(failed||media!==window.LivePlayback?.current())return;failed=true;reportHealth('slow');window.LivePlayback?.failed(media);};
    const skipKey='skip_'+film.id;
@@ -55,6 +57,7 @@
    Artplayer.FULLSCREEN_WEB_IN_BODY=false;
    // The application owns recovery; library reconnects would outlive its bounded budget.
    Artplayer.RECONNECT_TIME_MAX=0;
+   session?.segment('media');
    art=new Artplayer({container:next,url:mediaUrl,type:isHls?'m3u8':'',theme:'#ef692e',lang:'zh-cn',autoplay:!!media?.autoplay&&!window.OpenStreamPlayerTools?.sleep.blocked(),
     customType:{m3u8(video,url){
      const startNative=()=>{
@@ -100,7 +103,8 @@
     layers:mediaUrl?[]:[{name:'empty-media',html:'<div class="watch-empty"><span>暂未获取到播放地址</span><p>请选择其他线路，或返回影片详情</p></div>',style:{inset:'0',display:'grid',placeItems:'center',pointerEvents:'none'}}]
    });
    const instance=art;
-   session=window.OpenStreamPlayback?.createSession({resolveMs:media?.resolveMs||0,sourceMs:media?.sourceMs||0,accessMs:media?.accessMs||0,addressMs:media?.addressMs||0,transition:media?.switched?'line':media?.autoplay?'episode':'open',trigger:media?.trigger||'open'});
+   session ||= media?.url?window.OpenStreamPlayback?.createSession({transition:media?.switched?'line':media?.autoplay?'episode':'open',trigger:media?.trigger||'open'}):null;
+   session?.bindMedia(media,media?.episodeKey,()=>!instance.isDestroy&&media===window.LivePlayback?.current());
    instance.on('destroy',()=>session?.dispose());
    let playIntent=!!media?.autoplay,playAttempt=false,playAttempts=0,playTimer=null;
    function resumePlayIntent(){
@@ -122,8 +126,9 @@
    instance.on('video:seeking',()=>session?.phase('seeking'));
    instance.on('video:ended',()=>session?.phase('ended'));
    instance.on('video:error',()=>session?.error('media_'+(instance.video.error?.code||'unknown')));
-   instance.on('video:timeupdate',()=>session?.tick(instance.currentTime,{paused:instance.video.paused,seeking:instance.video.seeking,hidden:document.hidden}));
-   if(instance.video.requestVideoFrameCallback){const frame=instance.video.requestVideoFrameCallback(()=>{if(!instance.isDestroy)session?.frame();});instance.on('destroy',()=>instance.video.cancelVideoFrameCallback?.(frame));}
+   instance.on('video:timeupdate',()=>session?.tick(instance.currentTime,{paused:instance.video.paused,seeking:instance.video.seeking,hidden:document.hidden,media,episodeKey:media?.episodeKey,actualRate:instance.video.playbackRate,defaultRate:instance.video.defaultPlaybackRate}));
+   const metricVisibility=()=>session?.visibility(document.hidden);document.addEventListener('visibilitychange',metricVisibility);metricVisibility();instance.on('destroy',()=>document.removeEventListener('visibilitychange',metricVisibility));
+   if(instance.video.requestVideoFrameCallback){const frame=instance.video.requestVideoFrameCallback(()=>{if(!instance.isDestroy)session?.frame({media,episodeKey:media?.episodeKey});});instance.on('destroy',()=>instance.video.cancelVideoFrameCallback?.(frame));}
    instance.on('destroy',()=>{clearTimeout(overlayTimer);overlayNotice?.remove();guard?.();hls?.destroy();});
    let progressAt=0;
    instance.on('video:timeupdate',()=>{if(media===window.LivePlayback?.current()&&media&&restored&&Date.now()-progressAt>5000&&!instance.video.paused){progressAt=Date.now();window.LivePlayback?.progress(instance.currentTime,instance.duration,media.filmId);}});
@@ -248,9 +253,10 @@
     if(window.LivePlayback?.claimAdvance&&!LivePlayback.claimAdvance(media))return false;
     if(window.OpenStreamPlayerTools&&!OpenStreamPlayerTools.sleep.beforeAdvance(media,manual))return false;
     const state=episodeFor(film),target=window.OpenStreamEpisodes?OpenStreamEpisodes.nextOrdinal(film,state):state.episode+1;if(!target||target>film.episodes)return false;
+    const metricStart=window.OpenStreamPlayback?.stamp();
     advancing=true;
     window.LivePlayback?.progress(instance.currentTime,instance.duration,film.id);
-    state.episode=target;if(window.OpenStreamEpisodes)state.season=OpenStreamEpisodes.selection(film,state)?.season||1;window.LivePlayback?.continue(manual?'manual':trigger);
+    state.episode=target;if(window.OpenStreamEpisodes)state.season=OpenStreamEpisodes.selection(film,state)?.season||1;window.LivePlayback?.continue(manual?'manual':trigger,metricStart);
     if(window.LivePlayback)render();
     else{
      const fragment=document.createRange().createContextualFragment(player(film));
@@ -299,7 +305,7 @@
     recoveryPosition={position:instance.currentTime,playing:!instance.video.paused};session?.recovery();syncRate();
     try{if(hls)hls.startLoad(-1);else instance.video.load();if(recoveryPosition?.playing&&!window.OpenStreamPlayerTools?.sleep.blocked())instance.video.play()?.catch(()=>{});}catch{fail();}
    }});
-  }catch{if(next.isConnected)next.innerHTML='<div class="watch-empty" role="alert">播放器加载失败，请刷新重试</div>';}
+  }catch{metric?.error('engine_load_failed');if(next.isConnected)next.innerHTML='<div class="watch-empty" role="alert">播放器加载失败，请刷新重试</div>';}
  }
  document.addEventListener('playback-ready',mount);
  new MutationObserver(mount).observe(document.querySelector('#main'),{childList:true});
