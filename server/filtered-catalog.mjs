@@ -34,7 +34,7 @@ export function createFilteredCatalog({readPage,normalize,sharedCache,now=Date.n
     const normalized=normalize(params);
     const generation=Number(query.generation??Math.floor(now()/3600000));
     if(!Number.isInteger(generation)||generation>Math.floor(now()/3600000)||generation<Math.floor(now()/3600000)-1)throw fail(410,'目录已更新，请刷新页面');
-    const prefix='filtered-catalog-v1:'+createHash('sha256').update(normalized.url.href+':'+size+':'+generation+':'+snapshot).digest('hex');
+    const prefix='filtered-catalog-v2:'+createHash('sha256').update(normalized.url.href+':'+size+':'+generation+':'+snapshot).digest('hex');
     const wanted=prefix+':'+page;
     const cached=await load(wanted);if(cached)return cached.result;
     while(pending.has(prefix)){await pending.get(prefix);const hit=await load(wanted);if(hit)return hit.result;}

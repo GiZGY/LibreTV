@@ -30,7 +30,7 @@ for(const match of html.matchAll(/<script defer src="([^?]+)\?/g)){
  const code=await fs.readFile('public/'+name,'utf8');
  new vm.Script(code,{filename:name});
  const relative=name.slice(assetRoot.length+1);
- const source=relative.startsWith('core/')?'js/'+relative.slice(5):'web/'+relative;
+ const source=relative==='core/content-kind.js'?'js/content-kind.cjs':relative.startsWith('core/')?'js/'+relative.slice(5):'web/'+relative;
  sourceBytes+=(await fs.stat(source)).size;
  outputBytes+=Buffer.byteLength(code);
 }
