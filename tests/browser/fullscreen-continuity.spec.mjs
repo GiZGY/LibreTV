@@ -10,9 +10,9 @@ async function retained(page,mode,episode){
 for(const mode of ['native','web'])test(`${mode} fullscreen survives manual, natural, outro and line transitions in one uninterrupted session`,async({page})=>{
  await seed(page);await page.locator(mode==='native'?'.art-control-fullscreen':'.art-control-fullscreenWeb').click();await page.locator('.player-next-episode').click();await retained(page,mode,2);
  await page.locator('video').evaluate(v=>{v.currentTime=v.duration-.35;});await retained(page,mode,3);
- await page.evaluate(()=>localStorage.setItem('openstream_live_skip_film-fullscreen',JSON.stringify({intro:2,outro:5})));await page.locator('.player-tool-actions [data-player-panel="episodes"]').click();await page.locator('[data-player-episode="3"]').click();await retained(page,mode,3);
+ await page.evaluate(()=>localStorage.setItem('openstream_live_skip_film-fullscreen',JSON.stringify({intro:2,outro:5})));await page.locator('.player-bottom-trigger[data-player-panel="episodes"]').click();await page.locator('[data-player-episode="3"]').click();await retained(page,mode,3);
  await page.locator('video').evaluate(v=>{v.currentTime=v.duration-4.8;});await retained(page,mode,4);
- await page.locator('.player-tool-actions [data-player-panel="lines"]').click();await page.locator('[data-player-line="1"]').click();await expect.poll(()=>page.evaluate(()=>LivePlayback.current()?.lineKey)).toBe('qa:2');await retained(page,mode,4);
+ await page.locator('.player-bottom-trigger[data-player-panel="lines"]').click();await page.locator('[data-player-line="1"]').click();await expect.poll(()=>page.evaluate(()=>LivePlayback.current()?.lineKey)).toBe('qa:2');await retained(page,mode,4);
  const sample=await sampleRealPlayback(page,{episode:4,lineKey:'qa:2'});
  expect(await page.evaluate(mode=>mode==='native'?document.fullscreenElement?.id==='watch-player':document.documentElement.classList.contains('video-web-fullscreen'),mode)).toBe(true);
  console.log(JSON.stringify({mode,project:test.info().project.name,sampleSeconds:10,...sample}));
