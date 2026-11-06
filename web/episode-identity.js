@@ -11,9 +11,9 @@
  function describe(value,{series=true,season=1}={}){
   const label=clean(value),normal=label.toLowerCase().replace(/[\s_【】\[\]（）()]/g,'').replace(/([集话期])[-.]/g,'$1');
   if(!series)return{key:'feature',label:label||'正片',season:1,number:1,kind:'feature'};
-  if(/预告|花絮|特辑|特别篇|番外|彩蛋|trailer|preview|special|^sp\d*|^s0+e\d|^第[零〇0]+季|^第[零〇0]+[集话期]/i.test(normal))return{key:'special:'+normal,label:label||'特别篇',season,number:null,kind:'special'};
-  const seasonMatch=normal.match(/第([零〇一二两三四五六七八九十百千\d]+)季/)||normal.match(/^s(\d{1,2})e/i);
+  const seasonMatch=normal.match(/第([零〇一二两三四五六七八九十百千\d]+)季/)||normal.match(/^s(\d{1,2})/i);
   const s=seasonMatch?number(seasonMatch[1]):season;
+  if(/预告|花絮|特辑|特别篇|番外|彩蛋|trailer|preview|special|^sp\d*|^s0+e\d|^s\d+e0+(?:$|\D)|^第[零〇0]+季|^第[零〇0]+[集话期]/i.test(normal))return{key:'special:'+normal,label:label||'特别篇',season:s,number:null,kind:'special'};
   const match=normal.match(/s\d{1,2}e(\d{1,4})/i)||normal.match(/第([零〇一二两三四五六七八九十百千\d]+)[集话期]/)||normal.match(/^(?:ep?|episode)?(\d{1,4})(?:集|话|期)?(?:[上下中](?:集|部)?|完|end)?$/i);
   const n=match?number(match[1]):NaN;
   if(Number.isInteger(n)&&n>0&&n<=1000&&Number.isInteger(s)&&s>0&&s<=100){

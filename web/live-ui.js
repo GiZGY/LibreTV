@@ -313,6 +313,10 @@
     detailTasks.set(f.id,{task,signal});
     try{return await task;}finally{if(detailTasks.get(f.id)?.task===task)detailTasks.delete(f.id);}
   }
+  function refreshEpisodePicker(f){
+    if(location.hash!=='#detail/'+f.id)return;
+    const old=document.querySelector('.detail-section'),markup=episodePicker(f);if(old){if(markup)old.replaceWith(document.createRange().createContextualFragment(markup));else old.remove();}else if(markup)document.querySelector('.detail-layout')?.insertAdjacentHTML('afterend',markup);
+  }
   function refreshDetailText(f){
     const root=document.querySelector('.detail-content');if(!root)return;
     root.querySelector('h1').textContent=f.name;
@@ -365,7 +369,7 @@
       button.setAttribute('href',href);button.removeAttribute('aria-disabled');button.innerHTML=label;
       window.OpenStreamLibrary?.availability.record(f.id,'sources');note.textContent=`已找到 ${f.lines.length} 条播放线路 · 尚未验证实际播放`;
       if(newEpisode(f)){
-        const link=document.createElement('a');link.className='text-button';link.href='#player/'+f.id;link.dataset.newEpisode=newEpisode(f);link.dataset.id=f.id;link.textContent='有新集 · 第 '+newEpisode(f)+' 集';note.append(' ',link);
+        const link=document.createElement('a');link.className='text-button';link.href='#player/'+f.id;link.dataset.newEpisode=newEpisode(f);link.dataset.id=f.id;link.textContent='有新集 · '+episodeDescription(f,{episode:newEpisode(f)});note.append(' ',link);
       }
       if(historyMetadata[f.id])button.innerHTML=icon('play')+historyLabel(f.id);
       if(f.catalogProvider!=='tmdb')refreshDetailText(f);
@@ -486,11 +490,11 @@
       while(index<candidates.length&&!signal.aborted){
         const candidate=candidates[index++];
         try{const result=await data.detail(candidate,signal);for(const line of result.lines)if(!f.lines.some(old=>old.key===line.key))f.lines.push(line);
-          if(token===generation&&!signal.aborted){window.OpenStreamEpisodes?.sync(f,episodeFor(f),activePlayback?.filmId===f.id?activePlayback.episodeKey:null);if(activePlayback?.filmId===f.id)activePlayback.episode=episodeFor(f).episode;if(location.hash.startsWith('#player/'))document.querySelector('.watch-routes')?.replaceWith(document.createRange().createContextualFragment(routeButtons(f)));probeLines(f,signal);}
+          if(token===generation&&!signal.aborted){window.OpenStreamEpisodes?.sync(f,episodeFor(f),activePlayback?.filmId===f.id?activePlayback.episodeKey:null);if(activePlayback?.filmId===f.id)activePlayback.episode=episodeFor(f).episode;refreshEpisodePicker(f);if(location.hash.startsWith('#player/'))document.querySelector('.watch-routes')?.replaceWith(document.createRange().createContextualFragment(routeButtons(f)));probeLines(f,signal);}
         }catch{} }
     }));
   }
-  let lineTransfer=null,playbackBusy=false,playbackTrigger='open',failedSelection=null;
+  let lineTransfer=null,playbackBusy=false,playbackTrigger='open',failedSelection=null,pendingContinuation=null;
   const automaticSwitches=new Map(),playEvidence=new WeakMap();
   async function playback(f,signal) {
     const line=f.lines[f.lineIndex||0],state=episodeFor(f),ordinal=['电影','纪录片'].includes(f.type)?1:state.episode;
@@ -528,7 +532,7 @@
         const retainedPlayer=activePlayback?.filmId===film.id&&document.querySelector('#watch-player');
         if(!retainedPlayer)$('#main').innerHTML=status('正在获取播放线路…',false);
         await resolveFilm(film,signal);if(token!==generation)return;
-        const sourceMs=performance.now()-resolveStarted;
+        const sourceMs=performance.now()-resolveStarted,continuation=window.LivePlayback?.applyContinuation(film);if(continuation?.finished)return;
         const restoredEpisode=!episodeState[film.id]&&historyMetadata[film.id];
         if(restoredEpisode)episodeState[film.id]={season:restoredEpisode.season||1,episode:Math.max(1,Math.min(film.episodes,restoredEpisode.episode||1))};
         window.OpenStreamEpisodes?.sync(film,episodeFor(film),restoredEpisode?.episodeKey||window.OpenStreamEpisodes?.legacyKey(film,restoredEpisode));
@@ -536,7 +540,7 @@
         if(page==='detail'){activePlayback=null;$('#main').innerHTML=detail(film);}
         else{
           if(!film.manualLine&&!activePlayback){film.lineIndex=rankedLines(film).find(({line})=>window.OpenStreamEpisodes?OpenStreamEpisodes.indexFor(film,line,episodeFor(film))>=0:line.episodes[['电影','纪录片'].includes(film.type)?0:episodeFor(film).episode-1])?.i||0;}
-          const nextPlayback=await playback(film,signal);if(token!==generation)return;activePlayback=nextPlayback;if(activePlayback)Object.assign(activePlayback,{resolveMs:performance.now()-resolveStarted,sourceMs,accessMs});window.LivePlayback?.ready();
+          const nextPlayback=await playback(film,signal);if(token!==generation)return;activePlayback=nextPlayback;if(activePlayback)Object.assign(activePlayback,{resolveMs:performance.now()-resolveStarted,sourceMs,accessMs});window.LivePlayback?.ready(continuation);
           if(retainedPlayer?.isConnected){
             const fragment=document.createRange().createContextualFragment(player(film));
             document.querySelector('.watch-side-column').replaceWith(fragment.querySelector('.watch-side-column'));
@@ -574,7 +578,7 @@
   document.addEventListener('click',async event=>{
     if(event.target.closest('[data-browse-related]')){document.querySelector('#related-films')?.scrollIntoView({behavior:document.body.classList.contains('reduce-motion')||matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth',block:'start'});return;}
     const newEp=event.target.closest('[data-new-episode]');
-    if(newEp){const f=films.find(f=>f.id===newEp.dataset.id);if(f)Object.assign(episodeFor(f),{episode:Number(newEp.dataset.newEpisode),season:1});}
+    if(newEp){const f=films.find(f=>f.id===newEp.dataset.id);if(f)LivePlayback.queueContinuation(f.id,'target',Number(newEp.dataset.newEpisode));}
     const genre=event.target.closest('[data-live-home-genre]');if(genre){if(homeGenre!==genre.dataset.liveHomeGenre)void updateHomeGenre(genre.dataset.liveHomeGenre);return;}
     const retry=event.target.closest('[data-live-retry]');if(retry){render();return;}
     const page=event.target.closest('[data-live-page]');if(page&&!page.disabled){discoverPage+=Number(page.dataset.livePage);render();return;}
@@ -606,10 +610,25 @@
     },
     isBusy:()=>playbackBusy,
     claimAdvance:media=>!playbackBusy&&media===activePlayback,
-    loading(film){playbackBusy=true;failedSelection={filmId:film.id,episode:episodeFor(film).episode,lineIndex:film.lineIndex||0};document.dispatchEvent(new CustomEvent('playback-loading',{detail:{filmId:film.id}}));},
-    ready(){playbackBusy=false;failedSelection=null;},
+    loading(film){const state=typeof episodeState==='undefined'?null:episodeState[film.id];playbackBusy=true;failedSelection={filmId:film.id,episode:state?.episode||historyMetadata[film.id]?.episode||1,lineIndex:film.lineIndex||0};document.dispatchEvent(new CustomEvent('playback-loading',{detail:{filmId:film.id}}));},
+    ready(continuation){playbackBusy=false;failedSelection=null;if(continuation&&pendingContinuation===continuation)pendingContinuation=null;},
     loadFailed(){playbackBusy=false;},
-    unload(){playbackBusy=false;continuePlayback=false;playbackTrigger='open';failedSelection=null;},
+    unload(){playbackBusy=false;continuePlayback=false;playbackTrigger='open';failedSelection=null;pendingContinuation=null;},
+    queueContinuation(filmId,mode='resume',target=null){
+      if(!films.some(f=>f.id===filmId)||!['resume','next','target'].includes(mode))return false;
+      pendingContinuation={filmId,mode,target,record:{...historyMetadata[filmId]}};return true;
+    },
+    applyContinuation(film){
+      const intent=pendingContinuation;if(!intent||intent.filmId!==film.id)return null;
+      const mapping=window.OpenStreamEpisodes,list=mapping?.catalog(film),record=intent.record,key=record.episodeKey||mapping?.legacyKey(film,record);
+      let ordinal=key&&list?list.findIndex(item=>item.key===key)+1:Math.max(1,record.episode||1);
+      if(!ordinal||(list&&ordinal>list.length))throw Error('暂未找到记录中的这一集，请返回选集');const previousOrdinal=ordinal;
+      if(intent.mode==='next')ordinal=mapping?mapping.nextOrdinal(film,{episode:ordinal,episodeKey:key}):ordinal<film.episodes?ordinal+1:null;
+      else if(intent.mode==='target')ordinal=Number.isInteger(intent.target)&&intent.target>0?intent.target:null;
+      if(!ordinal||(list&&(!list[ordinal-1]||intent.mode!=='resume'&&list[ordinal-1].kind==='special'))){const previous=episodeFor(film);previous.episode=previousOrdinal;previous.season=list?.[previousOrdinal-1]?.season||record.season||1;pendingContinuation=null;playbackBusy=false;continuePlayback=false;location.hash='detail/'+film.id;toast('正片已看完，可以在选集中查看其他内容');return{finished:true};}
+      const state=episodeFor(film);state.episode=ordinal;state.season=list?.[ordinal-1]?.season||record.season||1;
+      mapping?.sync(film,state,list?.[ordinal-1]?.key);continuePlayback=true;playbackTrigger='manual';return intent;
+    },
     continue(trigger='autoplay'){continuePlayback=true;playbackTrigger=['manual','autoplay','outro','recovery'].includes(trigger)?trigger:'autoplay';},
     selectEpisode(media,episode){
       if(playbackBusy||!media||media!==activePlayback)return false;
@@ -666,10 +685,18 @@
     }
   };
   document.addEventListener('click',event=>{
+    if(event.defaultPrevented||event.metaKey||event.ctrlKey||event.shiftKey||event.altKey||event.button>0)return;
+    const link=event.target.closest('[data-playback-intent],[data-action="resume-history"],[data-new-episode],.detail-section [data-action="episode"]');if(!link||(location.hash.startsWith('#player/')&&link.dataset.action==='episode'))return;
+    const film=films.find(f=>f.id===link.dataset.id);if(!film)return;
+    const mode=link.dataset.playbackIntent|| (link.hasAttribute('data-new-episode')||link.dataset.action==='episode'?'target':'resume');
+    if(!LivePlayback.queueContinuation(film.id,mode,Number(link.dataset.newEpisode||link.dataset.value)))return;
+    event.preventDefault();event.stopImmediatePropagation();const hash='#player/'+film.id;if(location.hash===hash)render();else location.hash=hash;
+  },true);
+  document.addEventListener('click',event=>{
     if(!location.hash.startsWith('#player/'))return;
     const next=event.target.closest('.player-next-episode');if(next){if(playbackBusy||event.detail>1){event.preventDefault();event.stopImmediatePropagation();}return;}
-    const button=event.target.closest('[data-action="episode"]');if(!button)return;
-    event.preventDefault();event.stopImmediatePropagation();if(!playbackBusy)LivePlayback.selectEpisode(activePlayback,Number(button.dataset.value));
+    const button=event.target.closest('[data-action="episode"],[data-action="season"]');if(!button)return;
+    event.preventDefault();event.stopImmediatePropagation();if(!playbackBusy){const film=films.find(f=>f.id===activePlayback?.filmId),target=button.dataset.action==='season'&&film?seasonEpisode(film,Number(button.dataset.value)):Number(button.dataset.value);LivePlayback.selectEpisode(activePlayback,target);}
   },true);
   const saveVisibleProgress=()=>{
     const video=document.querySelector('#watch-player video');
