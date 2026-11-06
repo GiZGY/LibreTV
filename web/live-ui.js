@@ -460,7 +460,7 @@
   }
   function rankedLines(f) {
     const rank={fast:0,fair:1,unknown:2,slow:3};
-    return f.lines.map((line,i)=>({line,i})).sort((a,b)=>(rank[a.line.health]??2)-(rank[b.line.health]??2));
+    return (f.lines||[]).map((line,i)=>({line,i})).sort((a,b)=>(rank[a.line.health]??2)-(rank[b.line.health]??2));
   }
   function routeButtons(f) {
     return `<details class="watch-routes" aria-label="播放线路"><summary class="routes-heading"><span>播放线路 <small>${f.lines.length} 条</small></span><span class="route-current" title="${esc(f.lines[f.lineIndex||0]?.name||'')}">当前 ${esc(f.lines[f.lineIndex||0]?.name||'暂无片源')}</span><span class="route-switch">切换源</span></summary><div class="watch-source-list" aria-label="选择播放线路">${rankedLines(f).map(({line,i})=>`<button class="source-button ${i===(f.lineIndex||0)?'active':''}" data-live-line="${i}" aria-pressed="${i===(f.lineIndex||0)}" ${typeof window!=='undefined'&&window.OpenStreamEpisodes&&OpenStreamEpisodes.indexFor(f,line,episodeFor(f))<0?'disabled title="这条线路没有当前集"':''}><span class="source-dot" data-health="${line.health||'unknown'}" title="${line.estimated?'连接响应预估：':''}${({fast:'流畅',fair:'一般',slow:'缓慢',unknown:'尚未检测'})[line.health||'unknown']}"></span><span>${esc(line.name)}</span></button>`).join('')}</div><p id="route-status" role="status"></p></details>`;
@@ -608,6 +608,7 @@
   const failedPlaybackLines=new Map();
   const overlayNotifiedPlayback=new WeakSet();
   window.LivePlayback={
+    rankedLines,
     current:()=>activePlayback,
     overlay(media){
       if(!media||media!==activePlayback||overlayNotifiedPlayback.has(media))return false;

@@ -19,6 +19,18 @@ async function settings(page,section){
 }
 async function closeSettings(page){await page.locator('.art-control-setting').click();await expect(page.locator('#watch-player .art-video-player')).not.toHaveClass(/art-setting-show/);}
 async function episode(page,n){await expect(page.locator('.episodes .active')).toHaveText(String(n));await expectPlaybackProgress(page,{episode:n});}
+test('fullscreen and inline routes share health order without changing original source identity',async({page})=>{
+ await open(page);
+ await page.locator('.art-control-fullscreen').click();
+ await page.evaluate(()=>{for(const [lineKey,health] of [['qa:1','slow'],['qa:2','fast']])document.dispatchEvent(new CustomEvent('playback-health',{detail:{filmId:'film-qa1',lineKey,health}}));});
+ const inline=await page.locator('[data-live-line]').evaluateAll(items=>items.map(b=>b.dataset.liveLine));
+ expect(inline).toEqual(['1','0']);await panel(page,'lines');
+ expect(await page.locator('[data-player-line]').evaluateAll(items=>items.map(b=>b.dataset.playerLine))).toEqual(inline);
+ await page.locator('[data-player-line]').first().click();
+ await expect.poll(()=>page.evaluate(()=>window.LivePlayback.current()?.lineKey)).toBe('qa:2');
+ await expect(page.locator('video')).toHaveJSProperty('playbackRate',1.75);
+ expect(await page.evaluate(()=>document.fullscreenElement?.id)).toBe('watch-player');
+});
 test('native fullscreen episode and route panels retain identity, speed, mute and keyboard focus',async({page})=>{
  await open(page,{sparse:true});await page.locator('.art-control-fullscreen').click();await panel(page,'episodes');await page.locator('[data-player-episode="3"]').click();await episode(page,3);expect(await page.evaluate(()=>document.fullscreenElement?.id)).toBe('watch-player');await expect(page.locator('video')).toHaveJSProperty('playbackRate',1.75);await expect(page.locator('video')).toHaveJSProperty('muted',true);
  await panel(page,'lines');await page.locator('[data-player-line="1"]').click();await episode(page,3);expect(await page.locator('video').evaluate(v=>v.currentSrc)).toContain('ep=3');expect(await page.evaluate(()=>document.fullscreenElement?.id)).toBe('watch-player');
