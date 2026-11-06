@@ -64,9 +64,11 @@
     for (const c of value) hash = Math.imul(hash ^ c.charCodeAt(0), 16777619);
     return 'film-' + (hash >>> 0).toString(36);
   }
-  function register(item, douban = false) {
+  function register(item, douban = false, stableId = null) {
     const name = data.text(item.vod_name || item.title);
-    const id = douban ? identity((item.provider||'douban')+':' + item.id) : identity(OpenStreamResultAggregator.getResultKey?.(item) || name + '|' + item.vod_year + '|' + item.type_name);
+    let id = douban ? identity((item.provider||'douban')+':' + item.id) : identity(OpenStreamResultAggregator.getResultKey?.(item) || name + '|' + item.vod_year + '|' + item.type_name);
+    if(!douban&&OpenStreamResultAggregator.getVersion?.(item)){const legacyId=identity(OpenStreamResultAggregator.getLegacyResultKey(item)),legacy=films.find(f=>f.id===legacyId);if(legacy&&legacy.name===name&&OpenStreamResultAggregator.getVersion({vod_name:legacy.name})===OpenStreamResultAggregator.getVersion(item))id=legacyId;}
+    if(stableId)id=stableId;
     const old = films.find(f => f.id === id);
     const film = Object.assign(old || {}, {
       id, name, certification:item.certification||old?.certification, ratingSource:item.rating_source||old?.ratingSource||'', catalogProvider:item.provider||old?.catalogProvider||'', catalogId:douban?String(item.id):old?.catalogId, en: item.original_title||old?.en||'',
@@ -146,7 +148,7 @@
       if(i>=featured.length)html=html.replace('<article ','<article data-loop-copy="true" ');
       return html;
     }).join('')}</div>`;
-    $('#main').innerHTML=`<div id="hero-slot"><section class="film-ribbon poster-ribbon" aria-label="精选影片"><div class="film-ribbon-track">${group(false)}${group(true)}</div></section></div><div class="section-head"><h2>推荐影片</h2><a class="text-button" href="#discover">发现更多 ${icon('arrow')}</a></div><div class="filter-tabs">${['全部','科幻','悬疑','剧情','历史'].map(genre=>`<button class="chip ${homeGenre===genre?'selected':''}" data-live-home-genre="${genre}" aria-pressed="${homeGenre===genre}">${genre}</button>`).join('')}</div><div id="home-recommendations">${homeGenre==='全部'?grid(rest):status('正在加载影片…',false)}</div><div class="section-head"><h2>热门剧集</h2></div><div id="live-tv">${status('正在加载剧集…',false)}</div>`;
+    $('#main').innerHTML=`${window.OpenStreamLibrary?.continueWatching()||''}<div id="hero-slot"><section class="film-ribbon poster-ribbon" aria-label="精选影片"><div class="film-ribbon-track">${group(false)}${group(true)}</div></section></div><div class="section-head"><h2>推荐影片</h2><a class="text-button" href="#discover">发现更多 ${icon('arrow')}</a></div><div class="filter-tabs">${['全部','科幻','悬疑','剧情','历史'].map(genre=>`<button class="chip ${homeGenre===genre?'selected':''}" data-live-home-genre="${genre}" aria-pressed="${homeGenre===genre}">${genre}</button>`).join('')}</div><div id="home-recommendations">${homeGenre==='全部'?grid(rest):status('正在加载影片…',false)}</div><div class="section-head"><h2>热门剧集</h2></div><div id="live-tv">${status('正在加载剧集…',false)}</div>`;
     if(homeGenre!=='全部')await updateHomeGenre(homeGenre);
     try {
       const {items:tv}=await data.discoverTMDB({type:'电视剧',genre:'全部',year:'全部',sort:'精选',minRating:6.5,page:1,signal});
@@ -227,30 +229,31 @@
   }
   const recentSearchViews=new Map();
   async function fetchSearch(query,signal,token) {
-    $('#main').innerHTML=`<div class="page-title"><h1>搜索结果</h1><p id="search-progress">正在搜索“${esc(query)}”…</p></div><div id="live-results"></div>`;
+    $('#main').innerHTML=`<div class="page-title"><h1>搜索结果</h1><p id="search-progress">正在搜索“${esc(query)}”…</p></div><div class="search-result-filters"><label>类型<select data-search-filter="type"><option value="all">全部类型</option><option>电影</option><option>电视剧</option><option>动漫</option><option>综艺</option></select></label><label>年份<select data-search-filter="year"><option value="all">全部年份</option></select></label><label>季<select data-search-filter="season"><option value="all">全部季</option></select></label></div><div id="live-results" class="poster-grid"></div><p id="search-empty" class="search-empty" hidden>没有符合筛选条件的影片</p>`;
+    const host=$('#live-results'),itemsById=new Map(),nodes=new Map(),filters={type:'all',year:'all',season:'all'};
+    const applyFilters=()=>{let visible=0;for(const[id,f]of itemsById){const show=(filters.type==='all'||f.type===filters.type)&&(filters.year==='all'||String(f.year)===filters.year)&&(filters.season==='all'||String(f.searchSeason||'unknown')===filters.season);nodes.get(id).hidden=!show;if(show)visible++;}$('#search-empty').hidden=visible>0||!itemsById.size;};
+    const updateOptions=()=>{for(const[key,values]of [['year',[...new Set([...itemsById.values()].map(f=>f.year).filter(Boolean))].sort((a,b)=>Number(b)-Number(a))],['season',[...new Set([...itemsById.values()].map(f=>f.searchSeason||'unknown'))].sort((a,b)=>Number(a)-Number(b))]]){const select=document.querySelector(`[data-search-filter="${key}"]`);for(const value of values)if(![...select.options].some(option=>option.value===String(value))){const option=document.createElement('option');option.value=value;option.textContent=key==='season'?(value==='unknown'?'季号未标注':'第 '+value+' 季'):value;select.append(option);}}};
+    const addFilms=(items,raw=true)=>{
+      const specificity=item=>Number(!!item.vod_year)+Number(!!item.vod_director)+Number(!!OpenStreamResultAggregator.getSeason?.(item));
+      const ordered=items.slice().sort((a,b)=>Number((b.vod_name||b.name)===query)-Number((a.vod_name||a.name)===query)||specificity(b)-specificity(a)),visible=new Set(),claimed=new Set();
+      for(const item of ordered){
+        let stableId=null;const sources=raw?(item.source_lines||[item]).map(line=>line.source_code+':'+line.vod_id):[],year=String(item.vod_year||''),season=raw?OpenStreamResultAggregator.getSeason?.(item)||'':'',version=raw?OpenStreamResultAggregator.getVersion?.(item)||'':'';
+        if(raw){const matches=[...itemsById.values()].filter(f=>!claimed.has(f.id)&&f.searchSources?.some(key=>sources.includes(key))&&(!year||!f.year||String(f.year)===year)&&(!season||!f.searchSeason||f.searchSeason===season)&&f.searchVersion===version);if(matches.length===1)stableId=matches[0].id;}
+        const f=raw?register(item,false,stableId):item;claimed.add(f.id);visible.add(f.id);if(raw){f.searchSources=sources;f.searchSeason=season;f.searchVersion=version;f.searchVersionLabel=OpenStreamResultAggregator.getVersionLabel?.(item)||'';f.sourceCount=item.source_lines?.length||1;}itemsById.set(f.id,f);
+        let node=nodes.get(f.id);if(!node){const template=document.createElement('template');template.innerHTML=card(f);node=template.content.firstElementChild;if(!node)continue;node.dataset.film=f.id;const badge=document.createElement('p');badge.className='search-version-note';badge.textContent=[f.searchSeason?'第 '+f.searchSeason+' 季':'',f.searchVersionLabel||'',f.sourceCount+' 个来源'].filter(Boolean).join(' · ');node.querySelector('a').append(badge);nodes.set(f.id,node);host.append(node);}else{const badge=node.querySelector('.search-version-note');if(badge)badge.textContent=[f.searchSeason?'第 '+f.searchSeason+' 季':'',f.searchVersionLabel||'',f.sourceCount+' 个来源'].filter(Boolean).join(' · ');}}
+      for(const[id,node]of nodes)if(!visible.has(id)){if(node.contains(document.activeElement)){node.setAttribute('aria-busy','true');node.addEventListener('focusout',()=>{if(!node.contains(document.activeElement)&&!itemsById.has(id)){node.remove();nodes.delete(id);}},{once:true});}else{node.remove();nodes.delete(id);}itemsById.delete(id);}
+      updateOptions();applyFilters();
+    };
+    document.querySelectorAll('[data-search-filter]').forEach(select=>select.addEventListener('change',()=>{filters[select.dataset.searchFilter]=select.value;applyFilters();}));
     const cacheKey=JSON.stringify([query,data.sources()]),cached=recentSearchViews.get(cacheKey);
-    if(cached&&Date.now()-cached.time<300000){$('#live-results').innerHTML=grid(cached.ids.map(id=>films.find(f=>f.id===id)).filter(Boolean));$('#search-progress').textContent='“'+query+'” · '+cached.ids.length+' 部影片';return;}
-    const result=await searchFilms(query,signal,items=>{
-      if(token!==generation)return;
-      const host=$('#live-results');
-      // Retain existing cards as slower sources add routes to an existing film.
-      const visible=new Set();
-      const ordered=items.slice().sort((a,b)=>Number(b.vod_name===query)-Number(a.vod_name===query));
-      ordered.forEach((item,index)=>{
-        const f=register(item);visible.add(f.id);
-        let node=host.querySelector(`[data-film="${f.id}"]`);
-        if(!node){const template=document.createElement('template');template.innerHTML=card(f);node=template.content.firstElementChild;if(!node)return;node.dataset.film=f.id;}
-        if(host.children[index]!==node)host.insertBefore(node,host.children[index]||null);
-      });
-      [...host.children].forEach(node=>{if(!visible.has(node.dataset.film))node.remove();});
-      host.classList.add('poster-grid');
-      $('#search-progress').textContent=`“${query}” · ${items.length} 部影片，正在补充线路…`;
-    });
+    if(cached&&Date.now()-cached.time<300000){addFilms(cached.ids.map(id=>films.find(f=>f.id===id)).filter(Boolean),false);$('#search-progress').textContent='“'+query+'” · '+cached.ids.length+' 部影片';return;}
+    const result=await searchFilms(query,signal,items=>{if(token!==generation)return;addFilms(items);$('#search-progress').textContent=`“${query}” · ${itemsById.size} 部影片，正在补充线路…`;});
     if(token!==generation)return;
-    const accepted=result.results.filter(data.allowed),count=accepted.length;
-    if(count){recentSearchViews.set(cacheKey,{time:Date.now(),ids:accepted.map(item=>register(item).id)});if(recentSearchViews.size>8)recentSearchViews.delete(recentSearchViews.keys().next().value);}
-    $('#search-progress').textContent=`“${query}” · ${count} 部影片`;
-    if(!count)$('#live-results').innerHTML=status(result.statuses.some(value=>value==='no_result')?'暂未找到影片。可以换个片名，或稍后重试。':'当前来源暂时无法响应，请稍后重试。');
+    const accepted=result.results.filter(data.allowed);addFilms(accepted);const count=itemsById.size;
+    if(count){recentSearchViews.set(cacheKey,{time:Date.now(),ids:[...itemsById.keys()]});if(recentSearchViews.size>8)recentSearchViews.delete(recentSearchViews.keys().next().value);}
+    const partial=result.statuses.some(value=>!['ready','success','no_result','skipped'].includes(value));
+    $('#search-progress').textContent=`“${query}” · ${count} 部影片${partial?' · 部分来源暂未响应':''}`;
+    if(!count){host.classList.remove('poster-grid');host.innerHTML=status(result.statuses.length&&result.statuses.every(value=>['ready','success','no_result','skipped'].includes(value))?'暂未找到影片。可以换个片名，或稍后重试。':'当前来源暂时无法响应，请稍后重试。');}
   }
   async function resolveFilm(f,signal,force=false) {
     if(f.lines?.length)return f;
@@ -304,7 +307,7 @@
         f.director=data.text(result.item.vod_director)||f.director;f.cast=data.text(result.item.vod_actor)||f.cast;
       }
       f.episodes=Math.max(...f.lines.map(line=>line.episodes.length));f.length=data.text(result.item.vod_remarks);
-      persist();return f;
+      globalThis.OpenStreamLibrary?.availability.record(f.id,'sources');persist();return f;
     })();
     detailTasks.set(f.id,{task,signal});
     try{return await task;}finally{if(detailTasks.get(f.id)?.task===task)detailTasks.delete(f.id);}
@@ -359,7 +362,7 @@
       await resolveFilm(f,AbortSignal.any([signal,controller.signal]),force);
       if(signal.aborted||token!==generation)return;
       button.setAttribute('href',href);button.removeAttribute('aria-disabled');button.innerHTML=label;
-      note.textContent=`已找到 ${f.lines.length} 条播放线路`;
+      window.OpenStreamLibrary?.availability.record(f.id,'sources');note.textContent=`已找到 ${f.lines.length} 条播放线路 · 尚未验证实际播放`;
       if(newEpisode(f)){
         const link=document.createElement('a');link.className='text-button';link.href='#player/'+f.id;link.dataset.newEpisode=newEpisode(f);link.dataset.id=f.id;link.textContent='有新集 · 第 '+newEpisode(f)+' 集';note.append(' ',link);
       }
@@ -367,7 +370,7 @@
       if(f.catalogProvider!=='tmdb')refreshDetailText(f);
     }catch(error){
       if(signal.aborted||token!==generation)return;
-      const missing=error.code==='no_result';
+      const missing=error.code==='no_result';window.OpenStreamLibrary?.availability.record(f.id,missing?'no_result':'query_failed');
       button.textContent=missing?'暂无片源':'查询未完成';
       button.title=error.code==='no_result'?'未找到匹配片源':'本次查询未成功，可稍后再试';
       note.textContent='';
@@ -503,7 +506,7 @@
       const accessMs=needsAccess?performance.now()-accessStarted:0;
       if(token!==generation)return;
       showSources();
-      if(page==='home'){activePlayback=null;$('#main').innerHTML=status('正在加载推荐…',false);await fetchHome(signal,token);}
+      if(page==='home'){activePlayback=null;$('#main').innerHTML=(window.OpenStreamLibrary?.continueWatching()||'')+status('正在加载推荐…',false);try{await fetchHome(signal,token);}catch(error){if(!signal.aborted&&token===generation)$('#main').innerHTML=(window.OpenStreamLibrary?.continueWatching()||'')+status(error.message);}}
       else if(page==='discover'){activePlayback=null;await fetchDiscovery(signal,token);}
       else if(page==='search'){activePlayback=null;await fetchSearch(decodeURIComponent(encoded),signal,token);}
       else if(page==='detail'||page==='player'){
@@ -624,6 +627,10 @@
   };
   window.addEventListener('pagehide',saveVisibleProgress);
   document.addEventListener('visibilitychange',()=>{if(document.hidden)saveVisibleProgress();});
+  window.LiveLibrary={async checkUpdates(f){
+    const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),12000),copy={...f};delete copy.lines;delete copy.candidates;copy.candidatesComplete=false;
+    try{await resolveFilm(copy,controller.signal,true);f.episodes=copy.episodes;f.linesCheckedAt=copy.linesCheckedAt;persist();return copy.episodes;}finally{clearTimeout(timer);}
+  }};
   migrateHistory();
   render();
 })();
