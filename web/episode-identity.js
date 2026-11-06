@@ -5,10 +5,11 @@
  function number(value){
   if(/^\d{1,4}$/.test(value))return Number(value);
   if(!/^[零〇一二两三四五六七八九十百千]+$/.test(value))return NaN;
+  if(!/[十百千]/.test(value))return Number([...value].map(char=>digits[char]).join(''));
   let sum=0,current=0;for(const char of value){if(char in digits)current=digits[char];else{const unit={十:10,百:100,千:1000}[char];sum+=(current||1)*unit;current=0;}}return sum+current;
  }
  function describe(value,{series=true,season=1}={}){
-  const label=clean(value),normal=label.toLowerCase().replace(/[\s._\-【】\[\]（）()]/g,'');
+  const label=clean(value),normal=label.toLowerCase().replace(/[\s_【】\[\]（）()]/g,'').replace(/([集话期])[-.]/g,'$1');
   if(!series)return{key:'feature',label:label||'正片',season:1,number:1,kind:'feature'};
   if(/预告|花絮|特辑|特别篇|番外|彩蛋|trailer|preview|special|^sp\d*/i.test(normal))return{key:'special:'+normal,label:label||'特别篇',season,number:null,kind:'special'};
   const seasonMatch=normal.match(/第([零〇一二两三四五六七八九十百千\d]+)季/)||normal.match(/^s(\d{1,2})e/i);
@@ -16,7 +17,7 @@
   const match=normal.match(/s\d{1,2}e(\d{1,4})/i)||normal.match(/第([零〇一二两三四五六七八九十百千\d]+)[集话期]/)||normal.match(/^(?:ep?|episode)?(\d{1,4})(?:集|话|期)?(?:[上下中](?:集|部)?|完|end)?$/i);
   const n=match?number(match[1]):NaN;
   if(Number.isInteger(n)&&n>0&&n<=1000&&Number.isInteger(s)&&s>0&&s<=100){
-   const part=/[（(]上[）)]|(?:集|话|期|\d)上(?:集|部)?$/.test(label)?'上':/[（(]下[）)]|(?:集|话|期|\d)下(?:集|部)?$/.test(label)?'下':/[（(]中[）)]|(?:集|话|期|\d)中(?:集|部)?$/.test(label)?'中':'';
+   const part=normal.match(/(?:集|话|期|\d)([上中下])(?:集|部)?$/)?.[1]||'';
    return{key:'s'+s+':e'+n+(part?':'+part:''),label:label||'第 '+n+' 集',season:s,number:n,part,kind:'episode'};
   }
   return{key:'label:'+normal,label:label||'未标注集名',season:s,number:null,kind:'label'};
@@ -34,6 +35,11 @@
   return list.length?list:Array.from({length:Math.min(1000,Math.max(1,Number(f.episodes)||1))},(_,i)=>({key:'unresolved:'+i,label:'第 '+(i+1)+' 集',season:1,number:i+1,kind:'unresolved'}));
  }
  function sync(f,state,key){
+  if(!serial(f)&&f.lines){
+   const selected=f.lines[f.lineIndex||0]?.key,lines=new Map();
+   for(const line of f.lines){if(line.episodes?.length>1){line.episodes.forEach((episode,index)=>{const key=line.key+':version:'+index;if(!lines.has(key))lines.set(key,{...line,key,name:line.name+' · '+(episode.name||'版本 '+(index+1)),version:episode.name,episodes:[episode]});});}else if(!lines.has(line.key))lines.set(line.key,line);}
+   f.lines=[...lines.values()];const index=f.lines.findIndex(line=>line.key===selected||line.key===selected+':version:0');if(index>=0)f.lineIndex=index;
+  }
   const previous=catalogs.get(f),keep=key||previous?.[Math.max(0,(state?.episode||1)-1)]?.key,list=catalog(f);catalogs.set(f,list);f.episodes=list.length;
   if(state){const index=list.findIndex(item=>item.key===keep);if(index>=0)state.episode=index+1;else state.episode=Math.min(list.length,Math.max(1,state.episode||1));state.season=list[state.episode-1]?.season||1;}
   return list;
@@ -44,6 +50,10 @@
   const matches=(line?.episodes||[]).map((episode,index)=>({index,item:describe(episode.name,{series:serial(f)})})).filter(({item})=>item.key===key);
   return matches.length===1?matches[0].index:-1;
  }
+ function legacyKey(f,record){
+  if(record?.episodeKey)return record.episodeKey;if(!record?.source||!Number.isInteger(record.episode)||record.episode<1)return null;
+  const keys=new Set((f.lines||[]).filter(line=>line.sourceKey===record.source).map(line=>line.episodes?.[record.episode-1]).filter(Boolean).map(episode=>describe(episode.name,{series:serial(f)}).key));return keys.size===1?[...keys][0]:null;
+ }
  function cut(line){const label=clean([line?.name,line?.label,line?.version].filter(Boolean).join(' '));return label.match(/导演剪辑|加长|未删减|删减|精简|剧场版|电视版|修复版/)?.[0]||'标准版';}
- window.OpenStreamEpisodes={describe,catalog,sync,selection,indexFor,cut};
+ window.OpenStreamEpisodes={describe,catalog,sync,selection,indexFor,legacyKey,cut};
 })();
