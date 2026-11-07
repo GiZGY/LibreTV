@@ -15,6 +15,7 @@ function sound(initial={muted:true,volume:0}){
 test('decoder unmute on play is repaired before it can overwrite the saved sound preference',()=>{
  const p=sound();assert.equal(p.video.volume,0);assert.equal(p.video.defaultMuted,true);
  p.play();assert.equal(p.video.muted,true);assert.equal(p.saved.muted,true);
+ p.video.muted=false;p.events['video:ratechange']();p.events['video:volumechange']();assert.equal(p.video.muted,true);assert.equal(p.saved.muted,true);
 });
 test('user unmute and volume changes survive pause/play and remount; zero is preserved',()=>{
  const p=sound();p.video.muted=false;p.video.volume=.4;p.events['video:volumechange']();

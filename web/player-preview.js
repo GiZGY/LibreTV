@@ -145,9 +145,10 @@
     instance.video.muted=sound.muted;
     instance.video.volume=sound.volume;
    }
-   // WebKit can reset the decoder's mute state on play without calling the JS setter.
+   // WebKit can reset decoder mute on play or rate changes without a JS setter call.
    restoreSound();
    instance.on('video:play',restoreSound);
+   instance.on('video:ratechange',restoreSound);
    session ||= media?.url?window.OpenStreamPlayback?.createSession({transition:media?.switched?'line':media?.autoplay?'episode':'open',trigger:media?.trigger||'open'}):null;
    session?.bindMedia(media,media?.episodeKey,()=>!instance.isDestroy&&media===window.LivePlayback?.current());
    instance.on('destroy',()=>session?.dispose());
