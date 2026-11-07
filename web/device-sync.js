@@ -7,7 +7,7 @@
  const id=()=>crypto.randomUUID(),tag=(bucket,key)=>bucket+'|'+key;
  let saved;try{saved=JSON.parse(localStorage.getItem(STORAGE)||'null');}catch{}
  let state=saved&&(/^[\w-]{43}$/.test(saved.credential||'')||saved.pendingAuth||saved.pendingJoinRequest||saved.pendingInvite)?{...saved,known:saved.known||{},dirty:saved.dirty||{},conflicts:saved.conflicts||{},observed:saved.observed||{},inflight:saved.inflight||{},sessions:{}}:{enabled:false,approved:false,syncPreferences:false,known:{},dirty:{},conflicts:{},observed:{},inflight:{},sessions:{}};
- let dialog,opener,busy=false,running=null,scheduled,pollTimer,periodic,invite=state.pendingInvite||null,joinTicket=state.pendingJoinRequest?{id:state.pendingJoinRequest.id,secret:state.pendingJoinRequest.secret}:null,recoveryCode=null,generation=0,message='',errorMessage=false,available=null,qrPromise;
+ let dialog,opener,busy=false,running=null,scheduled,scheduledAt=0,pollTimer,invite=state.pendingInvite||null,joinTicket=state.pendingJoinRequest?{id:state.pendingJoinRequest.id,secret:state.pendingJoinRequest.secret}:null,recoveryCode=null,generation=0,message='',errorMessage=false,available=null,qrPromise;
  try{recoveryCode=sessionStorage.getItem(RECOVERY);}catch{}
  const playingId=()=>/^#player\//.test(location.hash)?location.hash.split('/')[1]:null;
  function persist(){try{const {sessions,...data}=state;localStorage.setItem(STORAGE,JSON.stringify(data));return true;}catch{message='浏览器保存空间不足，请先导出备份';errorMessage=true;return false;}}
@@ -128,7 +128,7 @@
   }).finally(()=>{running=null;if(epoch!==generation&&state.enabled)schedule(100);renderStatus();if(dialog?.open&&!busy&&!invite&&!joinTicket)render();});
   return running;
  }
- function schedule(delay=2500){clearTimeout(scheduled);if(state.enabled&&state.approved)scheduled=setTimeout(()=>{scheduled=null;if(!document.hidden)void sync();},delay);}
+ function schedule(delay=2500){if(!state.enabled||!state.approved)return;const deadline=Date.now()+delay;if(scheduled&&scheduledAt<=deadline)return;clearTimeout(scheduled);scheduledAt=deadline;scheduled=setTimeout(()=>{scheduled=null;if(!document.hidden)void sync();},delay);}
  function userError(error){return error instanceof TypeError||error instanceof SyntaxError?'连接未完成，请重试；本机数据已保留':error?.name==='NotAllowedError'?'复制未完成，请允许剪贴板访问后重试':error?.name==='TimeoutError'||error?.name==='AbortError'?'连接超时，请重试；本机数据已保留':error?.message||'操作未完成，请重试';}
  function setMessage(text,error=false){message=text;errorMessage=error;renderStatus();}
  function renderStatus(){const target=dialog?.querySelector('[data-sync-status]');if(target){target.textContent=message;target.setAttribute('role',errorMessage?'alert':'status');}}
@@ -207,7 +207,7 @@
   if(result.approved){state.enabled=true;joinTicket=null;capture({seed:true});await sync();}else poll();
  }
  function poll(){
-  clearTimeout(pollTimer);if(!dialog?.open)return;
+  clearTimeout(pollTimer);if(!dialog?.open||document.hidden||!(invite||state.pending))return;
   pollTimer=setTimeout(async()=>{
    try{
     if(invite){if(!invite.expiresAt){const created=await api('invite',invite);invite={...invite,...created};state.pendingInvite=invite;persist();}const result=await api('pairing',{id:invite.id});if(!dialog?.open)return;if(result.state==='approved'){invite=null;delete state.pendingInvite;persist();setMessage('新设备已加入');render();return;}if(['expired','cancelled'].includes(result.state)){invite=null;delete state.pendingInvite;persist();setMessage('邀请已过期或取消，请重新添加设备',true);render();return;}if(invite.state!==result.state){invite={...invite,...result};state.pendingInvite=invite;persist();render();}}
@@ -249,24 +249,30 @@
   }catch(error){setMessage(userError(error),true);}
   finally{busy=false;render();}
  }
- function reset(){generation++;clearTimeout(scheduled);clearTimeout(pollTimer);invite=joinTicket=null;state={enabled:false,approved:false,syncPreferences:false,known:{},dirty:{},conflicts:{},observed:{},inflight:{},sessions:{}};localStorage.removeItem(STORAGE);try{sessionStorage.removeItem(RECOVERY);}catch{}recoveryCode=null;}
+ function reset(){generation++;clearTimeout(scheduled);scheduled=null;clearTimeout(pollTimer);invite=joinTicket=null;state={enabled:false,approved:false,syncPreferences:false,known:{},dirty:{},conflicts:{},observed:{},inflight:{},sessions:{}};localStorage.removeItem(STORAGE);try{sessionStorage.removeItem(RECOVERY);}catch{}recoveryCode=null;}
  function change(event){
   const action=event.target.dataset.sync;
-  if(action==='enabled'){state.enabled=event.target.checked;generation++;persist();if(state.enabled){capture();schedule(100);}else{clearTimeout(scheduled);setMessage('自动同步已暂停，本机数据继续保存');}}
+  if(action==='enabled'){state.enabled=event.target.checked;generation++;persist();if(state.enabled){capture();schedule(100);}else{clearTimeout(scheduled);scheduled=null;setMessage('自动同步已暂停，本机数据继续保存');}}
   if(action==='preferences'){state.syncPreferences=event.target.checked;if(!state.syncPreferences){delete state.dirty[tag('preferences','selected')];delete state.conflicts[tag('preferences','selected')];}capture();persist();schedule();}
  }
  function route(){
   if(location.hash.startsWith('#sync-pair/')){try{if(state.approved){setMessage('此设备已配对，请在未配对的新设备打开邀请',true);}else joinTicket=parseTicket(location.hash);window.history.replaceState(null,'',location.pathname+location.search+'#home');void open();}catch(error){setMessage(userError(error),true);void open();}}
   const filmId=playingId();if(filmId&&state.approved)state.sessions[filmId]={id:id(),claimed:false,sequence:0};
  }
- document.addEventListener('openstream:data-change',()=>{if(capture())schedule();});
- document.addEventListener('visibilitychange',()=>{if(!document.hidden)schedule(500);});
+ document.addEventListener('openstream:data-change',event=>{
+  const key=event.detail?.key;
+  if(key&&!['all','favorites','history','historyMetadataV2','filmRecords','watchlist','autoplay','motion','darkMode','mobileAutoTheme','playbackRate'].includes(key)&&!key.startsWith('skip_'))return;
+  if(capture()&&Object.keys(state.dirty).some(key=>!state.conflicts[key]))schedule(playingId()?30000:2500);
+ });
+ document.addEventListener('pause',event=>{if(event.target.tagName==='VIDEO'&&playingId())schedule(500);},true);
+ document.addEventListener('visibilitychange',()=>{if(!document.hidden){schedule(500);if(dialog?.open&&(invite||state.pending))poll();}else{clearTimeout(scheduled);scheduled=null;clearTimeout(pollTimer);}});
+ window.addEventListener('focus',()=>schedule(500));
+ window.addEventListener('hashchange',()=>schedule(500));
  window.addEventListener('online',()=>schedule(500));window.addEventListener('hashchange',route);
- window.addEventListener('pageshow',event=>{if(event.persisted){startPeriodic();schedule(500);if(dialog?.open&&(invite||state.pending))poll();}});
- window.addEventListener('pagehide',()=>{clearTimeout(scheduled);clearTimeout(pollTimer);clearInterval(periodic);});
+ window.addEventListener('pageshow',event=>{if(event.persisted){schedule(500);if(dialog?.open&&(invite||state.pending))poll();}});
+ window.addEventListener('pagehide',()=>{clearTimeout(scheduled);scheduled=null;clearTimeout(pollTimer);});
  document.addEventListener('click',event=>{const trigger=event.target.closest('[data-device-sync]');if(trigger)void open(trigger);});
  function mountEntry(){const settings=document.querySelector('#settings');if(!settings||settings.querySelector('[data-device-sync]'))return;const row=document.createElement('div');row.className='setting-row';row.innerHTML='<div><b>设备同步</b><p>无需账号，在已配对的设备间续播</p></div><button class="secondary sync-entry" data-device-sync>管理设备</button>';const reference=settings.querySelector('.settings-sources');if(reference)reference.before(row);else settings.append(row);}
- function startPeriodic(){clearInterval(periodic);periodic=setInterval(()=>{if(!document.hidden&&state.enabled&&state.approved)void sync();},30000);}
- mountEntry();route();if(state.credential&&state.approved){capture();schedule(1500);}startPeriodic();
+ mountEntry();route();if(state.credential&&state.approved){capture();schedule(1500);}
  window.OpenStreamDeviceSync={open,sync,get status(){return{enabled:state.enabled,approved:state.approved,pending:Object.keys(state.dirty).length,conflicts:Object.keys(state.conflicts).length};}};
 })();

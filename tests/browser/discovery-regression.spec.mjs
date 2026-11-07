@@ -75,3 +75,20 @@ test('when the catalogue changes and the saved next page disappears, the first p
  await expect(page.locator('.pagination span')).toHaveText('第 1 / 1 页');await expect(page.locator('[data-live-page="1"]')).toBeDisabled();
  expect(calls).toEqual([[1,null],[2,'12'],[2,null],[1,null]]);
 });
+
+test('delayed discovery completion never overrides a user scroll, but untouched back restores position',async({page})=>{
+ await page.route('**/api/catalog/tmdb?**',async route=>{
+  await route.fulfill({json:{indexed:true,filtered:true,rawCount:40,items:Array.from({length:40},(_,i)=>({provider:'tmdb',id:i+1,title:'滚动测试 '+i,year:'2024'})),total:40,totalPages:1,hasNext:false}});
+ });
+ await page.goto('/#discover');await expect(page.locator('#discovery-cards article')).toHaveCount(40);
+ await page.mouse.move(800,500);await page.mouse.wheel(0,700);await expect.poll(()=>page.evaluate(()=>scrollY)).toBeGreaterThan(500);
+ const remembered=await page.evaluate(()=>scrollY);
+ await page.evaluate(()=>location.hash='history');await expect(page.getByRole('heading',{name:'观看历史'})).toBeVisible();
+ await page.goBack();await expect(page.locator('#discovery-cards')).not.toHaveAttribute('aria-busy','true');
+ await expect.poll(()=>page.evaluate(()=>scrollY)).toBe(remembered);
+ await page.evaluate(()=>location.hash='history');await expect(page.getByRole('heading',{name:'观看历史'})).toBeVisible();
+ await page.evaluate(()=>{const original=LiveData.discoverTMDB;LiveData.discoverTMDB=async(...args)=>{await new Promise(resolve=>window.releaseDiscovery=resolve);return original(...args);};});await page.goBack();await expect(page.locator('#discovery-cards')).toHaveAttribute('aria-busy','true');
+ await page.evaluate(async()=>{await new Promise(requestAnimationFrame);await new Promise(requestAnimationFrame);});await page.mouse.move(800,500);await page.mouse.wheel(0,1100);await expect.poll(()=>page.evaluate(()=>scrollY)).toBeGreaterThan(900);
+ const chosen=await page.evaluate(()=>scrollY);await page.evaluate(()=>window.releaseDiscovery());await expect(page.locator('#discovery-cards')).not.toHaveAttribute('aria-busy','true');
+ await page.waitForTimeout(300);expect(await page.evaluate(()=>scrollY)).toBe(chosen);
+});

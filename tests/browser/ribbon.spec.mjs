@@ -26,11 +26,12 @@ async function openRibbon(page,count=8){
 async function period(page){return page.locator('.film-ribbon-track').evaluate(track=>Number(track.getAnimations({subtree:true}).filter(animation=>animation.animationName==='ribbon-travel')[0].effect.getTiming().duration));}
 async function phase(page,time,play=false){
  await page.locator('.film-ribbon-track').evaluate(async(track,{time,play})=>{
-  [...track.children].forEach(group=>{group.style.animationPlayState=play?'':'paused';});
+  track.style.animationPlayState=play?'':'paused';
   track.getAnimations({subtree:true}).filter(animation=>animation.animationName==='ribbon-travel').forEach(animation=>{animation.currentTime=time;});
   await new Promise(requestAnimationFrame);await new Promise(requestAnimationFrame);
  },{time,play});
 }
+async function shift(page,anchor,from,expected){const width=await page.locator('.film-ribbon-group').first().evaluate(n=>n.getBoundingClientRect().width),error=(await anchor.boundingBox()).x-from-expected;return Math.abs(error-Math.round(error/width)*width);}
 async function coverage(page){
  return page.locator('.film-ribbon').evaluate(ribbon=>{
   const box=ribbon.getBoundingClientRect(),gap=parseFloat(getComputedStyle(ribbon.firstElementChild.firstElementChild).columnGap);
@@ -52,12 +53,12 @@ for(const {count,width} of [{count:8,width:1365},{count:2,width:1365},{count:1,w
   const duration=await period(page),ribbon=page.locator('.film-ribbon');
   const copies=await ribbon.locator('.film-ribbon-group').first().locator('.poster-card').count()/count;
   // Check the last-to-first title seam and both physical group resets.
-  for(const boundary of [duration/(2*copies),duration/2,duration]){
+  for(const boundary of [duration/copies,duration/2,duration]){
    await phase(page,boundary-.001);const before=await ribbon.screenshot();
-   const node=await ribbon.evaluate(r=>{const box=r.getBoundingClientRect();return [...r.querySelectorAll('.poster-card')].findIndex(card=>{const rect=card.getBoundingClientRect();return rect.left<=box.left+80&&rect.right>=box.left+80;});});
+   const node=await ribbon.evaluate(r=>{const box=r.getBoundingClientRect();return [...r.querySelectorAll('.poster-card')].find(card=>{const rect=card.getBoundingClientRect();return rect.left<=box.left+80&&rect.right>=box.left+80;})?.querySelector('a').getAttribute('href');});
    await phase(page,boundary+.001);const after=await ribbon.screenshot();
-   const afterNode=await ribbon.evaluate(r=>{const box=r.getBoundingClientRect();return [...r.querySelectorAll('.poster-card')].findIndex(card=>{const rect=card.getBoundingClientRect();return rect.left<=box.left+80&&rect.right>=box.left+80;});});
-   expect(afterNode,'the visible physical poster must not be replaced at a reset').toBe(node);expect(node).toBeGreaterThanOrEqual(0);
+   const afterNode=await ribbon.evaluate(r=>{const box=r.getBoundingClientRect();return [...r.querySelectorAll('.poster-card')].find(card=>{const rect=card.getBoundingClientRect();return rect.left<=box.left+80&&rect.right>=box.left+80;})?.querySelector('a').getAttribute('href');});
+   expect(afterNode,'the same work stays painted at the seam').toBe(node);expect(node).toBeTruthy();
    expect(frameError(before,after),'actual painted pixels at the reset').toBeLessThan(1);
    const fit=await coverage(page);expect(fit.groupWidth).toBeGreaterThanOrEqual(fit.width);expect(fit.largestGap).toBeLessThanOrEqual(fit.gap+1);
   }
@@ -66,9 +67,9 @@ for(const {count,width} of [{count:8,width:1365},{count:2,width:1365},{count:1,w
   const samples=await ribbon.evaluate(async r=>{
    const box=r.getBoundingClientRect(),cards=[...r.querySelectorAll('.poster-card')];
    const anchor=cards.find(card=>{const rect=card.getBoundingClientRect();return rect.left<=box.left+80&&rect.right>=box.left+80;});
-   const positions=[],start=performance.now();while(performance.now()-start<2100){await new Promise(requestAnimationFrame);positions.push({x:anchor.getBoundingClientRect().left,wall:performance.now()});}
+   const positions=[],start=performance.now(),width=r.firstElementChild.firstElementChild.getBoundingClientRect().width;let last=anchor.getBoundingClientRect().left,offset=0;while(performance.now()-start<2100){await new Promise(requestAnimationFrame);const raw=anchor.getBoundingClientRect().left;if(raw-last>width/2)offset-=width;positions.push({x:raw+offset,wall:performance.now()});last=raw;}
    const animation=r.firstElementChild.getAnimations({subtree:true}).filter(animation=>animation.animationName==='ribbon-travel')[0];
-   return {positions,time:animation.currentTime,velocity:2*r.firstElementChild.firstElementChild.getBoundingClientRect().width/animation.effect.getTiming().duration};
+   return {positions,time:animation.currentTime,velocity:r.firstElementChild.firstElementChild.getBoundingClientRect().width/animation.effect.getTiming().duration};
   });
   expect(samples.time).toBeGreaterThan(duration+100);
   expect(samples.positions.at(-1).x).toBeLessThan(samples.positions[0].x);
@@ -80,12 +81,12 @@ test('dragging across either end keeps 1:1 motion and resumes from the released 
  await openRibbon(page);const duration=await period(page);await phase(page,duration-.001,true);
  const ribbon=page.locator('.film-ribbon'),box=await ribbon.boundingBox(),anchor=ribbon.locator('.film-ribbon-group').first().locator('.poster-card').first();
  await page.mouse.move(box.x+120,box.y+100);await page.mouse.down();await page.evaluate(()=>new Promise(requestAnimationFrame));const start=(await anchor.boundingBox()).x;
- await page.mouse.move(box.x+210,box.y+100,{steps:6});expect((await anchor.boundingBox()).x-start).toBeCloseTo(90,0);
- await page.mouse.move(box.x+20,box.y+100,{steps:8});expect((await anchor.boundingBox()).x-start).toBeCloseTo(-100,0);
+ await page.mouse.move(box.x+210,box.y+100,{steps:6});expect(await shift(page,anchor,start,90)).toBeLessThan(1.5);
+ await page.mouse.move(box.x+20,box.y+100,{steps:8});expect(await shift(page,anchor,start,-100)).toBeLessThan(1.5);
  const released=(await anchor.boundingBox()).x;await page.mouse.up();await page.mouse.move(5,5);
  await expect(ribbon).not.toHaveClass(/is-dragging|is-held/);await expect.poll(async()=>(await anchor.boundingBox()).x).toBeLessThan(released-2);
  // Several fast alternating gestures must not navigate or reset the phase.
- for(const delta of [80,-110,70,-90]){await page.mouse.move(box.x+160,box.y+100);await page.mouse.down();await page.evaluate(()=>new Promise(requestAnimationFrame));const x=(await anchor.boundingBox()).x;await page.mouse.move(box.x+160+delta,box.y+100,{steps:3});expect(Math.abs((await anchor.boundingBox()).x-x-delta)).toBeLessThan(1.5);await page.mouse.up();}
+ for(const delta of [80,-110,70,-90]){await page.mouse.move(box.x+160,box.y+100);await page.mouse.down();await page.evaluate(()=>new Promise(requestAnimationFrame));const x=(await anchor.boundingBox()).x;await page.mouse.move(box.x+160+delta,box.y+100,{steps:3});expect(await shift(page,anchor,x,delta)).toBeLessThan(1.5);await page.mouse.up();}
  await page.mouse.move(5,5);expect(new URL(page.url()).hash).toBe('#home');
  const fit=await coverage(page);expect(fit.largestGap).toBeLessThanOrEqual(fit.gap+1);
 });
@@ -96,7 +97,7 @@ test('visible posters and repeated favorite clicks remain usable after a loop',a
  const id=await favorite.getAttribute('data-id'),href=await link.getAttribute('href');
  const box=await card.boundingBox();await page.mouse.move(box.x+80,box.y+100);
  // Pause through real hover, then use pointer clicks rather than waiting for an animated control to be stable.
- await expect.poll(()=>card.evaluate(c=>c.parentElement.getAnimations()[0].playState)).toBe('paused');
+ await expect.poll(()=>card.evaluate(c=>c.closest('.film-ribbon-track').getAnimations()[0].playState)).toBe('paused');
  const button=await favorite.boundingBox();await page.mouse.click(button.x+button.width/2,button.y+button.height/2,{clickCount:2});await expect(favorite).toHaveAttribute('aria-pressed','false');
  const nextButton=await favorite.boundingBox();await page.mouse.click(nextButton.x+nextButton.width/2,nextButton.y+nextButton.height/2);await expect(favorite).toHaveAttribute('aria-pressed','true');
  for(const button of await page.locator(`.film-ribbon [data-action="favorite"][data-id="${id}"]`).all())await expect(button).toHaveAttribute('aria-pressed','true');
@@ -112,7 +113,7 @@ test('ribbon stays static and has no duplicate focus stops with reduced motion',
  const box=await ribbon.boundingBox();await page.mouse.move(box.x+300,box.y+100);await page.mouse.down();await page.mouse.move(box.x+80,box.y+100,{steps:8});await page.mouse.up();
  expect(await ribbon.evaluate(r=>r.scrollLeft)).toBeGreaterThan(180);
  await page.emulateMedia({reducedMotion:'no-preference'});await page.mouse.move(5,5);
- await expect.poll(()=>ribbon.evaluate(r=>r.firstElementChild.getAnimations({subtree:true}).filter(animation=>animation.animationName==='ribbon-travel').length)).toBe(2);
+ await expect.poll(()=>ribbon.evaluate(r=>r.firstElementChild.getAnimations({subtree:true}).filter(animation=>animation.animationName==='ribbon-travel').length)).toBe(1);
  expect(await ribbon.evaluate(r=>r.scrollLeft)).toBe(0);
  // The in-product preference follows the same reduced-motion path.
  await page.locator('[data-action="settings"]').first().click();await page.locator('#motion').check();
@@ -139,7 +140,7 @@ test('real touch swipes cross the boundary in both directions without opening a 
    await touch('touchStart',200);await page.evaluate(()=>new Promise(requestAnimationFrame));const x=(await anchor.boundingBox()).x;
    for(let step=1;step<=5;step++)await touch('touchMove',200+delta*step/5);
    await page.evaluate(()=>new Promise(requestAnimationFrame));
-   expect((await anchor.boundingBox()).x-x).toBeCloseTo(delta,0);await touch('touchEnd');
+   expect(await shift(page,anchor,x,delta)).toBeLessThan(1.5);await touch('touchEnd');
    await expect(ribbon).not.toHaveClass(/is-dragging|is-held/);
   }
   expect(new URL(page.url()).hash).toBe('#home');const fit=await coverage(page);expect(fit.largestGap).toBeLessThanOrEqual(fit.gap+1);
@@ -161,7 +162,7 @@ test('one, two and eight titles keep the old eight-title per-card pace',async({b
  try{
   await openRibbon(baseline,8);
   // Old CSS moved a double track by 50% in 140s: 16 card pitches, or 8.75s per card.
-  await expect(baseline.locator('.film-ribbon-group').first().locator('.poster-card')).toHaveCount(16);
+  await baseline.locator('.film-ribbon-group').evaluateAll(groups=>{for(const g of groups)for(const child of [...g.children])g.append(child.cloneNode(true));});await expect(baseline.locator('.film-ribbon-group').first().locator('.poster-card')).toHaveCount(16);
   await baseline.addStyleTag({content:'.film-ribbon-track{display:flex;animation:legacy-ribbon-travel 140s linear infinite!important}.film-ribbon-group{animation:none!important}@keyframes legacy-ribbon-travel{to{transform:translateX(-50%)}}'});
   const duration=await baseline.locator('.film-ribbon-track').evaluate(track=>track.getAnimations()[0].effect.getTiming().duration);
   expect(duration).toBe(140000);old=await measure(baseline);
@@ -191,7 +192,16 @@ test('pressing a ribbon gap pauses before a drag can capture a stale phase',asyn
  const start=(await anchor.boundingBox()).x;
  const held=await anchor.evaluate(async card=>{for(let i=0;i<10;i++)await new Promise(requestAnimationFrame);return card.getBoundingClientRect().left;});
  expect(Math.abs(held-start)).toBeLessThan(.1);
- await page.mouse.move(point.x-60,point.y,{steps:3});expect((await anchor.boundingBox()).x-start).toBeCloseTo(-60,0);
+ await page.mouse.move(point.x-60,point.y,{steps:3});expect(await shift(page,anchor,start,-60)).toBeLessThan(1.5);
  const released=(await anchor.boundingBox()).x;await page.mouse.up();await page.mouse.move(5,5);
  await expect(ribbon).not.toHaveClass(/is-held|is-dragging/);await expect.poll(async()=>(await anchor.boundingBox()).x).toBeLessThan(released-2);
+});
+
+test('one compositor timeline and bounded copies remain stable over many loops without DOM refresh',async({page})=>{
+ await openRibbon(page);const ribbon=page.locator('.film-ribbon');
+ expect(await ribbon.locator('.poster-card').count()).toBe(16);
+ expect(await ribbon.evaluate(r=>r.getAnimations({subtree:true}).filter(a=>a.animationName==='ribbon-travel').length)).toBe(1);
+ await ribbon.evaluate(r=>{window.ribbonChanges=0;window.ribbonObserver=new MutationObserver(items=>window.ribbonChanges+=items.length);window.ribbonObserver.observe(r,{childList:true,subtree:true});});
+ const duration=await period(page);for(const boundary of [duration*2,duration*10,duration*100]){await phase(page,boundary-.001);const before=await ribbon.screenshot();await phase(page,boundary+.001);const after=await ribbon.screenshot();const error=frameError(before,after);if(error>=1){const {writeFile}=await import('node:fs/promises');await writeFile(test.info().outputPath('before.png'),before);await writeFile(test.info().outputPath('after.png'),after);console.log(await ribbon.evaluate(r=>({groups:[...r.firstElementChild.children].map(g=>g.getBoundingClientRect().toJSON()),track:r.firstElementChild.getBoundingClientRect().toJSON()})));}expect(error).toBeLessThan(1);}
+ expect(await page.evaluate(()=>window.ribbonChanges)).toBe(0);await page.evaluate(()=>window.ribbonObserver.disconnect());
 });
