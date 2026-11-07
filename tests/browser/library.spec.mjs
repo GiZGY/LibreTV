@@ -167,3 +167,47 @@ test('large favorites check only visible titles and serialize requests instead o
  await page.locator('.watchlist-item').last().scrollIntoViewIfNeeded();await expect.poll(()=>page.evaluate(()=>window.checkedShows.includes('film-lazy99'))).toBe(true);
  expect(await page.evaluate(()=>window.checkedShows.length)).toBeLessThan(40);expect(await page.evaluate(()=>window.peakShowChecks)).toBe(1);
 });
+
+async function preloadFixture(page,count=30){
+ await page.addInitScript(count=>{
+  const p='openstream_live_',records=Array.from({length:count},(_,i)=>({id:'film-preload'+i,name:'预加载影片'+i,type:'电视剧',episodes:10,year:'2024',catalogProvider:'tmdb',catalogId:'tv:'+(9000+i),candidatesComplete:true}));
+  localStorage.setItem(p+'filmRecords',JSON.stringify(records));localStorage.setItem(p+'favorites',JSON.stringify(records.map(f=>f.id)));localStorage.setItem(p+'history',JSON.stringify(records.map(f=>f.id)));localStorage.setItem(p+'historyMetadataV2',JSON.stringify(Object.fromEntries(records.map((f,i)=>[f.id,{position:2620,duration:3000,episode:3,season:1,totalEpisodes:9,watchedAt:new Date(Date.UTC(2026,10,7,0,i)).toISOString()}]))));localStorage.setItem(p+'muted','true');localStorage.setItem(p+'volume','0');
+ },count);
+ let details=0,images=0,active=0,peak=0;
+ await page.route('**/api/catalog/tmdb?kind=detail*',async route=>{details++;peak=Math.max(peak,++active);const id=new URL(route.request().url()).searchParams.get('id');await new Promise(r=>setTimeout(r,15));active--;await route.fulfill({json:{item:{id,title:'预加载影片',year:'2024',type_name:'电视剧',cover:'https://image.tmdb.org/t/p/w500/prewarm-'+id.replace(':','-')+'.svg'}}});});
+ await page.route('https://image.tmdb.org/**/prewarm-*.svg',route=>{images++;return route.fulfill({contentType:'image/svg+xml',body:'<svg xmlns="http://www.w3.org/2000/svg" width="500" height="750"><rect width="500" height="750" fill="#386c78"/></svg>'});});
+ return ()=>({details,images,peak});
+}
+test('home idly preloads only the first saved screens, serially, without rewriting progress or polling',async({page})=>{
+ const stats=await preloadFixture(page);let finishTV;
+ await page.route('**/api/catalog/tmdb?**',async(route,request)=>{const u=new URL(request.url());if(u.searchParams.get('kind')!=='discover')return route.fallback();if(u.searchParams.get('type')==='电视剧')await new Promise(r=>finishTV=r);return route.fulfill({json:{items:[],total:0}});});
+ await page.goto('/#home');await expect.poll(()=>!!finishTV).toBe(true);expect(stats().details).toBe(0);const original=await page.evaluate(()=>localStorage.getItem('openstream_live_historyMetadataV2'));finishTV();await expect.poll(()=>stats().images).toBe(14);expect(stats()).toEqual({details:14,images:14,peak:1});
+ const ids=await page.evaluate(()=>JSON.parse(localStorage.getItem('openstream_live_filmRecords')).filter(f=>f.cover).map(f=>f.id));expect(ids.sort()).toEqual([...Array.from({length:8},(_,i)=>'film-preload'+i),...Array.from({length:6},(_,i)=>'film-preload'+(24+i))].sort());expect(await page.evaluate(()=>localStorage.getItem('openstream_live_historyMetadataV2'))).toBe(original);await page.clock.install();await page.clock.fastForward(5*60000);expect(stats()).toEqual({details:14,images:14,peak:1});
+});
+test('prewarmed covers survive route changes and continue sits beside time, with updates on a separate row',async({page,browserName})=>{
+ const stats=await preloadFixture(page,2);await page.setViewportSize({width:390,height:844});await page.goto('/#home');await expect.poll(()=>stats().images).toBe(browserName==='webkit'?4:2);await page.waitForLoadState('networkidle');expect(stats().details).toBe(2);await page.evaluate(()=>{LiveLibrary.checkUpdates=async f=>f.episodes;location.hash='library';});
+ const first=page.locator('.watchlist-item').first();await expect(first.locator('.watchlist-position')).toContainText('看到 43:40');await expect(first.locator('.watchlist-position a')).toHaveText('继续');await expect(first.locator('.watchlist-actions')).toHaveText('有更新');await expect.poll(()=>first.locator('.poster-art img').last().evaluate(i=>i.complete&&i.naturalWidth>0)).toBe(true);
+ const b=await first.evaluate(c=>{const box=s=>{const r=c.querySelector(s).getBoundingClientRect();return {x:r.x,right:r.right,top:r.top,bottom:r.bottom};};return {time:box('.watchlist-position>span'),resume:box('.watchlist-resume'),update:box('.watchlist-actions'),right:c.getBoundingClientRect().right};});expect(b.resume.x).toBeGreaterThanOrEqual(b.time.right);expect(b.resume.top).toBeLessThan(b.time.bottom);expect(b.update.top).toBeGreaterThanOrEqual(b.resume.bottom);expect(b.resume.right).toBeLessThanOrEqual(b.right);
+ await page.screenshot({path:test.info().outputPath('inline-continue-390.png'),fullPage:true});await page.setViewportSize({width:1440,height:900});await page.screenshot({path:test.info().outputPath('inline-continue-1440.png'),fullPage:true});await page.evaluate(()=>location.hash='history');await expect.poll(()=>page.locator('.history-item img').first().evaluate(i=>i.complete&&i.naturalWidth>0)).toBe(true);expect(stats().details).toBe(2);await page.setViewportSize({width:390,height:844});await expect.poll(()=>page.locator('.history-item img').evaluateAll(images=>images.every(i=>i.complete&&i.naturalWidth>0))).toBe(true);await page.waitForLoadState('networkidle');const before=stats().images;await page.evaluate(()=>location.hash='home');await expect(page.locator('#hero-slot')).toBeAttached();await page.clock.install();await page.clock.fastForward(10000);expect(stats().details).toBe(2);expect(stats().images).toBe(before);
+});
+test('home preload cancels queued work on departure and defers entirely on data-saving connections',async({page})=>{
+ const stats=await preloadFixture(page);let release;await page.route('**/api/catalog/tmdb?kind=detail*',async route=>{await new Promise(r=>release=r);await route.fallback();});await page.goto('/#home');await expect.poll(()=>!!release).toBe(true);await page.evaluate(()=>location.hash='about');await expect(page.getByRole('heading',{name:'关于 OpenStream'})).toBeVisible();release();await page.clock.install();await page.clock.fastForward(10000);expect(stats().images).toBe(0);expect(stats().details).toBeLessThanOrEqual(1);await page.evaluate(()=>Object.defineProperty(navigator,'connection',{configurable:true,value:{saveData:true,effectiveType:'4g'}}));const before=stats().details;await page.evaluate(()=>location.hash='home');await expect(page.locator('#hero-slot')).toBeAttached();await page.clock.fastForward(10000);expect(stats().details).toBe(before);expect(stats().images).toBe(0);
+});
+test('inline continue remains reachable in narrow touch, tablet dark and reduced-motion layouts',async({browser})=>{
+ const ctx=await browser.newContext({viewport:{width:320,height:844},hasTouch:true,isMobile:true});const page=await ctx.newPage();
+ try{
+  await preloadFixture(page,2);await page.goto('/#about');await page.evaluate(()=>{LiveLibrary.checkUpdates=async f=>f.episodes;location.hash='library';});
+  for(const width of [320,768,1440]){
+   await page.setViewportSize({width,height:900});await page.emulateMedia({reducedMotion:'reduce'});await page.evaluate(()=>document.documentElement.dataset.theme='dark');
+   const resume=page.locator('.watchlist-resume').first();await expect(resume).toHaveText('继续');await resume.scrollIntoViewIfNeeded();await expect(resume).toBeVisible();const size=await resume.boundingBox();expect(size.width).toBeGreaterThanOrEqual(44);expect(size.height).toBeGreaterThanOrEqual(44);
+   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+   await resume.focus();await expect(resume).toBeFocused();expect(await resume.evaluate(a=>a.tabIndex)).toBe(0);await expect(resume).toHaveAttribute('href','#player/film-preload0');
+   const card=page.locator('.watchlist-item').first();expect(await card.evaluate(c=>c.scrollWidth<=c.clientWidth+1)).toBe(true);
+  }
+ }finally{await ctx.close();}
+});
+test('failed home metadata preloads use a thirty-minute negative cache and keep history intact',async({page})=>{
+ await preloadFixture(page,2);let failed=0;await page.route('**/api/catalog/tmdb?kind=detail*',route=>{failed++;return route.fulfill({status:503,json:{error:'unavailable'}});});
+ await page.goto('/#home');await expect.poll(()=>failed).toBe(2);await expect.poll(()=>page.evaluate(()=>Object.keys(JSON.parse(localStorage.getItem('openstream_live_posterRefresh')||'{}')).length)).toBe(2);
+ await page.evaluate(()=>location.hash='history');await expect(page.locator('.history-item')).toHaveCount(2);await page.clock.install();await page.clock.fastForward(10000);expect(failed).toBe(2);expect(await page.evaluate(()=>JSON.parse(localStorage.getItem('openstream_live_history')).length)).toBe(2);
+});

@@ -10,7 +10,8 @@
   if(!record)return '';
   const episode=isSeries(f)?(window.OpenStreamEpisodes?OpenStreamEpisodes.display(f,record).label:'第 '+(record.episode||1)+' 集'):'';
   const position=Number(record.position)||0;
-  return `<p>${esc([episode,watchedComplete(record)?'已看完':position>0?'看到 '+playbackTime(position):''].filter(Boolean).join(' · '))}</p><div class="watchlist-actions">${updatedEpisodeLink(f)}<a class="text-button" href="#player/${f.id}" data-action="resume-history" data-id="${f.id}">${watchedComplete(record)?'重新观看':'继续观看'}</a></div>`;
+  const completed=watchedComplete(record),update=updatedEpisodeLink(f);
+  return `<div class="watchlist-progress">${episode?`<span class="watchlist-episode">${esc(episode)}</span>`:''}<span class="watchlist-position"><span>${esc(completed?'已看完':'看到 '+playbackTime(position))}</span><a class="text-button watchlist-resume" href="#player/${f.id}" data-action="resume-history" data-id="${f.id}">${completed?'重看':'继续'}</a></span></div>${update?`<div class="watchlist-actions">${update}</div>`:''}`;
  }
  function libraryMarkup(){
   const all=films.filter(f=>favorites.has(f.id)&&(!window.OPENSTREAM_LIVE||!window.LiveData||LiveData.allowed(f))),list=all.filter(f=>libraryCategory==='all'||category(f)===libraryCategory);
