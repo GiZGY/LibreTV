@@ -59,6 +59,26 @@
     const keep=[...new Map([...saved,...cached].map(f=>[f.id,f])).values()];
     save('filmRecords', keep.map(({lines, ...film}) => film));
   }
+  const savedPosterTasks=new Map(),warmedPosters=new Map();
+  const posterTTL=30*60*1000;
+  async function resolveSavedPoster(f,signal,failed=false){
+    const missing=!data.safeURL(f.cover)&&(!f.art||/assets\/(placeholder|poster-unavailable)\.svg$/.test(f.art));
+    if(!missing&&!failed)return;
+    const pending=savedPosterTasks.get(f.id);
+    if(pending&&!pending.signal.aborted)return pending.promise;
+    if(Date.now()-(load('posterRefresh',{})[f.id]||0)<posterTTL)return;
+    const task={signal};
+    task.promise=(async()=>{
+      try{
+        const match=f.catalogProvider==='tmdb'&&f.catalogId?{id:f.catalogId}:await data.lookupTMDB(f,signal);
+        const item=match?(match.cover?match:await data.detailTMDB(match.id,signal)):null;
+        if(signal.aborted)return;
+        if(item&&data.safeURL(item.cover)){f.cover=data.safeURL(item.cover);f.art=data.image(f.cover);f.catalogProvider='tmdb';f.catalogId=match.id;persist();}
+      }catch{if(signal.aborted)return;}
+      if(!signal.aborted){const latest=load('posterRefresh',{});latest[f.id]=Date.now();save('posterRefresh',latest);}
+    })().finally(()=>{if(savedPosterTasks.get(f.id)===task)savedPosterTasks.delete(f.id);});
+    savedPosterTasks.set(f.id,task);return task.promise;
+  }
   function hydrateSavedPosters(signal){
     const hosts=[...document.querySelectorAll('.watchlist-item,.history-item')];
     let queue=Promise.resolve();
@@ -68,21 +88,11 @@
           if(signal.aborted||!entry.target.isConnected)return;
           const node=entry.target,id=node.dataset.watchlistId||node.querySelector('[data-action="resume-history"]')?.dataset.id,f=films.find(f=>f.id===id);
           if(!f)return;
-          const images=[...node.querySelectorAll('img')];
-          const missing=!data.safeURL(f.cover)&&(!f.art||/assets\/(placeholder|poster-unavailable)\.svg$/.test(f.art));
-          const failed=images.some(image=>image.dataset.fallback==='true');
-          if(!missing&&!failed)return;
-          const checked=load('posterRefresh',{});if(Date.now()-(checked[id]||0)<30*60*1000)return;
-          try{
-            const match=f.catalogProvider==='tmdb'&&f.catalogId?{id:f.catalogId}:await data.lookupTMDB(f,signal);
-            const item=match?(match.cover?match:await data.detailTMDB(match.id,signal)):null;if(signal.aborted)return;
-            if(item&&data.safeURL(item.cover)){f.cover=data.safeURL(item.cover);f.art=data.image(f.cover);f.catalogProvider='tmdb';f.catalogId=match.id;persist();
-              if(node.isConnected){const template=document.createElement('template');template.innerHTML='<img '+posterAttributes(f,node.classList.contains('history-item')?'80px':undefined)+'>';
-                for(const image of images){image.removeAttribute('srcset');image.removeAttribute('sizes');delete image.dataset.fallback;for(const {name,value} of template.content.firstElementChild.attributes)image.setAttribute(name,value);}
-              }
-            }
-          }catch{if(signal.aborted)return;}
-          const latest=load('posterRefresh',{});latest[id]=Date.now();save('posterRefresh',latest);
+          const images=[...node.querySelectorAll('img')],before=img(f);
+          await resolveSavedPoster(f,signal,images.some(image=>image.dataset.fallback==='true'));
+          if(signal.aborted||!node.isConnected||before===img(f))return;
+          const template=document.createElement('template');template.innerHTML='<img '+posterAttributes(f,node.classList.contains('history-item')?'80px':undefined)+'>';
+          for(const image of images){image.removeAttribute('srcset');image.removeAttribute('sizes');delete image.dataset.fallback;for(const {name,value} of template.content.firstElementChild.attributes)image.setAttribute(name,value);}
         });
       }
     },{rootMargin:'200px'});
@@ -90,6 +100,42 @@
     const onError=event=>{const host=event.target.closest?.('.watchlist-item,.history-item');if(host)observer.observe(host);};
     document.addEventListener('error',onError,true);
     signal.addEventListener('abort',()=>{observer.disconnect();document.removeEventListener('error',onError,true);},{once:true});
+  }
+  async function warmSavedPoster(f,sizes,signal){
+    if(!data.safeURL(img(f)))return;
+    const key=img(f)+'|'+sizes+'|'+innerWidth+'|'+devicePixelRatio;
+    if(Date.now()-(warmedPosters.get(key)||0)<posterTTL)return;
+    // Use the same responsive candidate as the destination; do not fetch a second full-size cover.
+    const template=document.createElement('template');template.innerHTML='<img '+posterAttributes(f,sizes)+'>';
+    const image=new Image();image.decoding='async';image.fetchPriority='low';image.referrerPolicy='no-referrer';
+    await new Promise(resolve=>{
+      const finish=()=>{clearTimeout(timer);signal.removeEventListener('abort',abort);image.onload=image.onerror=null;resolve();};
+      const abort=()=>{finish();image.removeAttribute('srcset');image.removeAttribute('src');};
+      const timer=setTimeout(abort,8000);
+      image.onload=image.onerror=finish;signal.addEventListener('abort',abort,{once:true});
+      if(signal.aborted){abort();return;}
+      if(template.content.firstElementChild.hasAttribute('sizes'))image.sizes=template.content.firstElementChild.getAttribute('sizes');
+      if(template.content.firstElementChild.hasAttribute('srcset'))image.srcset=template.content.firstElementChild.getAttribute('srcset');
+      image.src=template.content.firstElementChild.getAttribute('src');
+    });
+    if(!signal.aborted){warmedPosters.set(key,Date.now());while(warmedPosters.size>48)warmedPosters.delete(warmedPosters.keys().next().value);}
+  }
+  function prewarmSavedPosters(signal){
+    const connection=navigator.connection;
+    if(connection?.saveData||/^(slow-2g|2g)$/.test(connection?.effectiveType||''))return;
+    const run=async()=>{
+      const recent=history.filter(id=>historyMetadata[id]).sort((a,b)=>Date.parse(historyMetadata[b].watchedAt||0)-Date.parse(historyMetadata[a].watchedAt||0)).slice(0,6);
+      const first=films.filter(f=>favorites.has(f.id)&&data.allowed(f)).slice(0,8).map(f=>f.id);
+      const jobs=new Map();for(const id of [...recent,...first]){const sizes=[];if(recent.includes(id))sizes.push('80px');if(first.includes(id))sizes.push('(max-width:700px) 44vw, 220px');jobs.set(id,sizes);}
+      for(const [id,sizes]of jobs){
+        if(signal.aborted||document.hidden||!['','#home'].includes(location.hash))return;
+        const f=films.find(f=>f.id===id);if(!f||!data.allowed(f))continue;
+        await resolveSavedPoster(f,signal);
+        for(const size of sizes){if(signal.aborted||document.hidden)return;await warmSavedPoster(f,size,signal);}
+      }
+    };
+    const idle=!!window.requestIdleCallback,handle=idle?requestIdleCallback(()=>void run(),{timeout:2000}):setTimeout(()=>void run(),250);
+    signal.addEventListener('abort',()=>{if(idle)cancelIdleCallback(handle);else clearTimeout(handle);},{once:true});
   }
   function identity(value) {
     let hash = 2166136261;
@@ -186,7 +232,7 @@
       const {items:tv}=await data.discoverTMDB({type:'电视剧',genre:'全部',year:'全部',sort:'精选',minRating:6.5,page:1,signal});
       if(token===generation)$('#live-tv').innerHTML=grid(tv.map(item=>{const f=register(item,true);f.type='电视剧';return f;}));
     } catch(error) {if(token===generation)$('#live-tv').innerHTML=status(error.message);}
-    if(token===generation&&!signal.aborted){restoreShelves();prefetchHomeGenres(signal);}
+    if(token===generation&&!signal.aborted){restoreShelves();prewarmSavedPosters(signal);prefetchHomeGenres(signal);}
   }
   async function updateHomeGenre(genre) {
     const priorGenre=homeGenre,oldShelf=document.querySelector('#home-recommendations > .poster-grid');
