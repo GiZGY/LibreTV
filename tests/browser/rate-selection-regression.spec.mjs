@@ -6,8 +6,7 @@ test('pointer-selected speed reaches real media while popup focus and keyboard d
   const prefix='openstream_live_',film={id:'film-rateselect',name:'倍速选择回归',type:'电视剧',episodes:2,seasons:1,year:2025,genre:'剧情',rating:8,
    lines:[{key:'qa:selection',sourceKey:'qa',name:'验收线路',health:'fast',episodes:[{name:'第1集',url:'/media/sample.mp4'},{name:'第2集',url:'/media/sample.mp4?ep=2'}]}],candidatesComplete:true};
   localStorage.setItem(prefix+'filmRecords',JSON.stringify([film]));localStorage.setItem(prefix+'playbackRate','1');localStorage.setItem(prefix+'autoplay','false');
-  const mute=()=>document.querySelectorAll('video').forEach(video=>{video.muted=true;video.volume=0;});
-  addEventListener('DOMContentLoaded',()=>{mute();new MutationObserver(mute).observe(document.body,{childList:true,subtree:true});});
+  localStorage.setItem('openstream_live_muted','true');localStorage.setItem('openstream_live_volume','0');
  });
  await page.goto('/#player/film-rateselect');await expectMediaFrame(page);
  const track=page.locator('.art-control-progress-inner'),height=()=>track.evaluate(el=>el.getBoundingClientRect().height);

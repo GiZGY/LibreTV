@@ -27,8 +27,7 @@ async function seed(context,{bridge=false,ignoreOldAbort=false}={}){
    }
    return nativeFetch(input,options);
   };
-  const mute=()=>document.querySelectorAll('video').forEach(video=>{video.muted=true;video.volume=0;});
-  addEventListener('DOMContentLoaded',()=>{mute();new MutationObserver(mute).observe(document.body,{childList:true,subtree:true});});
+  localStorage.setItem('openstream_live_muted','true');localStorage.setItem('openstream_live_volume','0');
  },{filmA,filmB,bridge,ignoreOldAbort});
 }
 async function mediaFrame(page){

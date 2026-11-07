@@ -11,7 +11,7 @@ async function seed(page,{mixed=false,complete=false,last=false,noLines=false}={
    localStorage.setItem(p+'filmRecords',JSON.stringify([film]));localStorage.setItem(p+'favorites',JSON.stringify([id]));localStorage.setItem(p+'history',JSON.stringify([id]));
    localStorage.setItem(p+'historyMetadataV2',JSON.stringify({[id]:{episode:mixed?(last?3:2):2,season:2,episodeKey:last?'s2:e2':'s2:e1',position:complete?60:18,duration:60,totalEpisodes:4,completed:complete,watchedAt:new Date().toISOString()}}));localStorage.setItem(p+'playbackRate','1.75');localStorage.setItem(p+'autoplay','true');localStorage.setItem('canonical-ui-fixture','true');
   }
-  const mute=()=>document.querySelectorAll('video').forEach(v=>{v.muted=true;v.volume=0;});addEventListener('DOMContentLoaded',()=>{mute();new MutationObserver(mute).observe(document.body,{childList:true,subtree:true});});
+  localStorage.setItem('openstream_live_muted','true');localStorage.setItem('openstream_live_volume','0');
  },{mixed,complete,last,noLines});
 }
 async function current(page,key){await expect.poll(()=>page.evaluate(()=>LivePlayback.current()?.episodeKey)).toBe(key);await expectMediaFrame(page);if(!(await page.locator('video').evaluate(v=>v.paused)))await expectPlaybackProgress(page,{episodeKey:key});await expect(page.locator('video')).toHaveJSProperty('muted',true);}

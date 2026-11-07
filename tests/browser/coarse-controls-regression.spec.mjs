@@ -5,7 +5,7 @@ async function open(page,{theme='dark',series=true}={}){
  await page.addInitScript(({theme,series})=>{
   const p='openstream_live_',film={id:'film-coarse',name:'等风停下的时候，我们一起走过漫长的星河',type:series?'电视剧':'电影',episodes:series?8:1,seasons:1,year:2025,genre:'剧情',rating:8,length:'每集45分钟',description:'长街熄灯以后，一封迟到的信让旧日的故事再次展开。人们在相遇与告别之间，寻找属于自己的方向。',director:'林远',cast:'陈予 / 许宁',lines:[1,2].map(n=>({key:'qa:'+n,sourceKey:'qa',name:'线路 '+n,health:'fast',episodes:Array.from({length:series?8:1},(_,i)=>({name:series?'第'+(i+1)+'集':'正片',url:'/media/sample.mp4?line='+n+'&ep='+(i+1)}))})),candidatesComplete:true};
   localStorage.setItem(p+'filmRecords',JSON.stringify([film]));localStorage.setItem(p+'playbackRate','1.75');localStorage.setItem(p+'autoplay','false');localStorage.setItem(p+'volume','0');localStorage.setItem(p+'muted','true');localStorage.setItem(p+'mobileAutoTheme','false');localStorage.setItem(p+'darkMode',JSON.stringify(theme==='dark'));
-  const mute=()=>document.querySelectorAll('video').forEach(v=>{v.muted=true;v.volume=0;});addEventListener('DOMContentLoaded',()=>{mute();new MutationObserver(mute).observe(document.body,{childList:true,subtree:true});});
+  localStorage.setItem('openstream_live_muted','true');localStorage.setItem('openstream_live_volume','0');
  },{theme,series});
  await page.goto('/#player/film-coarse');await expectMediaFrame(page);await expect(page.locator('video')).toHaveJSProperty('muted',true);
 }
