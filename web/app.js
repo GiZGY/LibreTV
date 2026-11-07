@@ -39,7 +39,7 @@ function episodePicker(f){
 }
 function seasonEpisode(f,season){const list=window.OpenStreamEpisodes?.catalog(f);if(!list)return 1;const index=list.findIndex(item=>item.season===season&&item.kind!=='special'),fallback=list.findIndex(item=>item.season===season);return (index>=0?index:fallback)+1;}
 function episodeDescription(f,value){return window.OpenStreamEpisodes?.display(f,value).label||(isSeries(f)?`第 ${value?.season||1} 季 · 第 ${value?.episode||1} ${f.type==='综艺'?'期':'集'}`:'正片');}
-function updatedEpisodeLink(f){const target=newEpisode(f);if(!target)return '';const known=!!f.lines?.length;return `<a class="text-button" href="#${known?'player':'detail'}/${f.id}" ${known?`data-new-episode="${target}"`:''} data-id="${f.id}">有新集 · ${known?esc(episodeDescription(f,{episode:target})):'查看更新'}</a>`;}
+function updatedEpisodeLink(f){const target=newEpisode(f);if(!target)return '';const known=!!f.lines?.length;return `<a class="text-button" href="#${known?'player':'detail'}/${f.id}" ${known?`data-new-episode="${target}"`:''} data-id="${f.id}">有更新</a>`;}
 const $=s=>document.querySelector(s),esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 function load(k,d){try{return JSON.parse(localStorage.getItem((window.OPENSTREAM_LIVE?'openstream_live_':'openstream_ui_')+k))??d}catch{return d}}
 function save(k,v){try{localStorage.setItem((window.OPENSTREAM_LIVE?'openstream_live_':'openstream_ui_')+k,JSON.stringify(v));if(typeof CustomEvent==='function'&&!window.OpenStreamLocalData?.applying)document.dispatchEvent(new CustomEvent('openstream:data-change',{detail:{key:k,origin:'local'}}))}catch{toast('浏览器暂时无法保存偏好')}}
@@ -59,7 +59,7 @@ function newEpisode(f){const r=historyMetadata[f.id],target=isSeries(f)&&r&&r.to
 function historyLabel(id){const record=historyMetadata[id];return watchedComplete(record)?'重新观看':record?'继续播放 · '+playbackTime(record.position):'立即观看';}
 function watchedTime(value){if(!value)return '观看时间未知';return new Date(value).toLocaleString('zh-CN',{year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false});}
 function toast(s){$('#toast').textContent=s;$('#toast').classList.add('visible');clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('#toast').classList.remove('visible'),2300)}
-const img=f=>window.OpenStreamResultAggregator?.isUnavailablePoster?.(f.art)?'assets/poster-unavailable.svg':f.art||`assets/${f.id}.jpg`;
+const img=f=>{const source=f.cover&&window.LiveData?window.LiveData.image(f.cover):f.art||f.cover;return window.OpenStreamResultAggregator?.isUnavailablePoster?.(source)?'assets/poster-unavailable.svg':source||(window.OPENSTREAM_LIVE?'assets/placeholder.svg':`assets/${f.id}.jpg`);};
 function posterAttributes(f,sizes='(max-width:700px) 44vw, 220px'){
  const src=img(f),match=/^https:\/\/image\.tmdb\.org\/t\/p\/w\d+(\/[\w.-]+)$/.exec(src);
  const responsive=match?` srcset="${[185,342,500,780].map(width=>`https://image.tmdb.org/t/p/w${width}${match[1]} ${width}w`).join(', ')}" sizes="${esc(sizes)}"`:'';
@@ -72,12 +72,9 @@ const card=(f,featured=false)=>window.OPENSTREAM_LIVE&&window.LiveData&&!LiveDat
 const grid=list=>{list=list.filter(f=>!window.OPENSTREAM_LIVE||!window.LiveData||LiveData.allowed(f));return list.length?`<div class="poster-grid">${list.map(f=>card(f)).join('')}</div>`:`<div class="empty"><h2>暂时没有找到影片</h2><p>换个关键词，或试试其他筛选条件。</p><button class="primary" data-action="reset">查看全部影片</button></div>`;};
 function chips(items,current,key,style='',labels={}){return items.map(x=>`<button class="chip ${style} ${x===current?'selected':''}" data-filter="${key}" data-value="${x}" aria-pressed="${x===current}">${labels[x]||x}</button>`).join('')}
 function heroMarkup(featured=films.filter(f=>(f.type||'电影')==='电影'&&Number(f.rating)>=7)){
- // Each physical group includes a second set before responsive coverage is measured.
- const items=[...featured,...featured];
- const group=duplicate=>`<div class="film-ribbon-group" ${duplicate?'aria-hidden="true"':''}>${items.map((film,i)=>{
-  let markup=card(film,true).replace('<article class="poster-card"',i>=featured.length?'<article data-loop-copy="true" class="poster-card"':'<article class="poster-card"');
-  if(duplicate||i>=featured.length)markup=markup.replace('<a ','<a tabindex="-1" ').replace('<button ','<button tabindex="-1" ');
-  return markup;
+ const group=duplicate=>`<div class="film-ribbon-group" ${duplicate?'aria-hidden="true"':''}>${featured.map(film=>{
+  const markup=card(film,true);
+  return duplicate?markup.replace('<a ','<a tabindex="-1" ').replace('<button ','<button tabindex="-1" '):markup;
  }).join('')}</div>`;
  return `<section class="film-ribbon poster-ribbon" aria-label="精选影片"><div class="film-ribbon-track">${group(false)}${group(true)}</div></section>`;
 }
@@ -89,38 +86,34 @@ function setupHeroRibbon(){
  const ribbon=document.querySelector('.film-ribbon'),track=ribbon?.querySelector('.film-ribbon-track');
  const groups=track?[...track.children]:[],originals=groups[0]?[...groups[0].children].filter(card=>!card.hasAttribute('data-loop-copy')):[];
  if(!originals.length)return;
- if(!document.body.classList.contains('reduce-motion')&&!matchMedia('(prefers-reduced-motion:reduce)').matches)ribbon.scrollLeft=0;
- let previous,observer;
+ const reduced=document.body.classList.contains('reduce-motion')||matchMedia('(prefers-reduced-motion:reduce)').matches;
+ if(!reduced)ribbon.scrollLeft=0;
+ let previousWidth=0;
  const fit=()=>{
-  if(!ribbon.isConnected){observer?.disconnect();return;}
-  const gap=parseFloat(getComputedStyle(groups[0]).columnGap)||0;
-  const setWidth=originals.reduce((width,card)=>width+card.getBoundingClientRect().width+gap,0);
+  if(!ribbon.isConnected)return;
+  ribbon.style.removeProperty('--ribbon-card-width');
+  // Integer card pitches keep both copies on the same raster grid at the seam.
+  ribbon.style.setProperty('--ribbon-card-width',Math.round(originals[0].getBoundingClientRect().width)+'px');
+  const gap=parseFloat(getComputedStyle(groups[0]).columnGap)||0,setWidth=originals.reduce((width,card)=>width+card.getBoundingClientRect().width+gap,0);
   if(!setWidth)return;
-  const copies=Math.max(groups[0].children.length/originals.length,Math.ceil(ribbon.clientWidth/setWidth)+1,2);
-  const animations=ribbonAnimations(track);
-  const duration=Number(animations[0]?.effect.getTiming().duration)||280000;
-  const phase=(((Number(animations[0]?.currentTime)||0)/duration)%1+1)%1;
+  const copies=reduced?1:Math.max(1,Math.ceil(ribbon.clientWidth/setWidth));
+  const animation=ribbonAnimations(track)[0],duration=Number(animation?.effect.getTiming().duration)||1;
+  const offset=previousWidth?((Number(animation?.currentTime)||0)%duration)/duration*previousWidth:0;
   for(const group of groups){
-   while(group.children.length<copies*originals.length){
-    for(const original of originals){
-     const copy=original.cloneNode(true);copy.dataset.loopCopy='true';
-     copy.querySelectorAll('a,button').forEach(control=>control.tabIndex=-1);
-     group.append(copy);
-    }
+   while(group.children.length>copies*originals.length)group.lastElementChild.remove();
+   while(group.children.length<copies*originals.length)for(const original of originals){
+    const copy=original.cloneNode(true);copy.dataset.loopCopy='true';copy.setAttribute('aria-hidden','true');
+    copy.querySelectorAll('a,button').forEach(control=>control.tabIndex=-1);group.append(copy);
    }
+   // Animation-transformed lazy images may not decode until the first wrap.
+   if(!reduced)group.querySelectorAll('img').forEach(image=>{image.loading='eager';});
   }
-  // The old eight-title rail took 8.75s per card; extra copies only extend its cycle.
-  const period=8750*originals.length*copies;
+  const period=8750*originals.length*copies,width=groups[0].getBoundingClientRect().width;
   ribbon.style.setProperty('--ribbon-period',`${period}ms`);
-  const width=groups[0].getBoundingClientRect().width;
-  if(previous&&animations.length){
-   const half=phase>=.5?1:0,offset=(phase*2-half)*previous.width/previous.setWidth*setWidth;
-   const time=(half*width+offset)/(2*width)*(2*period);
-   ribbonAnimations(track).forEach(animation=>{animation.currentTime=time;});
-  }
-  previous={width,setWidth};
+  if(previousWidth&&animation)animation.currentTime=(offset%width)/width*period;
+  previousWidth=width;
  };
- fit();heroRibbonObserver=observer=new ResizeObserver(fit);observer.observe(ribbon);
+ fit();heroRibbonObserver=new ResizeObserver(fit);heroRibbonObserver.observe(ribbon);
 }
 
 function home(){window.OpenStreamLibrary?.notifyResume();return `<div id="hero-slot">${heroMarkup()}</div><div class="section-head"><h2>推荐影片</h2><a class="text-button" href="#discover">发现更多 ${icon('arrow')}</a></div><div class="filter-tabs">${chips(['全部','科幻','悬疑','剧情','传记'],homeGenre,'home')}</div><div id="home-recommendations" class="poster-grid">${films.filter(f=>(f.type||'电影')==='电影').map(f=>card(f).replace('<article class="poster-card"',`<article data-home-genre="${esc(f.genre)}" ${homeGenre!=='全部'&&f.genre!==homeGenre?'hidden':''} class="poster-card"`)).join('')}</div><div class="section-head"><h2>剧集与动漫</h2></div>${grid(films.filter(f=>['电视剧','动漫'].includes(f.type)))}<div class="section-head"><h2>综艺</h2></div>${grid(films.filter(f=>f.type==='综艺'))}`;}
@@ -157,7 +150,7 @@ function historyBucket(record,now=new Date()){
 function historyRow({film:f,record:r}){
  const progress=r.duration?Math.min(100,r.position/r.duration*100):0;
  const episode=episodeDescription(f,r);
- return `<article class="history-item"><img ${posterAttributes(f,'80px')} loading="lazy" alt="${esc(f.name)}"><div class="history-copy"><h3>${esc(f.name)}</h3><time datetime="${r.watchedAt||''}">${watchedTime(r.watchedAt)}</time><p>${episode} · ${watchedComplete(r)?'已看完':r.duration?'看到 '+playbackTime(r.position)+' / '+playbackTime(r.duration):'进度未知'}</p><div class="progress" role="progressbar" aria-label="观看进度" aria-valuenow="${Math.round(progress)}" aria-valuemin="0" aria-valuemax="100"><i style="width:${progress}%"></i></div></div><a href="#player/${f.id}" data-action="resume-history" data-id="${f.id}" class="primary">${watchedComplete(r)?'重新观看':'继续观看'}</a>${updatedEpisodeLink(f)}<button class="remove" data-action="remove-history" data-id="${f.id}" aria-label="移除${esc(f.name)}的观看记录">移除</button></article>`;
+ return `<article class="history-item"><img ${posterAttributes(f,'80px')} loading="lazy" referrerpolicy="no-referrer" alt="${esc(f.name)}"><div class="history-copy"><h3>${esc(f.name)}</h3><time datetime="${r.watchedAt||''}">${watchedTime(r.watchedAt)}</time><p>${episode} · ${watchedComplete(r)?'已看完':r.duration?'看到 '+playbackTime(r.position)+' / '+playbackTime(r.duration):'进度未知'}</p><div class="progress" role="progressbar" aria-label="观看进度" aria-valuenow="${Math.round(progress)}" aria-valuemin="0" aria-valuemax="100"><i style="width:${progress}%"></i></div></div><div class="history-actions">${updatedEpisodeLink(f)}<a href="#player/${f.id}" data-action="resume-history" data-id="${f.id}" class="primary">${watchedComplete(r)?'重新观看':'继续观看'}</a><button class="remove" data-action="remove-history" data-id="${f.id}" aria-label="移除${esc(f.name)}的观看记录">移除</button></div></article>`;
 
 }
 function historyPage(){
@@ -258,14 +251,23 @@ commandInput.addEventListener('keydown',e=>{
 });
 // Keep each list's position separate from detail and playback routes.
 const routeScroll = new Map();
+if('scrollRestoration' in window.history)window.history.scrollRestoration='manual';
 let previousRoute = location.hash || '#home';
-let restoringRoute=false;
-window.addEventListener('scroll',()=>{if(!restoringRoute)routeScroll.set(previousRoute,window.scrollY);},{passive:true});
+let restoringRoute=false,routeNavigation=0;
+function cancelRouteRestore(){if(restoringRoute){restoringRoute=false;routeScroll.set(previousRoute,window.scrollY);}}
+for(const event of ['wheel','touchmove','pointerdown'])window.addEventListener(event,cancelRouteRestore,{passive:true});
+window.addEventListener('keydown',event=>{if(['ArrowUp','ArrowDown','PageUp','PageDown','Home','End',' '].includes(event.key))cancelRouteRestore();});
+window.addEventListener('scroll',()=>{if(!restoringRoute&&(location.hash||'#home')===previousRoute)routeScroll.set(previousRoute,window.scrollY);},{passive:true});
 window.addEventListener('hashchange',async()=>{
-  const next = location.hash || '#home';document.body.classList.remove('lights-off');
+  const navigation=++routeNavigation,next=location.hash||'#home';document.body.classList.remove('lights-off');
+  if(!restoringRoute)routeScroll.set(previousRoute,window.scrollY);
   if(!/^#(detail|player)\//.test(previousRoute))listOrigin=previousRoute;
   const targetY=routeScroll.get(next)||0;previousRoute=next;restoringRoute=true;
-  try{await render();}finally{if((location.hash||'#home')===next)requestAnimationFrame(()=>{if((location.hash||'#home')===next){window.scrollTo(0,targetY);restoringRoute=false;}});}
+  try{await render();}finally{requestAnimationFrame(()=>{
+    if(navigation!==routeNavigation)return;
+    if(restoringRoute&&(location.hash||'#home')===next)window.scrollTo(0,targetY);
+    restoringRoute=false;routeScroll.set(previousRoute,window.scrollY);
+  });}
 });
 
 function showUndo(){
@@ -356,21 +358,24 @@ document.querySelector('.theme-toggle').addEventListener('click',()=>{const dark
 const mobileThemeQuery=matchMedia('(max-width:700px)');
 const autoTheme=document.querySelector('#auto-theme');
 autoTheme.checked=load('mobileAutoTheme',true);
+let appearanceTimer;
 function refreshAppearance(){
+ clearTimeout(appearanceTimer);
  const automatic=mobileThemeQuery.matches&&autoTheme.checked;
  darkMode.disabled=automatic;
- if(automatic){const hour=new Date().getHours();applyTheme(hour<7||hour>=19);}
+ if(automatic){const now=new Date(),hour=now.getHours();applyTheme(hour<7||hour>=19);if(!document.hidden){const next=new Date(now);next.setHours(hour<7?7:hour<19?19:31,0,0,0);appearanceTimer=setTimeout(refreshAppearance,next-now);}}
  else applyTheme(load('darkMode',false));
 }
 autoTheme.addEventListener('change',()=>{save('mobileAutoTheme',autoTheme.checked);refreshAppearance();});
 mobileThemeQuery.addEventListener('change',refreshAppearance);
-document.addEventListener('visibilitychange',()=>{if(!document.hidden)refreshAppearance();});
-setInterval(()=>{if(!document.hidden&&mobileThemeQuery.matches&&autoTheme.checked)refreshAppearance();},60000);
+document.addEventListener('visibilitychange',()=>{if(document.hidden)clearTimeout(appearanceTimer);else refreshAppearance();});
+window.addEventListener('pagehide',()=>clearTimeout(appearanceTimer));
+window.addEventListener('pageshow',refreshAppearance);
 refreshAppearance();
 
 // Drag the running animation from its current phase; reduced motion uses native scrolling.
 const draggableShelfSelector='.poster-ribbon, #home-recommendations > .poster-grid, #live-tv > .poster-grid, .watch-source-list';
-function ribbonAnimations(track){return track?[...track.children].flatMap(group=>group.getAnimations().filter(animation=>animation.animationName==='ribbon-travel')):[];}
+function ribbonAnimations(track){return track?track.getAnimations().filter(animation=>animation.animationName==='ribbon-travel'):[];}
 let ribbonDrag=null;
 let suppressRibbonClick=false;
 document.addEventListener('pointerdown',event=>{
@@ -382,7 +387,7 @@ document.addEventListener('pointerdown',event=>{
  // Touch shelves without a running track keep native scrolling and momentum.
  if(event.pointerType!=='mouse'&&!animation)return;
  const duration=animation?.effect.getTiming().duration;
- const distance=track?.firstElementChild?track.firstElementChild.getBoundingClientRect().width*2:0;
+ const distance=track?.firstElementChild?track.firstElementChild.getBoundingClientRect().width:0;
  const time=Number(animation?.currentTime)||0;
  // Resolve the pending CSS pause before another compositor frame can advance.
  if(animation)animations.forEach(animation=>{animation.currentTime=time;});

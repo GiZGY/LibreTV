@@ -31,3 +31,10 @@ test('known successful missing-image responses render a neutral poster even in c
  assert.match(render(url+'?v=2'),/src="assets\/poster-unavailable.svg"/);
  assert.ok(render(url.replace('d7b2','d7b3')).includes('p.bfvp26.com'));
 });
+
+test('saved public cover is re-resolved rather than reusing an expired proxy URL',()=>{
+ const previous=ctx.window.LiveData;ctx.window.LiveData={image:url=>'fresh:'+url};
+ assert.match(ctx.posterAttributes({cover:'https://img1.doubanio.com/view/photo/a.jpg',art:'/proxy/stale'}),/src="fresh:https/);
+ ctx.window.LiveData=previous;ctx.window.OPENSTREAM_LIVE=true;
+ assert.match(ctx.posterAttributes({id:'film-no-cover'}),/src="assets\/placeholder.svg"/);ctx.window.OPENSTREAM_LIVE=false;
+});
