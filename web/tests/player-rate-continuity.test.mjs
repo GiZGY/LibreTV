@@ -8,8 +8,8 @@ function player(saved=1.75,media={}){
  const slider={value:'1',setAttribute(){},style:{setProperty(){}}};
  const panel={querySelector:selector=>{if(!nodes.has(selector))nodes.set(selector,{});return nodes.get(selector);},querySelectorAll:()=>[]};
  const video={playbackRate:1,defaultPlaybackRate:1,readyState:4,seeking:false,...media};
- const instance={video,isDestroy:false,duration:120,currentTime:0,on:(event,fn)=>(events[event]??=[]).push(fn),get playbackRate(){return video.playbackRate;},set playbackRate(value){video.playbackRate=value;}};
- const context={instance,panel,slider,load:()=>saved,save:(...args)=>writes.push(args),document:{querySelector:()=>null,addEventListener:(n,fn)=>listeners[n]=fn,removeEventListener:n=>delete listeners[n]},window:{addEventListener:(n,fn)=>listeners[n]=fn,removeEventListener:n=>delete listeners[n]},clearTimeout:id=>timers.delete(id),setTimeout:fn=>{timers.set(++timerId,fn);return timerId;}};
+ const instance={video,isDestroy:false,duration:120,currentTime:0,on:(event,fn)=>(events[event]??=[]).push(fn),get playbackRate(){return video.playbackRate;},set playbackRate(value){video.playbackRate=value;video.muted=false;}};
+ const context={instance,panel,slider,restoreSound(){video.muted=true;},load:()=>saved,save:(...args)=>writes.push(args),document:{querySelector:()=>null,addEventListener:(n,fn)=>listeners[n]=fn,removeEventListener:n=>delete listeners[n]},window:{addEventListener:(n,fn)=>listeners[n]=fn,removeEventListener:n=>delete listeners[n]},clearTimeout:id=>timers.delete(id),setTimeout:fn=>{timers.set(++timerId,fn);return timerId;}};
  vm.createContext(context);
  const start=source.indexOf('   const format=rate=>');
  vm.runInContext(source.slice(start,source.indexOf("   panel.addEventListener('click'",start)),context);
@@ -19,7 +19,7 @@ function player(saved=1.75,media={}){
  return{...context,events,writes,nodes,listeners,timers,emit:name=>events[name]?.forEach(fn=>fn()),label:()=>nodes.get('summary').textContent};
 }
 test('selected speed is both the actual rate and the media reload default',()=>{
- const p=player();assert.equal(p.instance.video.defaultPlaybackRate,1.75);assert.equal(p.instance.playbackRate,1.75);assert.equal(p.label(),'1.75×');assert.equal(p.writes.length,0);
+ const p=player();assert.equal(p.instance.video.defaultPlaybackRate,1.75);assert.equal(p.instance.playbackRate,1.75);assert.equal(p.label(),'1.75×');assert.equal(p.instance.video.muted,true);assert.equal(p.writes.length,0);
 });
 test('each media lifecycle event repairs a late reset without overwriting the preference',()=>{
  const p=player();
@@ -45,7 +45,7 @@ test('temporary keyboard acceleration never becomes the saved or default speed',
  p.listeners.keydown(key);[...p.timers.values()][0]();
  assert.equal(p.instance.playbackRate,2);assert.equal(p.label(),'2×');assert.equal(p.instance.video.defaultPlaybackRate,1.75);assert.equal(p.writes.length,0);
  p.instance.video.playbackRate=1;p.emit('video:ratechange');assert.equal(p.instance.playbackRate,2);
- p.listeners.keyup(key);assert.equal(p.instance.playbackRate,1.75);assert.equal(p.label(),'1.75×');assert.equal(p.writes.length,0);
+ p.listeners.keyup(key);assert.equal(p.instance.playbackRate,1.75);assert.equal(p.label(),'1.75×');assert.equal(p.instance.video.muted,true);assert.equal(p.writes.length,0);
 });
 test('blur restores the latest selected preference and disposal removes keyboard listeners',()=>{
  const p=player(),key={key:'ArrowRight',target:{tagName:'BODY'},preventDefault(){},stopImmediatePropagation(){}};

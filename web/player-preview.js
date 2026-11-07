@@ -5,6 +5,7 @@
  let art=null;
  let host=null;
  let mountedMedia=null;
+ let mountedSound=null;
  let libraryPromise;
  let hlsPromise;
  function loadHls(){
@@ -64,7 +65,7 @@
   const metric=window.OpenStreamPlayback?.forMedia(currentMedia);
   if(next===host&&currentMedia===mountedMedia)return;
   const webFullscreen=!!art?.fullscreenWeb;
-  const previousSound=art?.video?{muted:art.video.muted,volume:art.video.volume}:null;
+  const previousSound=art?.video&&mountedSound?{...mountedSound}:null;
   if(art){art.destroy(false);art=null;}
   host=next;mountedMedia=currentMedia;if(!host)return;
   try{
@@ -139,16 +140,22 @@
    });
    const instance=art;
    const sound={muted:previousSound?.muted??load('muted',false),volume:previousSound?.volume??load('volume',.8)};
+   mountedSound=sound;
+   let appliedVolume;
    function restoreSound(){
     if(instance.isDestroy)return;
-    instance.video.defaultMuted=sound.muted;
-    instance.video.muted=sound.muted;
-    instance.video.volume=sound.volume;
+    const video=instance.video;
+    // Zero the output as well: native rate changes can briefly reset the mute flag.
+    appliedVolume=sound.muted?0:sound.volume;
+    if(video.volume!==appliedVolume)video.volume=appliedVolume;
+    if(video.defaultMuted!==sound.muted)video.defaultMuted=sound.muted;
+    if(video.muted!==sound.muted)video.muted=sound.muted;
    }
    // WebKit can reset decoder mute on play or rate changes without a JS setter call.
    restoreSound();
    instance.on('video:play',restoreSound);
    instance.on('video:ratechange',restoreSound);
+   instance.on('muted',value=>{sound.muted=!!value;save('muted',sound.muted);restoreSound();});
    session ||= media?.url?window.OpenStreamPlayback?.createSession({transition:media?.switched?'line':media?.autoplay?'episode':'open',trigger:media?.trigger||'open'}):null;
    session?.bindMedia(media,media?.episodeKey,()=>!instance.isDestroy&&media===window.LivePlayback?.current());
    instance.on('destroy',()=>session?.dispose());
@@ -165,7 +172,7 @@
    for(const event of ['video:loadedmetadata','video:canplay','video:seeked'])instance.on(event,()=>queueMicrotask(resumePlayIntent));
    instance.on('video:playing',()=>{playIntent=false;clearTimeout(playTimer);});
    instance.on('destroy',()=>{playIntent=false;clearTimeout(playTimer);});
-   instance.on('video:volumechange',()=>{if(instance.isDestroy)return;sound.volume=instance.video.volume;sound.muted=instance.video.muted;save('volume',sound.volume);save('muted',sound.muted);});
+   instance.on('video:volumechange',()=>{if(instance.isDestroy)return;if(instance.video.volume!==appliedVolume){sound.volume=instance.video.volume;save('volume',sound.volume);}restoreSound();});
    instance.on('video:waiting',()=>{if(!instance.video.paused&&!instance.video.seeking)session?.waiting();});
    instance.on('video:playing',()=>session?.playing());
    instance.on('video:pause',()=>session?.phase('paused'));
@@ -212,6 +219,7 @@
     if(video.defaultPlaybackRate!==preferredRate)video.defaultPlaybackRate=preferredRate;
     const target=holding?2:preferredRate;
     if(video.playbackRate!==target)instance.playbackRate=target;
+    restoreSound();
     const rate=video.playbackRate;
     if(typeof session!=='undefined')session?.rates(preferredRate,target,rate,video.defaultPlaybackRate);
     slider.value=String(rate);slider.setAttribute('aria-valuetext',format(rate));

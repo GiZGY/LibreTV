@@ -6,7 +6,6 @@ async function open(page,{touch=false}={}){
  await page.addInitScript(()=>{
   const p='openstream_live_',film={id:'film-speed-drag',name:'星河深处',type:'电视剧',episodes:2,seasons:1,year:2025,genre:'剧情',rating:8,length:'每集45分钟',description:'一封迟到的信让旧日的故事再次展开。',director:'林远',cast:'陈予 / 许宁',lines:[{key:'qa:drag',sourceKey:'qa',name:'线路一',health:'fast',episodes:[1,2].map(n=>({name:'第'+n+'集',url:'/media/sample.mp4?ep='+n}))}],candidatesComplete:true};
   localStorage.setItem(p+'filmRecords',JSON.stringify([film]));localStorage.setItem(p+'playbackRate','1.25');localStorage.setItem(p+'autoplay','false');localStorage.setItem(p+'volume','0');localStorage.setItem(p+'muted','true');
-  const mute=()=>document.querySelectorAll('video').forEach(v=>{v.muted=true;v.volume=0;});addEventListener('DOMContentLoaded',()=>{mute();new MutationObserver(mute).observe(document.body,{childList:true,subtree:true});});
  });
  await page.goto('/#player/film-speed-drag');await expectMediaFrame(page);await page.locator('.art-control-playAndPause')[touch?'tap':'click']();await expectPlaybackProgress(page,{episode:1,episodeKey:'s1:e1',rate:1.25});
  await page.evaluate(()=>{
@@ -16,7 +15,13 @@ async function open(page,{touch=false}={}){
  });
  await page.locator('.fine-speed summary')[touch?'tap':'click']();await expect(page.locator('.fine-speed')).toHaveAttribute('open','');await expect(page.locator('.fine-speed-panel')).toBeVisible();await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
 }
-async function state(page,label){return page.evaluate(label=>{
+async function state(page,label){
+ // GStreamer updates its native mute flag before delivering volumechange to JS.
+ // Output must remain silent in that gap, then the original mute assertion applies.
+ const audio=await page.locator('video').evaluate(v=>({muted:v.muted,volume:v.volume,saved:localStorage.getItem('openstream_live_muted')}));
+ expect(audio.volume,label+' silent output').toBe(0);expect(audio.saved,label+' mute intent').toBe('true');
+ await expect(page.locator('video')).toHaveJSProperty('muted',true,{timeout:250});
+ return page.evaluate(label=>{
  const details=document.querySelector('.fine-speed'),popup=details.querySelector('.fine-speed-panel'),slider=details.querySelector('input'),video=document.querySelector('video'),rect=el=>{const r=el.getBoundingClientRect();return {x:r.x,y:r.y,w:r.width,h:r.height};};
  let visible=true;for(let el=popup;el;el=el.parentElement){const s=getComputedStyle(el);if(s.display==='none'||s.visibility==='hidden'||Number(s.opacity)<.02)visible=false;}
  return {label,open:details.open,visible,popup:rect(popup),slider:rect(slider),trigger:rect(details.querySelector('summary')),value:Number(slider.value),actual:video.playbackRate,defaultRate:video.defaultPlaybackRate,saved:Number(localStorage.getItem('openstream_live_playbackRate')),aria:slider.getAttribute('aria-valuetext'),summary:details.querySelector('summary').textContent,output:details.querySelector('output').textContent,focused:document.activeElement===slider,active:document.activeElement?.tagName,controls:document.querySelector('.art-video-player').className,muted:video.muted,coarse:matchMedia('(pointer:coarse)').matches};
@@ -24,12 +29,12 @@ async function state(page,label){return page.evaluate(label=>{
 function point(snapshot,value){return{x:snapshot.slider.x+9+(snapshot.slider.w-18)*(value-.5)/1.5,y:snapshot.slider.y+snapshot.slider.h/2};}
 async function report(page,samples,info,path){
  const events=await page.evaluate(()=>window.__speedDragEvents),initial=samples[0],delta={};for(const part of ['popup','slider','trigger'])delta[part]=Object.fromEntries(['x','y','w','h'].map(key=>[key,Math.max(...samples.map(s=>Math.abs(s[part][key]-initial[part][key])))]));
- console.log(JSON.stringify({path,project:info.project.name,coarse:initial.coarse,initial:{popup:initial.popup,slider:initial.slider,trigger:initial.trigger},maxDelta:delta,steps:samples.map(s=>({label:s.label,open:s.open,visible:s.visible,value:s.value,expected:s.expected,actual:s.actual,defaultRate:s.defaultRate,saved:s.saved})),inputEvents:events.filter(e=>e.name==='input').length,closeEvents:events.filter(e=>e.name==='toggle'&&!e.open).length,allInputsTrusted:events.filter(e=>e.name==='input').every(e=>e.trusted),events:events.filter(e=>['focusin','focusout','toggle','pointerdown','pointerup','pointercancel'].includes(e.name))}));return events;
+ console.log(JSON.stringify({path,project:info.project.name,coarse:initial.coarse,initial:{popup:initial.popup,slider:initial.slider,trigger:initial.trigger},maxDelta:delta,steps:samples.map(s=>({label:s.label,open:s.open,visible:s.visible,value:s.value,expected:s.expected,actual:s.actual,defaultRate:s.defaultRate,saved:s.saved,muted:s.muted})),inputEvents:events.filter(e=>e.name==='input').length,closeEvents:events.filter(e=>e.name==='toggle'&&!e.open).length,allInputsTrusted:events.filter(e=>e.name==='input').every(e=>e.trusted),events:events.filter(e=>['focusin','focusout','toggle','pointerdown','pointerup','pointercancel'].includes(e.name))}));return events;
 }
 function assertSteps(samples,initial){
  for(const s of samples){expect(s.open,s.label+' stays open').toBe(true);expect(s.visible,s.label+' remains visible').toBe(true);
   for(const part of ['popup','slider','trigger'])for(const key of ['x','y','w','h'])expect(Math.abs(s[part][key]-initial[part][key]),s.label+' stable '+part+'.'+key).toBeLessThanOrEqual(1);
-  expect(s.actual,s.label+' actual media rate').toBe(s.value);expect(s.defaultRate,s.label+' media default rate').toBe(s.value);expect(s.saved,s.label+' persisted rate').toBe(s.value);for(const key of ['aria','summary','output'])expect(s[key],s.label+' '+key).toBe(s.value+'×');expect(s.muted).toBe(true);
+  expect(s.actual,s.label+' actual media rate').toBe(s.value);expect(s.defaultRate,s.label+' media default rate').toBe(s.value);expect(s.saved,s.label+' persisted rate').toBe(s.value);for(const key of ['aria','summary','output'])expect(s[key],s.label+' '+key).toBe(s.value+'×');expect(s.muted,s.label+' retains mute').toBe(true);
   if(s.expected!==undefined)expect(s.value,s.label+' native range position').toBeCloseTo(s.expected,2);
  }
 }
