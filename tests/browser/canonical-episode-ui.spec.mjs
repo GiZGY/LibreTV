@@ -11,7 +11,7 @@ async function seed(page,{mixed=false,complete=false,last=false,noLines=false}={
    localStorage.setItem(p+'filmRecords',JSON.stringify([film]));localStorage.setItem(p+'favorites',JSON.stringify([id]));localStorage.setItem(p+'history',JSON.stringify([id]));
    localStorage.setItem(p+'historyMetadataV2',JSON.stringify({[id]:{episode:mixed?(last?3:2):2,season:2,episodeKey:last?'s2:e2':'s2:e1',position:complete?60:18,duration:60,totalEpisodes:4,completed:complete,watchedAt:new Date().toISOString()}}));localStorage.setItem(p+'playbackRate','1.75');localStorage.setItem(p+'autoplay','true');localStorage.setItem('canonical-ui-fixture','true');
   }
-  const mute=()=>document.querySelectorAll('video').forEach(v=>{v.muted=true;v.volume=0;});addEventListener('DOMContentLoaded',()=>{mute();new MutationObserver(mute).observe(document.body,{childList:true,subtree:true});});
+  localStorage.setItem('openstream_live_muted','true');localStorage.setItem('openstream_live_volume','0');
  },{mixed,complete,last,noLines});
 }
 async function current(page,key){await expect.poll(()=>page.evaluate(()=>LivePlayback.current()?.episodeKey)).toBe(key);await expectMediaFrame(page);if(!(await page.locator('video').evaluate(v=>v.paused)))await expectPlaybackProgress(page,{episodeKey:key});await expect(page.locator('video')).toHaveJSProperty('muted',true);}
@@ -20,7 +20,7 @@ test('mixed seasons use real season and episode labels across history, home, wat
  await page.goto('/#home');await expect(page.locator('.continue-notice')).toContainText('第 2 季 · 第 1 集');await page.goto('/#library');await expect(page.locator('.watchlist-detail')).toContainText('看到 第 2 季 · 第 1 集');
  await page.locator('[data-action="resume-history"]').click();await current(page,'s2:e1');await expect(page.locator('.episodes .active')).toHaveText('1');await expect(page.locator('.season-tabs [aria-pressed="true"]')).toHaveText('第 2 季');expect(await page.locator('video').evaluate(v=>v.currentTime)).toBeGreaterThanOrEqual(17.9);
  await page.locator('[data-action="season"][data-value="1"]').click();await current(page,'s1:e1');await expect(page.locator('.episodes .episode')).toHaveCount(1);await expect(page.locator('.episodes .active')).toHaveText('1');
- await page.locator('[data-action="season"][data-value="2"]').click();await current(page,'s2:e1');await expect(page.locator('.episodes .episode')).toHaveCount(3);await expect(page.locator('.episodes .active')).toHaveText('1');await page.locator('.watch-next [data-action="episode"]').last().click();await current(page,'s2:e2');await expect(page.locator('.episodes .active')).toHaveText('2');await expect(page.locator('.watch-next [data-action="episode"]').last()).toBeDisabled();
+ await page.locator('[data-action="season"][data-value="2"]').click();await current(page,'s2:e1');await expect(page.locator('.episodes .episode')).toHaveCount(2);await expect(page.locator('.episodes .active')).toHaveText('1');await page.locator('.watch-next [data-action="episode"]').last().click();await current(page,'s2:e2');await expect(page.locator('.episodes .active')).toHaveText('2');await expect(page.locator('.watch-next [data-action="episode"]').last()).toBeDisabled();
 });
 test('completed home continuation resolves a key before choosing next and consumes the intent once',async({page})=>{
  await seed(page,{noLines:true,complete:true});await page.goto('/#home');await expect(page.locator('.continue-notice')).toContainText('第 2 季 · 第 1 集');await expect(page.locator('[data-playback-intent="next"]')).toHaveCount(1);await expect(page.locator('[data-new-episode]')).toHaveCount(0);
@@ -28,5 +28,5 @@ test('completed home continuation resolves a key before choosing next and consum
  await page.locator('video').evaluate(v=>v.pause());await page.reload();await current(page,'s2:e2');expect(await page.locator('video').evaluate(v=>decodeURIComponent(v.currentSrc))).toContain('第2集');
 });
 test('completed cached last episode returns to the resolved picker rather than entering a preview',async({page})=>{
- await seed(page,{noLines:true,complete:true,last:true});await page.goto('/#home');await page.locator('[data-playback-intent="next"]').click();await expect(page).toHaveURL(/#detail\/film-canonical$/);await expect(page.locator('video')).toHaveCount(0);await expect(page.locator('[data-action="season"]').first()).toHaveText('第 2 季');await expect(page.locator('.episodes .episode')).toHaveCount(4);
+ await seed(page,{noLines:true,complete:true,last:true});await page.goto('/#home');await page.locator('[data-playback-intent="next"]').click();await expect(page).toHaveURL(/#detail\/film-canonical$/);await expect(page.locator('video')).toHaveCount(0);await expect(page.locator('[data-action="season"]').first()).toHaveText('第 2 季');await expect(page.locator('.episodes .episode')).toHaveCount(3);
 });

@@ -5,8 +5,8 @@ import { fileURLToPath } from 'node:url';
 import { transform } from 'esbuild';
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 const output=path.join(root,'public');
-const core=['config.js','proxy-auth.js','source-catalog.js','search.js','source-health.js','source-adapter.js','result-aggregator.js','streaming-search.js','ad-rules.js','ad-guard.js','native-ad-timelines.js','native-ad-evidence.js','native-ad-guard.js','native-ad-verifier.js','native-ad-transport.js','native-ad-session.js'];
-const ui=['styles.css','library-tools.css','player-tools.css','device-sync.css','app.js','local-data.js','library-tools.js','watchlist.js','backup-ui.js','live-mode.js','human-access.js','film-metadata.js','live-data.js','episode-identity.js','playback-session.js','live-ui.js','device-sync.js','player-tools.js','player-preview.js'];
+const core=['config.js','content-kind.js','proxy-auth.js','source-catalog.js','search.js','source-health.js','source-adapter.js','result-aggregator.js','streaming-search.js','ad-rules.js','ad-guard.js','native-ad-timelines.js','native-ad-evidence.js','native-ad-guard.js','native-ad-verifier.js','native-ad-transport.js','native-ad-session.js'];
+const ui=['styles.css','library-tools.css','player-tools.css','device-sync.css','app.js','local-data.js','library-tools.js','watchlist.js','backup-ui.js','live-mode.js','human-access.js','film-metadata.js','live-data.js','search-certifications.js','episode-identity.js','playback-session.js','live-ui.js','device-sync.js','player-tools.js','player-preview.js'];
 await fs.rm(output,{recursive:true,force:true});
 await fs.mkdir(path.join(output,'core'),{recursive:true});
 let sourceBytes=0,outputBytes=0;
@@ -18,7 +18,7 @@ async function emit(source,destination){
  await fs.writeFile(path.join(output,destination),code);
 }
 for(const name of ui)await emit('web/'+name,name);
-for(const name of core)await emit('js/'+name,'core/'+name);
+for(const name of core)await emit('js/'+(name==='content-kind.js'?'content-kind.cjs':name),'core/'+name);
 for(const dir of ['assets','libs'])await fs.cp(path.join(root,'web',dir),path.join(output,dir),{recursive:true});
 await fs.copyFile(path.join(root,'libs/hls.min.js'),path.join(output,'libs/hls.min.js'));
 const revision=crypto.createHash('sha256');
@@ -27,7 +27,7 @@ const version=revision.digest('hex').slice(0,16);
 const assetRoot=`static/${version}`;
 await fs.mkdir(path.join(output,assetRoot),{recursive:true});
 for(const name of [...ui,'core'])await fs.rename(path.join(output,name),path.join(output,assetRoot,name));
-const scripts=['core/config.js','live-mode.js','human-access.js',...core.slice(1).map(n=>'core/'+n),'app.js','local-data.js','library-tools.js','watchlist.js','backup-ui.js','film-metadata.js','live-data.js','episode-identity.js','playback-session.js','live-ui.js','device-sync.js','player-tools.js','player-preview.js'];
+const scripts=['core/config.js','live-mode.js','human-access.js',...core.slice(1).map(n=>'core/'+n),'app.js','local-data.js','library-tools.js','watchlist.js','backup-ui.js','film-metadata.js','live-data.js','search-certifications.js','episode-identity.js','playback-session.js','live-ui.js','device-sync.js','player-tools.js','player-preview.js'];
 let html=await fs.readFile(path.join(root,'web/index.html'),'utf8');
 html=html.replace(/<script defer src="(?:app|player-preview|playback-session)\.js"><\/script>/g,'').replace(/styles\.css\?[^" ]+/g,assetRoot+'/styles.css?v='+version);
 html=html.replace('</head>',`<link rel="stylesheet" href="${assetRoot}/library-tools.css?v=${version}"><link rel="stylesheet" href="${assetRoot}/player-tools.css?v=${version}"><link rel="stylesheet" href="${assetRoot}/device-sync.css?v=${version}"></head>`);

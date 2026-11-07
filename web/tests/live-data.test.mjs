@@ -52,3 +52,29 @@ test('global discovery policy requires a Chinese title, keeps unrated and exclud
  assert.equal(data.allowed({title:'星际穿越 Interstellar',rate:'8'}),true);
  assert.equal(data.allowed({name:'旧收藏',rating:'4.5'}),false);
 });
+
+test('a retired discovery revision is reacquired once without changing filters or reusing the stale unpinned page',async()=>{
+ const seen=[];let revision='12',unavailable=false;
+ const ctx={...context,URLSearchParams,window:{},fetch:async url=>{
+  const q=new URL(url,'http://localhost').searchParams;seen.push(q);
+  if(unavailable||q.get('revision')==='12'&&revision==='13')return{ok:false,status:410};
+  return{ok:true,status:200,json:async()=>({indexed:true,filtered:true,revision,items:[],rawCount:0})};
+ }};
+ vm.runInNewContext(readFileSync(new URL('../live-data.js',import.meta.url),'utf8'),ctx);
+ const read=page=>ctx.window.LiveData.discoverTMDB({type:'电视剧',year:'2022',genre:'悬疑',region:'中国大陆',sort:'精选',page});
+ assert.equal((await read(1)).revision,'12');revision='13';
+ assert.equal((await read(1)).revision,'13');
+ assert.deepEqual(seen.map(q=>q.get('revision')),[null,'12',null]);assert.notEqual(seen[2].get('snapshot'),seen[0].get('snapshot'));
+ assert.equal((await read(2)).revision,'13');assert.equal(seen.at(-1).get('revision'),'13');
+ assert.ok(seen.every(q=>q.get('year')==='2022'&&q.get('region')==='中国大陆'));
+ unavailable=true;await assert.rejects(read(3));assert.equal(seen.length,6);
+});
+
+test('search requires a title or an explicit alias, not scattered characters, people or synopsis',()=>{
+ const matches=data.titleMatcher('甄嬛传');
+ for(const vod_name of ['甄嬛传','后宫·甄嬛传','《甄 嬛 传》国语版'])assert.ok(matches({vod_name}));
+ for(const vod_name of ['如懿传','北京地铁','了不起的甄高贵','几度夕阳红'])assert.ok(!matches({vod_name,vod_content:'甄嬛传',vod_actor:'甄嬛传'}));
+ assert.ok(matches({vod_name:'其他译名',vod_sub:'别名一 / 甄嬛传'}));
+ assert.ok(data.titleMatcher('ＦＯＯ　Bar')({original_title:'Foo: Bar'}));
+ assert.ok(!data.titleMatcher('！')({vod_name:'任意'}));
+});

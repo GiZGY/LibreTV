@@ -68,11 +68,16 @@
     const name = data.text(item.vod_name || item.title);
     let id = douban ? identity((item.provider||'douban')+':' + item.id) : identity(OpenStreamResultAggregator.getResultKey?.(item) || name + '|' + item.vod_year + '|' + item.type_name);
     if(!douban&&OpenStreamResultAggregator.getVersion?.(item)){const legacyId=identity(OpenStreamResultAggregator.getLegacyResultKey(item)),legacy=films.find(f=>f.id===legacyId);if(legacy&&legacy.name===name&&OpenStreamResultAggregator.getVersion({vod_name:legacy.name})===OpenStreamResultAggregator.getVersion(item))id=legacyId;}
+    if(item.work_key&&!films.some(f=>f.id===id)){
+      // Keep a saved card's history when its former language group joins the work.
+      const saved=films.find(f=>(favorites.has(f.id)||history.includes(f.id))&&f.name===name&&String(f.year)===String(item.vod_year)&&f.candidates?.some(c=>item.source_lines?.some(l=>l.source_code===c.source_code&&String(l.vod_id)===String(c.vod_id))));
+      if(saved)id=saved.id;
+    }
     if(stableId)id=stableId;
     const old = films.find(f => f.id === id);
     const film = Object.assign(old || {}, {
       id, name, certification:item.certification||old?.certification, ratingSource:item.rating_source||old?.ratingSource||'', catalogProvider:item.provider||old?.catalogProvider||'', catalogId:douban?String(item.id):old?.catalogId, en: item.original_title||old?.en||'',
-      ...FilmMetadata.merge(item,old), rating: String(item.rate || item.vod_douban_score || old?.rating || ''),
+      ...FilmMetadata.merge(item,old), scoreConflict:!!item.score_conflict, rating: String(item.rate || (old?.ratingSource==='TMDB'?old.rating:'') || (item.score_conflict?'':item.vod_douban_score) || ''),
       type: /剧|连续/.test(item.type_name)?'电视剧':/动漫/.test(item.type_name)?'动漫':/综艺/.test(item.type_name)?'综艺':'电影',
       director: data.text(item.vod_director) || old?.director || '暂无资料', cast: data.text(item.vod_actor) || old?.cast || '暂无资料',
       description: data.text(item.vod_content) || old?.description || '暂无简介', length: data.text(item.vod_remarks) || old?.length || '',
@@ -142,13 +147,8 @@
     if(token!==generation)return;
     const featured=featuredFilms(), rest=homeRecommendations();
     // The featured strip and the recommendation grid use disjoint lists.
-    const group=copy=>`<div class="film-ribbon-group" ${copy?'aria-hidden="true"':''}>${[...featured,...featured].map((f,i)=>{
-      let html=card(f,true);
-      if(copy||i>=featured.length)html=html.replace('<a ','<a tabindex="-1" ').replace('<button ','<button tabindex="-1" ');
-      if(i>=featured.length)html=html.replace('<article ','<article data-loop-copy="true" ');
-      return html;
-    }).join('')}</div>`;
-    window.OpenStreamLibrary?.notifyResume();$('#main').innerHTML=`<div id="hero-slot"><section class="film-ribbon poster-ribbon" aria-label="精选影片"><div class="film-ribbon-track">${group(false)}${group(true)}</div></section></div><div class="section-head"><h2>推荐影片</h2><a class="text-button" href="#discover">发现更多 ${icon('arrow')}</a></div><div class="filter-tabs">${['全部','科幻','悬疑','剧情','历史'].map(genre=>`<button class="chip ${homeGenre===genre?'selected':''}" data-live-home-genre="${genre}" aria-pressed="${homeGenre===genre}">${genre}</button>`).join('')}</div><div id="home-recommendations">${homeGenre==='全部'?grid(rest):status('正在加载影片…',false)}</div><div class="section-head"><h2>热门剧集</h2></div><div id="live-tv">${status('正在加载剧集…',false)}</div>`;
+    window.OpenStreamLibrary?.notifyResume();$('#main').innerHTML=`<div id="hero-slot">${heroMarkup(featured)}</div><div class="section-head"><h2>推荐影片</h2><a class="text-button" href="#discover">发现更多 ${icon('arrow')}</a></div><div class="filter-tabs">${['全部','科幻','悬疑','剧情','历史'].map(genre=>`<button class="chip ${homeGenre===genre?'selected':''}" data-live-home-genre="${genre}" aria-pressed="${homeGenre===genre}">${genre}</button>`).join('')}</div><div id="home-recommendations">${homeGenre==='全部'?grid(rest):status('正在加载影片…',false)}</div><div class="section-head"><h2>热门剧集</h2></div><div id="live-tv">${status('正在加载剧集…',false)}</div>`;
+    setupHeroRibbon();
     if(homeGenre!=='全部')await updateHomeGenre(homeGenre);
     try {
       const {items:tv}=await data.discoverTMDB({type:'电视剧',genre:'全部',year:'全部',sort:'精选',minRating:6.5,page:1,signal});
@@ -177,14 +177,26 @@
     const years=['全部',...Array.from({length:Math.max(0,currentYear-1990+1)},(_,i)=>String(currentYear-i))];
     return `<div class="discovery-heading"><h1>探索影片</h1><button class="text-button" data-action="reset">重置筛选</button></div><div class="discovery-filters">${filterStrip('分类','type',['电影','电视剧','动漫','综艺','纪录片'])}${filterStrip('题材','genre',!['电影','纪录片'].includes(filters.type)?['全部','剧情','喜剧','悬疑','犯罪','动画','家庭']:['全部','剧情','爱情','喜剧','动作','科幻','悬疑','惊悚','犯罪','冒险','动画','战争','历史','奇幻','家庭'])}${filterStrip('地区','region',['全部','中国大陆','中国香港','中国台湾','美国','英国','法国','德国','日本','韩国','印度','泰国'])}${filterStrip('年份','year',years)}</div><div class="results-head"><span id="discovery-count"></span><div class="sort-options">${chips(['精选','最新上映','评分最高'],filters.sort,'sort','',{'精选':'热门优先','评分最高':'高分佳作'})}</div></div><div id="discovery-cards">${status('正在寻找影片…',false)}</div><div class="pagination"><button data-live-page="-1" ${discoverPage===1?'disabled':''}>上一页</button><span>第 ${discoverPage} 页</span><button data-live-page="1" disabled>下一页</button></div>`;
   }
+  function showDiscoveryControls(){
+    $('#main').innerHTML=discoveryControls();
+    // Move the strip, not the viewport or keyboard focus, when restoring a saved choice.
+    for(const strip of document.querySelectorAll('[data-strip]')){
+      const active=strip.querySelector('[aria-pressed="true"]');if(!active)continue;
+      strip.scrollLeft=filterScroll[strip.dataset.strip]||0;
+      const item=active.getBoundingClientRect(),bounds=strip.getBoundingClientRect();
+      if(item.left<bounds.left)strip.scrollLeft+=item.left-bounds.left;
+      else if(item.right>bounds.right)strip.scrollLeft+=item.right-bounds.right;
+    }
+  }
   async function fetchDiscovery(signal,token) {
     if(!['电影','纪录片'].includes(filters.type)&&!['全部','剧情','喜剧','悬疑','犯罪','动画','家庭'].includes(filters.genre))filters.genre='全部';
     save('discovery',{filters,page:discoverPage});
-    const retained=lastDiscoveryView;
-    $('#main').innerHTML=discoveryControls();
+    const condition=JSON.stringify([catalogProvider,filters]),page=discoverPage;
+    // An older page is useful during pagination, never as the result of different filters.
+    const retained=lastDiscoveryView?.condition===condition?lastDiscoveryView:null;
+    showDiscoveryControls();
     if(retained){$('#discovery-cards').innerHTML=retained.html;$('#discovery-cards').setAttribute('aria-busy','true');$('#discovery-count').textContent='正在更新影片…';}
     document.querySelectorAll('[data-live-page]').forEach(button=>button.disabled=true);
-    const condition=JSON.stringify([catalogProvider,filters]),page=discoverPage;
     try{
       const result=await data.discoverTMDB({...filters,page,signal,pageSize:discoveryPageSize});
       if(token!==generation||signal.aborted)return;
@@ -201,46 +213,66 @@
       document.querySelector('[data-live-page="1"]').disabled=!result.hasNext||(end&&page>=end);
     }catch(error){
       if(token!==generation||signal.aborted)return;
-      const previous=lastDiscoveryView;
+      if(error.status===404&&page>1){discoverPage=1;return fetchDiscovery(signal,token);}
+      const previous=retained;
       if(previous){
-        filters=JSON.parse(previous.condition)[1];
         discoverPage=previous.page;discoveryHasNext=previous.hasNext;
         save('discovery',{filters,page:discoverPage});
-        $('#main').innerHTML=discoveryControls();
+        showDiscoveryControls();
         $('#discovery-cards').innerHTML=previous.html;
         $('#discovery-count').textContent='本页 '+previous.count+' 部影片 · 暂未加载新页，已保留当前内容';
         document.querySelector('.pagination span').textContent=previous.totalPages?'第 '+previous.page+' / '+previous.totalPages+' 页':'第 '+previous.page+' 页';
         document.querySelector('[data-live-page="-1"]').disabled=previous.page===1;
         document.querySelector('[data-live-page="1"]').disabled=!previous.hasNext;
         toast(error.message);
-      }else{discoveryHasNext=false;$('#discovery-cards').innerHTML=status(error.message);}
+      }else{discoveryHasNext=false;$('#discovery-count').textContent='';$('#discovery-cards').innerHTML=status(error.message||'影片暂时未加载');}
     }
   }
   async function searchFilms(query,signal,onUpdate) {
     await window.HumanAccess?.ensure();
     if(signal?.aborted)throw signal.reason;
     window.OpenStreamSourceHealth?.recoverSearchFailures(data.sources());
-    const statuses=[];
+    const statuses=[],matches=data.titleMatcher(query);
+    const accepted=items=>items.filter(data.allowed).filter(matches);
     const result=await OpenStreamStreamingSearch.runStreamingSearch({sources:data.sources(),query,filters:{},signal,
       onSourceDone: result=>statuses.push(result.status),
-      onUpdate: payload=>onUpdate?.(payload.results.filter(data.allowed)),
-      onDone: payload=>onUpdate?.(payload.results.filter(data.allowed))});
-    return {...result,statuses};
+      onUpdate: payload=>onUpdate?.(accepted(payload.results)),
+      onDone: payload=>onUpdate?.(accepted(payload.results))});
+    return {...result,results:accepted(result.results),statuses};
   }
   const recentSearchViews=new Map(),searchConditions=new Map();
   async function fetchSearch(query,signal,token) {
     $('#main').innerHTML=`<div class="page-title"><h1>搜索结果</h1><p id="search-progress">正在搜索“${esc(query)}”…</p></div><div class="search-result-filters"><label>类型<select data-search-filter="type"><option value="all">全部类型</option><option>电影</option><option>电视剧</option><option>动漫</option><option>综艺</option></select></label><label>年份<select data-search-filter="year"><option value="all">全部年份</option></select></label><label>季<select data-search-filter="season"><option value="all">全部季</option></select></label></div><div id="live-results" class="poster-grid"></div><p id="search-empty" class="search-empty" hidden>没有符合筛选条件的影片</p>`;
     const host=$('#live-results'),itemsById=new Map(),nodes=new Map(),filters={type:'all',year:'all',season:'all',...searchConditions.get(query)};
+    const term=data.foldTitle(query);
+    const exact=f=>[f.name,f.en].some(value=>value&&data.foldTitle(value)===term);
+    const year=f=>/^\d{4}$/.test(String(f.year))?Number(f.year):0;
+    const rank=(a,b)=>Number(exact(b))-Number(exact(a))||year(b)-year(a)||a.name.localeCompare(b.name,'zh-CN')||a.id.localeCompare(b.id);
+    const watchCertificate=window.OpenStreamSearchCertificates.watch(host,signal);
     const applyFilters=()=>{let visible=0;for(const[id,f]of itemsById){const show=(filters.type==='all'||f.type===filters.type)&&(filters.year==='all'||String(f.year)===filters.year)&&(filters.season==='all'||String(f.searchSeason||'unknown')===filters.season);nodes.get(id).hidden=!show;if(show)visible++;}$('#search-empty').hidden=visible>0||!itemsById.size;};
     const updateOptions=()=>{for(const[key,values]of [['year',[...new Set([...itemsById.values()].map(f=>f.year).filter(Boolean))].sort((a,b)=>Number(b)-Number(a))],['season',[...new Set([...itemsById.values()].map(f=>f.searchSeason||'unknown'))].sort((a,b)=>Number(a)-Number(b))]]){const select=document.querySelector(`[data-search-filter="${key}"]`);for(const value of values)if(![...select.options].some(option=>option.value===String(value))){const option=document.createElement('option');option.value=value;option.textContent=key==='season'?(value==='unknown'?'季号未标注':'第 '+value+' 季'):value;select.append(option);}select.value=filters[key];}};
     const addFilms=(items,raw=true)=>{
       const specificity=item=>Number(!!item.vod_year)+Number(!!item.vod_director)+Number(!!OpenStreamResultAggregator.getSeason?.(item));
       const ordered=items.slice().sort((a,b)=>Number((b.vod_name||b.name)===query)-Number((a.vod_name||a.name)===query)||specificity(b)-specificity(a)),visible=new Set(),claimed=new Set();
       for(const item of ordered){
-        let stableId=null;const sources=raw?(item.source_lines||[item]).map(line=>line.source_code+':'+line.vod_id):[],year=String(item.vod_year||''),season=raw?OpenStreamResultAggregator.getSeason?.(item)||'':'',version=raw?OpenStreamResultAggregator.getVersion?.(item)||'':'';
+        let stableId=null;const sources=raw?(item.source_lines||[item]).map(line=>line.source_code+':'+line.vod_id):[],year=String(item.vod_year||''),season=raw?OpenStreamResultAggregator.getSeason?.(item)||'':'',version=raw?item.work_key||OpenStreamResultAggregator.getVersion?.(item)||'':'';
         if(raw){const matches=[...itemsById.values()].filter(f=>!claimed.has(f.id)&&f.searchSources?.some(key=>sources.includes(key))&&(!year||!f.year||String(f.year)===year)&&(!season||!f.searchSeason||f.searchSeason===season)&&f.searchVersion===version);if(matches.length===1)stableId=matches[0].id;}
-        const f=raw?register(item,false,stableId):item;claimed.add(f.id);visible.add(f.id);if(raw){f.searchSources=sources;f.searchSeason=season;f.searchVersion=version;f.searchVersionLabel=OpenStreamResultAggregator.getVersionLabel?.(item)||'';f.sourceCount=item.source_lines?.length||1;}itemsById.set(f.id,f);
-        let node=nodes.get(f.id);if(!node){const template=document.createElement('template');template.innerHTML=card(f);node=template.content.firstElementChild;if(!node)continue;node.dataset.film=f.id;const badge=document.createElement('p');badge.className='search-version-note';badge.textContent=[f.searchSeason?'第 '+f.searchSeason+' 季':'',f.searchVersionLabel||'',f.sourceCount+' 个来源'].filter(Boolean).join(' · ');node.querySelector('a').append(badge);nodes.set(f.id,node);host.append(node);}else{const badge=node.querySelector('.search-version-note');if(badge)badge.textContent=[f.searchSeason?'第 '+f.searchSeason+' 季':'',f.searchVersionLabel||'',f.sourceCount+' 个来源'].filter(Boolean).join(' · ');}}
+        const f=raw?register(item,false,stableId):item;claimed.add(f.id);visible.add(f.id);if(raw){f.searchSources=sources;f.searchSeason=season;f.searchVersion=version;f.searchVersionLabel=OpenStreamResultAggregator.getVersionLabel?.(item)||'';f.sourceCount=item.source_count||item.source_lines?.length||1;}if(!f.certification)f.certification=window.OpenStreamSearchCertificates.peek(f);itemsById.set(f.id,f);
+        let node=nodes.get(f.id);if(!node){const template=document.createElement('template');template.innerHTML=card(f);node=template.content.firstElementChild;if(!node){itemsById.delete(f.id);visible.delete(f.id);continue;}node.dataset.film=f.id;const badge=document.createElement('p');badge.className='search-version-note';badge.textContent=[f.searchSeason?'第 '+f.searchSeason+' 季':'',f.searchVersionLabel||'',f.sourceCount+' 个来源'].filter(Boolean).join(' · ');node.querySelector('a').append(badge);nodes.set(f.id,node);host.append(node);}else{const meta=node.querySelector('.poster-meta'),html=posterMeta(f);if(node._posterMeta!==html){meta.innerHTML=html;node._posterMeta=html;}const badge=node.querySelector('.search-version-note');if(badge)badge.textContent=[f.searchSeason?'第 '+f.searchSeason+' 季':'',f.searchVersionLabel||'',f.sourceCount+' 个来源'].filter(Boolean).join(' · ');}
+        // A later source can supply the real cover while this card stays mounted.
+        if(node._posterArt==='assets/poster-unavailable.svg'&&node._posterArt!==img(f)){
+          const template=document.createElement('template');template.innerHTML='<img '+posterAttributes(f)+'>';
+          for(const image of node.querySelectorAll('.poster-art img'))for(const {name,value} of template.content.firstElementChild.attributes)image.setAttribute(name,value);
+        }
+        node._posterArt=img(f);watchCertificate(node,f);}
+      // Keep the focused link mounted even when an exact title arrives after partial matches.
+      const focused=document.activeElement?.closest('[data-film]');
+      let next=null;
+      for(const id of [...visible].sort((a,b)=>rank(itemsById.get(a),itemsById.get(b))).reverse()){
+        const node=nodes.get(id);if(!node)continue;
+        if(node!==focused&&node.nextElementSibling!==next)host.insertBefore(node,next);
+        next=node;
+      }
       for(const[id,node]of nodes)if(!visible.has(id)){if(node.contains(document.activeElement)){node.setAttribute('aria-busy','true');node.addEventListener('focusout',()=>{if(!node.contains(document.activeElement)&&!itemsById.has(id)){node.remove();nodes.delete(id);}},{once:true});}else{node.remove();nodes.delete(id);}itemsById.delete(id);}
       updateOptions();applyFilters();
     };
@@ -257,7 +289,10 @@
     if(!count){host.classList.remove('poster-grid');host.innerHTML=status(result.statuses.length&&result.statuses.every(value=>['ready','success','no_result','skipped'].includes(value))?'暂未找到影片。可以换个片名，或稍后重试。':'当前来源暂时无法响应，请稍后重试。');}
   }
   async function resolveFilm(f,signal,force=false) {
-    if(f.lines?.length)return f;
+    if(f.lines?.length){
+      const selected=f.lines[f.lineIndex||0];f.lines=f.lines.filter(line=>!window.OpenStreamContent?.trailerEpisode(line.flag)&&line.episodes?.some(ep=>!window.OpenStreamContent?.trailerEpisode(ep.name)));
+      f.lineIndex=Math.max(0,f.lines.indexOf(selected));if(f.lines.length)return f;
+    }
     if(f.catalogProvider==='tmdb'&&!/[\u3400-\u9fff]/.test(f.name)){
       try{const item=await data.detailTMDB(f.catalogId,signal);if(/[\u3400-\u9fff]/.test(item.title)){f.name=item.title;persist();}}catch(error){if(signal.aborted)throw error;}
     }
@@ -340,7 +375,7 @@
       const item=await data.detailTMDB(f.catalogId,signal);
       if(signal.aborted||token!==generation)return;
       Object.assign(f,FilmMetadata.merge(item,f),{name:item.title||f.name,certification:item.certification,description:data.text(item.vod_content)||'暂无简介',director:data.text(item.vod_director)||'暂无资料',cast:data.text(item.vod_actor)||'暂无资料',rating:item.rate,ratingSource:'TMDB',length:item.vod_remarks||f.length});
-      persist();refreshDetailText(f);void updateRelated(f,signal,token);
+      window.OpenStreamSearchCertificates.remember(f,item.certification);persist();refreshDetailText(f);void updateRelated(f,signal,token);
     }catch(error){
       if(signal.aborted||token!==generation)return;
       void updateRelated(f,signal,token);const note=document.createElement('p');note.className='related-empty';note.textContent='完整资料暂时无法加载，可稍后重试。';document.querySelector('.detail-content .credits')?.after(note);
@@ -367,7 +402,10 @@
       await resolveFilm(f,AbortSignal.any([signal,controller.signal]),force);
       if(signal.aborted||token!==generation)return;
       button.setAttribute('href',href);button.removeAttribute('aria-disabled');button.innerHTML=label;
-      window.OpenStreamLibrary?.availability.record(f.id,'sources');note.textContent=`已找到 ${f.lines.length} 条播放线路 · 尚未验证实际播放`;
+      const availability=window.OpenStreamLibrary?.availability;availability?.record(f.id,'sources');
+      const evidence=availability?.view(f.id);
+      const count=document.createElement('span');count.dataset.lineCount='true';count.textContent=`已找到 ${f.lines.length} 条播放线路`;note.append(count);
+      if(evidence&&!evidence.stale&&['played','failed'].includes(evidence.state)){note.append(' · '+evidence.label);note.title=evidence.detail;}
       if(newEpisode(f)){
         const link=document.createElement('a');link.className='text-button';link.href='#player/'+f.id;link.dataset.newEpisode=newEpisode(f);link.dataset.id=f.id;link.textContent='有新集 · '+episodeDescription(f,{episode:newEpisode(f)});note.append(' ',link);
       }
@@ -490,11 +528,11 @@
       while(index<candidates.length&&!signal.aborted){
         const candidate=candidates[index++];
         try{const result=await data.detail(candidate,signal);for(const line of result.lines)if(!f.lines.some(old=>old.key===line.key))f.lines.push(line);
-          if(token===generation&&!signal.aborted){window.OpenStreamEpisodes?.sync(f,episodeFor(f),activePlayback?.filmId===f.id?activePlayback.episodeKey:null);if(activePlayback?.filmId===f.id)activePlayback.episode=episodeFor(f).episode;refreshEpisodePicker(f);if(location.hash.startsWith('#player/'))document.querySelector('.watch-routes')?.replaceWith(document.createRange().createContextualFragment(routeButtons(f)));probeLines(f,signal);}
+          if(token===generation&&!signal.aborted){window.OpenStreamEpisodes?.sync(f,episodeFor(f),activePlayback?.filmId===f.id?activePlayback.episodeKey:null);if(activePlayback?.filmId===f.id)activePlayback.episode=episodeFor(f).episode;refreshEpisodePicker(f);const count=document.querySelector('.availability-note [data-line-count]');if(count)count.textContent=`已找到 ${f.lines.length} 条播放线路`;if(location.hash.startsWith('#player/'))document.querySelector('.watch-routes')?.replaceWith(document.createRange().createContextualFragment(routeButtons(f)));probeLines(f,signal);}
         }catch{} }
     }));
   }
-  let lineTransfer=null,playbackBusy=false,playbackTrigger='open',failedSelection=null,pendingContinuation=null;
+  let lineTransfer=null,preparedLine=null,recoveryTask=null,playbackBusy=false,playbackTrigger='open',failedSelection=null,pendingContinuation=null;
   const automaticSwitches=new Map(),playEvidence=new WeakMap();
   async function playback(f,signal,metric) {
     const line=f.lines[f.lineIndex||0],state=episodeFor(f),ordinal=['电影','纪录片'].includes(f.type)?1:state.episode;
@@ -502,12 +540,12 @@
     const episode=line?.episodes[index];if(!episode)return null;
     const transfer=lineTransfer?.filmId===f.id&&lineTransfer.episode===ordinal?lineTransfer:null;
     const autoplay=continuePlayback,trigger=playbackTrigger,key=window.OpenStreamEpisodes?.selection(f,state)?.key;
-    metric?.segment('address');const addressStarted=performance.now(),url=await data.resolveEpisode(line,index,signal);
+    metric?.segment('address');const addressStarted=performance.now(),prepared=preparedLine?.filmId===f.id&&preparedLine.lineKey===line.key&&preparedLine.episodeKey===key&&Date.now()-preparedLine.at<15000?preparedLine:null,url=prepared?.url||await data.resolveEpisode(line,index,signal);
     metric?.segment('render');
     if(signal.aborted)throw signal.reason;
     const saved=historyMetadata[f.id],savedKey=saved?.episodeKey||window.OpenStreamEpisodes?.legacyKey(f,saved),same=savedKey?key===savedKey:saved?.episode===ordinal;
     const value={filmId:f.id,lineKey:line.key,url,addressMs:performance.now()-addressStarted,episode:ordinal,season:state.season||1,episodeKey:key,source:line.sourceKey,label:episode.name,cut:window.OpenStreamEpisodes?.cut(line)||'标准版',resume:transfer?.position??(same&&!watchedComplete(saved)?saved?.position:0),resumeDuration:transfer?.duration||saved?.duration||0,resumeRatio:transfer?.ratio??null,switched:!!transfer,autoplay,trigger};
-    continuePlayback=false;playbackTrigger='open';lineTransfer=null;return value;
+    continuePlayback=false;playbackTrigger='open';lineTransfer=null;preparedLine=null;return value;
   }
   render = async function () {
     const token=++generation;request?.abort();homeFilterController?.abort();request=new AbortController();const {signal}=request;
@@ -525,7 +563,7 @@
       else if(page==='search'){activePlayback=null;await fetchSearch(decodeURIComponent(encoded),signal,token);}
       else if(page==='detail'||page==='player'){
         const film=films.find(f=>f.id===encoded);
-        if(!film){metric?.error('record_missing');$('#main').innerHTML=status('影片记录已失效，请重新搜索。',false);return;}
+        if(!film||window.OpenStreamContent?.trailerItem(film)){metric?.error('record_missing');$('#main').innerHTML=status('影片记录已失效，请重新搜索。',false);return;}
         if(page==='detail'){
           if(isSeries(film)&&Date.now()-(film.linesCheckedAt||0)>1800000){delete film.lines;delete film.candidates;film.candidatesComplete=false;}
           activePlayback=null;$('#main').innerHTML=detail(film);void hydrateDetail(film,signal,token);void checkAvailability(film,signal,token).then(()=>{if(!signal.aborted&&token===generation&&film.lines?.length)void addOtherLines(film,signal,token);});return;
@@ -542,7 +580,8 @@
         if(restoredEpisode&&!restoredEpisode.episodeKey&&window.OpenStreamEpisodes){const key=OpenStreamEpisodes.legacyKey(film,restoredEpisode);if(key){Object.assign(restoredEpisode,{episodeKey:key,episode:episodeFor(film).episode,season:episodeFor(film).season});save('historyMetadataV2',historyMetadata);}}
         if(page==='detail'){activePlayback=null;$('#main').innerHTML=detail(film);}
         else{
-          if(!film.manualLine&&!activePlayback){film.lineIndex=rankedLines(film).find(({line})=>window.OpenStreamEpisodes?OpenStreamEpisodes.indexFor(film,line,episodeFor(film))>=0:line.episodes[['电影','纪录片'].includes(film.type)?0:episodeFor(film).episode-1])?.i||0;}
+          const hasTarget=line=>window.OpenStreamEpisodes?OpenStreamEpisodes.indexFor(film,line,episodeFor(film))>=0:!!line?.episodes?.[['电影','纪录片'].includes(film.type)?0:episodeFor(film).episode-1];
+          if(!hasTarget(film.lines[film.lineIndex||0])||!film.manualLine&&!activePlayback){const available=rankedLines(film).find(({line})=>hasTarget(line));if(available)film.lineIndex=available.i;}
           metric?.expect(window.OpenStreamEpisodes?.selection(film,episodeFor(film))?.key);
           const nextPlayback=await playback(film,signal,metric);if(token!==generation)return;activePlayback=nextPlayback;
           if(nextPlayback)metric?.bindMedia(nextPlayback,nextPlayback.episodeKey,()=>activePlayback===nextPlayback);else metric?.error('episode_missing');if(activePlayback)Object.assign(activePlayback,{resolveMs:performance.now()-resolveStarted,sourceMs,accessMs});window.LivePlayback?.ready(continuation);
@@ -572,7 +611,7 @@
     recentQueries=[query,...recentQueries.filter(item=>item!==query)].slice(0,6);save('recentQueries',recentQueries);
     command.close();const hash='#search/'+encodeURIComponent(query);if(location.hash===hash)render();else location.hash=hash;
   };
-  commandInput.addEventListener('keydown',event=>{if(event.key==='Enter'&&commandInput.value.trim()&&commandIndex<0){event.preventDefault();event.stopImmediatePropagation();searchAll();}},true);
+  registerSuggestion=item=>item.sourceItem?register(item.sourceItem):register(item,true);
   document.addEventListener('submit',async event=>{
     if(event.target.id!=='live-login')return;event.preventDefault();const button=event.target.querySelector('button');button.disabled=true;
     try{
@@ -620,7 +659,7 @@
     loading(film){const state=typeof episodeState==='undefined'?null:episodeState[film.id];playbackBusy=true;failedSelection={filmId:film.id,episode:state?.episode||historyMetadata[film.id]?.episode||1,lineIndex:film.lineIndex||0};document.dispatchEvent(new CustomEvent('playback-loading',{detail:{filmId:film.id}}));},
     ready(continuation){playbackBusy=false;failedSelection=null;if(continuation&&pendingContinuation===continuation)pendingContinuation=null;},
     loadFailed(){playbackBusy=false;},
-    unload(){playbackBusy=false;continuePlayback=false;playbackTrigger='open';failedSelection=null;pendingContinuation=null;},
+    unload(){window.LivePlayback.cancelRecovery(activePlayback);playbackBusy=false;continuePlayback=false;playbackTrigger='open';failedSelection=null;pendingContinuation=null;preparedLine=null;},
     queueContinuation(filmId,mode='resume',target=null){
       if(!films.some(f=>f.id===filmId)||!['resume','next','target'].includes(mode))return false;
       window.OpenStreamPlayback?.intent({transition:'open',trigger:'manual',expectedKey:mode==='resume'?historyMetadata[filmId]?.episodeKey||null:null});
@@ -678,22 +717,51 @@
       historyMetadata[id]={watchedAt:new Date().toISOString(),position:Math.floor(position),duration:Math.floor(duration),season,episode:activePlayback.episode,episodeKey:activePlayback.episodeKey,source:activePlayback.source,totalEpisodes:films.find(f=>f.id===id)?.episodes||1,completed:position/duration>=.99,completedEpisodes:[...completedEpisodes].slice(-1000)};
       save('history',history);save('historyMetadataV2',historyMetadata);persist();
     },
+    cancelRecovery(media){
+      if(!recoveryTask||recoveryTask.media!==media)return;
+      recoveryTask.controller.abort();failedPlaybackLines.get(media.filmId+':'+media.episode)?.delete(media.lineKey);recoveryTask=null;
+    },
     failed(media){
       if(playbackBusy||!media||media!==activePlayback||window.OpenStreamPlayerTools?.sleep.blocked())return;
+      if(recoveryTask?.media===media)return recoveryTask.promise;
       const f=films.find(f=>f.id===media.filmId);if(!f)return;
-      const key=f.id+':'+media.episode;
-      const failed=failedPlaybackLines.get(key)||new Set();
+      const key=f.id+':'+media.episode,failed=failedPlaybackLines.get(key)||new Set();
       if(failed.has(media.lineKey))return;
       failed.add(media.lineKey);failedPlaybackLines.set(key,failed);
-      const attempts=automaticSwitches.get(key)||0;
-      const next=attempts<3&&rankedLines(f).find(({line})=>!failed.has(line.key)&&(window.OpenStreamEpisodes?OpenStreamEpisodes.indexFor(f,line,media.episodeKey||episodeFor(f))>=0:line.episodes?.[media.episode-1]));
-      if(!next){window.OpenStreamLibrary?.availability.record(f.id,'failed');document.querySelector('#watch-player video')?.pause();document.dispatchEvent(new CustomEvent('playback-failed',{detail:{filmId:f.id}}));toast('播放暂时失败，请重试或换一条线路');return;}
-      if(automaticSwitches.size>=100)automaticSwitches.delete(automaticSwitches.keys().next().value);automaticSwitches.set(key,attempts+1);
-      const video=document.querySelector('#watch-player video');
-      if(video)LivePlayback.progress(video.currentTime,video.duration,f.id);
-      window.OpenStreamPlayback?.intent({transition:'line',trigger:'recovery',expectedKey:media.episodeKey});
-      rememberLinePosition(f,video);continuePlayback=true;playbackTrigger='recovery';f.lineIndex=next.i;
-      toast('正在切换线路…');render();
+      const attempts=automaticSwitches.get(key)||0,controller=new AbortController(),token=generation;
+      const signal=request?AbortSignal.any([request.signal,controller.signal]):controller.signal,task={media,controller,promise:null};recoveryTask=task;
+      const current=()=>media===activePlayback&&token===generation&&!signal.aborted&&!document.hidden&&!window.OpenStreamPlayerTools?.sleep.blocked();
+      task.promise=(async()=>{
+       const video=document.querySelector('#watch-player video');let proof={stamp:performance.now(),position:Number(video?.currentTime)||0},healthyMs=0;
+       const restored=()=>{const stamp=performance.now(),position=Number(video.currentTime)||0,elapsed=stamp-proof.stamp,delta=position-proof.position,expected=elapsed/1000*(Number(video.playbackRate)||1);if(elapsed<=0)return;healthyMs=!video.paused&&!video.seeking&&elapsed<2500&&delta>=expected*.65&&delta<=expected*2+1?healthyMs+elapsed:0;proof={stamp,position};if(healthyMs>=8000&&current()){window.LivePlayback.cancelRecovery(media);document.dispatchEvent(new CustomEvent('playback-restored',{detail:{filmId:f.id}}));}};
+       video?.addEventListener('timeupdate',restored);
+       try{
+        const position=Number(video?.currentTime)||0,duration=Number(video?.duration)||0,ratio=duration>0?position/duration:null,rate=Number(video?.playbackRate)||load('playbackRate',1),cut=window.OpenStreamEpisodes?.cut(f.lines[f.lineIndex||0]);
+        let next=null,checked=0;const addresses=new Set([media.url]);
+        // Only recovery candidates are decoded; normal playback never starts a second stream.
+        const candidates=rankedLines(f).filter(({line})=>!failed.has(line.key)&&(!cut||OpenStreamEpisodes.cut(line)===cut)).sort((a,b)=>Number(/(?:^|\W)TC(?:\W|$)|抢先|枪版/i.test([a.line.name,a.line.version,a.line.episodes?.[0]?.name].join(' ')))-Number(/(?:^|\W)TC(?:\W|$)|抢先|枪版/i.test([b.line.name,b.line.version,b.line.episodes?.[0]?.name].join(' '))));
+        for(const candidate of attempts<3?candidates:[]){
+         if(!current()||checked>=3)break;
+         const {line}=candidate,index=window.OpenStreamEpisodes?OpenStreamEpisodes.indexFor(f,line,media.episodeKey||episodeFor(f)):media.episode-1;
+         if(index<0||!line.episodes?.[index]||window.OpenStreamContent?.trailerEpisode(line.episodes[index].name)||/花絮/.test(line.episodes[index].name||''))continue;
+         const deadline=AbortSignal.any([signal,AbortSignal.timeout(6500)]);checked++;
+         try{
+          const url=await data.resolveEpisode(line,index,deadline);if(!current())return false;
+          if(addresses.has(url)){failed.add(line.key);continue;}addresses.add(url);
+          const result=await window.OpenStreamPlayerProbe?.verify(url,{signal:deadline,position,ratio,rate});
+          if(!current())return false;
+          if(result?.playable){next={...candidate,url};break;}failed.add(line.key);
+         }catch{if(!current())return false;failed.add(line.key);}
+        }
+        if(!current())return false;
+        if(!next){window.OpenStreamLibrary?.availability.record(f.id,'failed');document.querySelector('#watch-player video')?.pause();document.dispatchEvent(new CustomEvent('playback-failed',{detail:{filmId:f.id}}));toast('播放暂时失败，请重试或换一条线路');return false;}
+        if(automaticSwitches.size>=100)automaticSwitches.delete(automaticSwitches.keys().next().value);automaticSwitches.set(key,attempts+1);
+        if(video)LivePlayback.progress(video.currentTime,video.duration,f.id);
+        window.OpenStreamPlayback?.intent({transition:'line',trigger:'recovery',expectedKey:media.episodeKey});
+        rememberLinePosition(f,video);preparedLine={filmId:f.id,lineKey:next.line.key,episodeKey:media.episodeKey,url:next.url,at:Date.now()};continuePlayback=true;playbackTrigger='recovery';f.lineIndex=next.i;
+        toast('正在切换线路…');render();return true;
+       }finally{video?.removeEventListener('timeupdate',restored);if(recoveryTask===task)recoveryTask=null;}
+      })();return task.promise;
     }
   };
   document.addEventListener('click',event=>{

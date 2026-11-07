@@ -1,6 +1,6 @@
 import {test,expect} from '@playwright/test';
 const prefix='openstream_live_';
-async function seed(page){await page.addInitScript(()=>{const p='openstream_live_',film=(id,name,type='电视剧',episodes=5)=>({id,name,type,episodes,seasons:1,year:'2024',genre:'剧情',rating:'8',catalogProvider:'',candidatesComplete:true});localStorage.setItem(p+'filmRecords',JSON.stringify([film('film-library1','继续观看测试长片名用于检查窄屏信息布局'),film('film-library2','已经看完的电影','电影',1)]));localStorage.setItem(p+'favorites',JSON.stringify(['film-library1','film-library2']));localStorage.setItem(p+'history',JSON.stringify(['film-library1','film-library2']));localStorage.setItem(p+'historyMetadataV2',JSON.stringify({'film-library1':{position:20,duration:120,episode:2,season:1,totalEpisodes:4,watchedAt:'2026-11-06T00:00:00Z'},'film-library2':{position:120,duration:120,episode:1,completed:true,watchedAt:'2026-11-05T00:00:00Z'}}));localStorage.setItem(p+'autoplay','false');localStorage.setItem(p+'availabilityRecoveryV1','true');const mute=()=>document.querySelectorAll('video').forEach(v=>{v.muted=true;v.volume=0;});addEventListener('DOMContentLoaded',()=>new MutationObserver(mute).observe(document.body,{childList:true,subtree:true}));});}
+async function seed(page){await page.addInitScript(()=>{const p='openstream_live_',film=(id,name,type='电视剧',episodes=5)=>({id,name,type,episodes,seasons:1,year:'2024',genre:'剧情',rating:'8',catalogProvider:'',candidatesComplete:true});localStorage.setItem(p+'filmRecords',JSON.stringify([film('film-library1','继续观看测试长片名用于检查窄屏信息布局'),film('film-library2','已经看完的电影','电影',1)]));localStorage.setItem(p+'favorites',JSON.stringify(['film-library1','film-library2']));localStorage.setItem(p+'history',JSON.stringify(['film-library1','film-library2']));localStorage.setItem(p+'historyMetadataV2',JSON.stringify({'film-library1':{position:20,duration:120,episode:2,season:1,totalEpisodes:4,watchedAt:'2026-11-06T00:00:00Z'},'film-library2':{position:120,duration:120,episode:1,completed:true,watchedAt:'2026-11-05T00:00:00Z'}}));localStorage.setItem(p+'autoplay','false');localStorage.setItem(p+'availabilityRecoveryV1','true');localStorage.setItem('openstream_live_muted','true');localStorage.setItem('openstream_live_volume','0');});}
 test('home shows one minimal resume notice and closing preserves all history across navigation and reload',async({page})=>{await seed(page);await page.goto('/#home');await expect(page.locator('.continue-notice')).toHaveCount(1);await expect(page.locator('.continue-notice')).toContainText('第 2 集');await expect(page.locator('.continue-notice img,.continue-notice [role="progressbar"]')).toHaveCount(0);await expect(page.locator('.continue-notice')).not.toContainText('0:20 / 2:00');const before=await page.evaluate(()=>({history:localStorage.getItem('openstream_live_history'),progress:localStorage.getItem('openstream_live_historyMetadataV2'),favorites:localStorage.getItem('openstream_live_favorites')}));await page.getByRole('button',{name:'关闭继续观看提醒',exact:true}).click();await expect(page.locator('.continue-notice')).toHaveCount(0);await page.evaluate(()=>location.hash='history');await expect(page.locator('.history-item')).toHaveCount(2);await page.evaluate(()=>location.hash='home');await expect(page.locator('.continue-notice')).toHaveCount(0);await page.reload();await expect(page.locator('.continue-notice')).toHaveCount(0);expect(await page.evaluate(()=>({history:localStorage.getItem('openstream_live_history'),progress:localStorage.getItem('openstream_live_historyMetadataV2'),favorites:localStorage.getItem('openstream_live_favorites')}))).toEqual(before);});
 test('watchlist categories and bounded on-demand update retain viewing progress',async({page})=>{await seed(page);await page.goto('/#library');await expect(page.locator('.watchlist-item')).toHaveCount(2);await page.locator('[data-watchlist-category][data-id="film-library1"]').selectOption('planned');await page.locator('[data-library-category="planned"]').click();await expect(page.locator('.watchlist-item')).toHaveCount(1);await expect(page.locator('.watchlist-item')).toContainText('继续观看测试');await page.evaluate(()=>{window.__updateCalls=0;window.LiveLibrary.checkUpdates=async f=>{window.__updateCalls++;f.episodes=6;return 6;};});await page.locator('[data-refresh-watchlist]').click();await expect(page.locator('[data-refresh-watchlist]')).toHaveText('检查更新');await page.locator('[data-refresh-watchlist]').click();await expect(page.locator('[data-refresh-watchlist]')).toHaveText('检查更新');expect(await page.evaluate(()=>window.__updateCalls)).toBe(1);expect(await page.evaluate(()=>JSON.parse(localStorage.getItem('openstream_live_historyMetadataV2'))['film-library1'].position)).toBe(20);});
 test('backup export import preview replacement and recovery are coherent',async({page})=>{await seed(page);await page.goto('/#home');await page.getByRole('button',{name:'偏好设置',exact:true}).click();const download=page.waitForEvent('download');await page.locator('[data-backup-export]').click();expect((await download).suggestedFilename()).toMatch(/^OpenStream-backup-/);const backup=await page.evaluate(()=>window.OpenStreamLocalData.snapshot());expect(JSON.stringify(backup)).not.toMatch(/cookie|token|candidates|lines/);backup.data.favorites=['film-library1'];await page.locator('[data-backup-file]').setInputFiles({name:'backup.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(backup))});await expect(page.locator('#backup-preview')).toBeVisible();await expect(page.locator('[data-backup-impact]')).toContainText('1 部收藏');await page.getByRole('radio',{name:'替换本机记录',exact:true}).check();await page.locator('[data-backup-confirm]').click();expect(await page.evaluate(()=>JSON.parse(localStorage.getItem('openstream_live_favorites')))).toHaveLength(1);page.once('dialog',dialog=>dialog.accept());await page.locator('[data-backup-restore]').click();expect(await page.evaluate(()=>JSON.parse(localStorage.getItem('openstream_live_favorites')))).toHaveLength(2);await page.locator('[data-backup-file]').setInputFiles({name:'broken.json',mimeType:'application/json',buffer:Buffer.from('{broken')});await expect(page.locator('[data-backup-status]')).toContainText('已损坏');expect(await page.evaluate(()=>JSON.parse(localStorage.getItem('openstream_live_favorites')))).toHaveLength(2);});
@@ -23,4 +23,71 @@ test('home resume uses the bottom notification area for thirty seconds without r
  await expect(notice).toHaveCount(0);await expect(page.locator('#toast.visible')).toHaveText('已保存');
  await page.reload();await expect(notice).toHaveCount(0);
  expect(await page.evaluate(()=>localStorage.getItem('openstream_live_historyMetadataV2'))).toBe(progress);
+});
+
+test('unrelated source hits never appear while results stream, after completion or from cache',async({page})=>{
+ await seed(page);await page.goto('/#home');await page.evaluate(()=>{
+   const make=(vod_name,i)=>({vod_id:i+1,source_code:'qa',vod_name,type_name:'电视剧',vod_year:'2011',vod_content:'甄嬛传'});
+   const results=['北京地铁','甄嬛传','如懿传','后宫·甄嬛传'].map(make);
+   window.OpenStreamStreamingSearch.runStreamingSearch=async opts=>{opts.onUpdate({results});
+     await new Promise(resolve=>window.finishTitleSearch=resolve);opts.onSourceDone({status:'ready'});return{results};};
+   location.hash='search/'+encodeURIComponent('甄嬛传');
+ });
+ const titles=page.locator('#live-results h3');await expect(titles).toHaveText(['甄嬛传','后宫·甄嬛传']);
+ await page.evaluate(()=>window.finishTitleSearch());await expect(page.locator('#search-progress')).toHaveText('“甄嬛传” · 2 部影片');
+ await page.evaluate(()=>location.hash='history');await expect(page.locator('#search-progress')).toHaveCount(0);await page.goBack();
+ await expect(titles).toHaveText(['甄嬛传','后宫·甄嬛传']);
+});
+
+for(const [width,touch] of [[1440,false],[320,true]]) test('search cards reserve separate space for bookmark, score and certification at '+width+'px',async({browser,baseURL})=>{
+ const ctx=await browser.newContext({baseURL,viewport:{width,height:900},hasTouch:touch,isMobile:touch});try{
+ const page=await ctx.newPage();await page.goto('/#home');
+ await page.evaluate(()=>{const results=[
+   {vod_name:'金刚狼3：殊死一战',vod_lang:'英语/西班牙语',vod_id:3,vod_year:'2017',vod_class:'剧情 / 动作 / 科幻 / 惊悚',vod_douban_score:'8.3',rating_source:'TMDB',certification:{country:'US',label:'R'}},
+   {vod_name:'金刚狼测试影片很长的片名',vod_id:4,vod_douban_score:'8.1',rating_source:'TMDB',certification:{country:'US',label:'NC-17'}},
+   {vod_name:'金刚狼短片',vod_id:5}].map(f=>({type_name:'电影',source_code:'qa',...f}));
+   window.OpenStreamStreamingSearch.runStreamingSearch=async opts=>{opts.onUpdate({results});opts.onSourceDone({status:'ready'});return{results};};
+   location.hash='search/'+encodeURIComponent('金刚狼');
+ });
+ const cards=page.locator('#live-results .poster-card');await expect(cards).toHaveCount(3);
+ const original=cards.filter({hasText:'殊死一战'});await expect(original.locator('.search-version-note')).toHaveText('英语/西班牙语 · 1 个来源');await expect(original.locator('.poster-score')).toContainText('8.3');await expect(original.locator('.film-certification')).toHaveText('R');
+ for(const card of await cards.all()){
+   const result=await card.evaluate(c=>{
+     const box=s=>c.querySelector(s)?.getBoundingClientRect(),fav=box('.quick-favorite'),title=box('h3'),meta=box('.poster-meta'),bounds=c.getBoundingClientRect(),labels=[...c.querySelectorAll('.poster-meta > span')].map(e=>e.getBoundingClientRect());
+     const note=box('.search-version-note');return {separate:fav.bottom<=meta.top+.5&&title.right<=fav.left+.5&&note.top>=meta.bottom-.5&&note.right<=bounds.right+.5,fit:labels.every((r,i)=>r.right<=bounds.right+.5&&(!i||r.left>=labels[i-1].right-.5)),touchWidth:fav.width,touchHeight:fav.height};});
+   expect(result.separate).toBe(true);expect(result.fit).toBe(true);
+   for(const el of await card.locator('h3,.poster-meta>span:first-child,.search-version-note').all())expect(await el.evaluate(e=>e.scrollWidth-e.clientWidth)).toBeLessThanOrEqual(1);
+   if(touch){expect(result.touchWidth).toBeGreaterThanOrEqual(44);expect(result.touchHeight).toBeGreaterThanOrEqual(44);}
+ }
+ const fav=original.getByRole('button',{name:/收藏/});await fav.click();await expect(fav).toHaveAttribute('aria-pressed','true');await expect(page).toHaveURL(/#search\//);await fav.click();await expect(fav).toHaveAttribute('aria-pressed','false');
+ await original.getByRole('link').click();await expect(page.locator('.detail-content h1')).toHaveText('金刚狼3：殊死一战');
+ }finally{await ctx.close();}
+});
+
+test('a cold search loads the verified certificate before all sources finish, caches it, and keeps real titles ending in 预告',async({page})=>{
+ let details=0;
+ await page.route('**/api/catalog/tmdb?kind=lookup*',route=>route.fulfill({json:{items:[{id:'movie:77',title:'死亡预告',year:'2024',type_name:'电影'}]}}));
+ await page.route('**/api/catalog/tmdb?kind=detail*',route=>{details++;return route.fulfill({json:{item:{id:'movie:77',title:'死亡预告',year:'2024',certification:{country:'US',label:'R'}}}});});
+ await page.goto('/#home');
+ const search=async()=>page.evaluate(()=>{
+   window.OpenStreamStreamingSearch.runStreamingSearch=async opts=>{const results=['死亡预告','预告犯','死亡预告【预告片】'].map((vod_name,i)=>({vod_name,vod_id:i+1,type_name:'电影',vod_year:'2024',source_code:'qa'}));opts.onUpdate({results});await new Promise(r=>window.finishSourceTest=r);opts.onSourceDone({status:'ready'});return {results};};
+   location.hash='search/'+encodeURIComponent('预告');
+ });
+ await search();const card=page.locator('#live-results article').filter({hasText:'死亡预告'});await expect(card.locator('.film-certification')).toHaveText('R');
+ await expect(page.locator('#live-results h3')).toHaveCount(2);await expect(page.locator('#live-results')).not.toContainText('预告片');await expect(page.locator('#live-results article').filter({hasText:'预告犯'}).locator('.film-certification')).toHaveCount(0);
+ await expect(page.locator('#search-progress')).toContainText('正在补充');await page.evaluate(()=>window.finishSourceTest());await page.goto('/#home');await page.reload();await search();await expect(card.locator('.film-certification')).toHaveText('R');expect(details).toBe(1);await page.evaluate(()=>window.finishSourceTest());
+});
+
+test('exact titles lead, then each group orders newest first throughout streaming, filtering and cached navigation',async({page})=>{
+ await page.goto('/#home');await page.evaluate(()=>{
+   const hits=[['蜘蛛侠：未知',''],['蜘蛛侠','2002'],['蜘蛛侠：旧作','2017'],['蜘蛛侠：新作','2026'],['蜘蛛侠','2021']].map(([vod_name,vod_year],i)=>({vod_id:i+1,vod_name,vod_year,type_name:'电影',source_code:'qa'}));
+   OpenStreamStreamingSearch.runStreamingSearch=async o=>{o.onUpdate({results:hits.slice(0,3)});await new Promise(resolve=>window.finishYearTest=resolve);o.onUpdate({results:hits});o.onSourceDone({status:'ready'});return {results:hits};};
+   location.hash='search/'+encodeURIComponent('蜘蛛侠');
+ });
+ const names=page.locator('#live-results .poster-card:visible h3');await expect(names).toHaveText(['蜘蛛侠','蜘蛛侠：旧作','蜘蛛侠：未知']);
+ await page.locator('#live-results .poster-card:visible a').first().focus();await page.evaluate(()=>window.finishYearTest());
+ const sorted=['蜘蛛侠','蜘蛛侠','蜘蛛侠：新作','蜘蛛侠：旧作','蜘蛛侠：未知'];await expect(names).toHaveText(sorted);
+ await expect(page.locator('#live-results .poster-meta').first()).toContainText('2021');await expect(page.locator('#live-results a:focus')).toContainText('2002');
+ await page.locator('[data-search-filter=year]').selectOption('2017');await expect(names).toHaveText(['蜘蛛侠：旧作']);await page.locator('[data-search-filter=year]').selectOption('all');
+ await page.evaluate(()=>location.hash='history');await expect(page.locator('#live-results')).toHaveCount(0);await page.goBack();await expect(names).toHaveText(sorted);await expect(page.locator('#live-results .poster-meta').first()).toContainText('2021');
 });

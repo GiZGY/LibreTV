@@ -6,8 +6,7 @@ async function openPlayer(page,mode='mp4'){
   const line=n=>({key:'qa:'+n,sourceKey:'qa',name:'测试线路 '+n,health:'fast',episodes:Array.from({length:8},(_,i)=>({name:'第'+(i+1)+'集',url:'/media/sample.'+(mode==='hls'?'m3u8':'mp4')+'?line='+n+'&ep='+i}))});
   localStorage.setItem(p+'filmRecords',JSON.stringify([{id:'film-qa1',name:'回归测试剧集',type:'电视剧',episodes:8,seasons:1,year:2024,genre:'剧情',rating:8,lines:[line(1),line(2)],candidatesComplete:true,cover:''}]));
   localStorage.setItem(p+'playbackRate','1.75');localStorage.setItem(p+'autoplay','true');
-  const mute=()=>document.querySelectorAll('video').forEach(v=>{v.muted=true;v.volume=0;});
-  addEventListener('DOMContentLoaded',()=>{mute();new MutationObserver(mute).observe(document.body,{childList:true,subtree:true});});
+  localStorage.setItem('openstream_live_muted','true');localStorage.setItem('openstream_live_volume','0');
  },mode);
  await page.goto('/#player/film-qa1');
  await expectMediaFrame(page);

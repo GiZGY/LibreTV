@@ -19,7 +19,7 @@ test('detail checks sources before enabling playback',async()=>{
   const task=h.context.checkAvailability({catalogProvider:'tmdb',lines:[{}]},new AbortController().signal,1);
   assert.equal(h.attrs.has('href'),false);assert.equal(h.button.textContent,'正在查找来源…');
   await Promise.resolve();finish();await task;
-  assert.equal(h.attrs.get('href'),'#player/test');assert.match(h.notes[0].textContent,/已找到 1 条/);
+  assert.equal(h.attrs.get('href'),'#player/test');assert.equal(h.notes[0].children[0].textContent,'已找到 1 条播放线路');
 });
 test('source failure leaves playback disabled and offers recovery',async()=>{
   const h=harness(async()=>{throw Error('network')});

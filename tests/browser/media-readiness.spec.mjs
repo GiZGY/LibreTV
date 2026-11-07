@@ -1,7 +1,7 @@
 import {test,expect} from '@playwright/test';
 import {expectMediaFrame,expectPlaybackProgress,sampleRealPlayback,mediaState} from './media-assertions.mjs';
 async function open(page){
- await page.addInitScript(()=>{const p='openstream_live_',episodes=Array.from({length:4},(_,i)=>({name:'第'+(i+1)+'集',url:'/media/sample.mp4?ep='+(i+1)}));localStorage.setItem(p+'filmRecords',JSON.stringify([{id:'film-readiness',name:'媒体就绪与真实播放回归',type:'电视剧',episodes:4,seasons:1,lines:[{key:'qa:ready',sourceKey:'qa',name:'测试线路',health:'fast',episodes}],candidatesComplete:true}]));localStorage.setItem(p+'autoplay','true');localStorage.setItem(p+'playbackRate','1.75');const mute=()=>document.querySelectorAll('video').forEach(v=>{v.muted=true;v.volume=0;});addEventListener('DOMContentLoaded',()=>{mute();new MutationObserver(mute).observe(document.body,{childList:true,subtree:true});});});
+ await page.addInitScript(()=>{const p='openstream_live_',episodes=Array.from({length:4},(_,i)=>({name:'第'+(i+1)+'集',url:'/media/sample.mp4?ep='+(i+1)}));localStorage.setItem(p+'filmRecords',JSON.stringify([{id:'film-readiness',name:'媒体就绪与真实播放回归',type:'电视剧',episodes:4,seasons:1,lines:[{key:'qa:ready',sourceKey:'qa',name:'测试线路',health:'fast',episodes}],candidatesComplete:true}]));localStorage.setItem(p+'autoplay','true');localStorage.setItem(p+'playbackRate','1.75');localStorage.setItem('openstream_live_muted','true');localStorage.setItem('openstream_live_volume','0');});
  await page.goto('/#player/film-readiness');await expectMediaFrame(page);
 }
 test('intro-seek remount renders advancing frames and true speed without relying on enough-data prediction',async({page})=>{

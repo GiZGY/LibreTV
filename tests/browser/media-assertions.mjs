@@ -10,7 +10,18 @@ export function mediaState(video){
 // of playback; paused loading waits for an error-free decoded current frame only.
 export async function expectMediaFrame(page,{timeout=15000}={}){
  const video=page.locator('video');await expect(video).toHaveCount(1);
- await expect.poll(async()=>video.evaluate(v=>Number.isFinite(v.duration)&&v.duration>0&&v.readyState>=v.HAVE_CURRENT_DATA&&v.videoWidth>0&&v.videoHeight>0&&!v.seeking&&!v.error),{timeout,message:'Media must expose a decoded frame and finish seeking'}).toBe(true);
+ let last;
+ try{
+  await expect.poll(async()=>{
+   last=await video.evaluate(v=>({
+    ready:Number.isFinite(v.duration)&&v.duration>0&&v.readyState>=v.HAVE_CURRENT_DATA&&v.videoWidth>0&&v.videoHeight>0&&!v.seeking&&!v.error,
+    state:{ready:v.readyState,network:v.networkState,duration:Number.isFinite(v.duration)?v.duration:null,time:v.currentTime,paused:v.paused,seeking:v.seeking,error:v.error?.code||null,width:v.videoWidth,height:v.videoHeight,frames:v.getVideoPlaybackQuality?.().totalVideoFrames??v.webkitDecodedFrameCount??null,connected:v.isConnected}
+   }));return last.ready;
+  },{timeout,message:'Media must expose a decoded frame and finish seeking'}).toBe(true);
+ }catch(error){
+  // Keep signed sources and browser credentials out of retained failure evidence.
+  throw new Error(error.message+'\nLast media state: '+JSON.stringify(last?.state||{videoElements:await video.count()}),{cause:error});
+ }
  return video;
 }
 
@@ -46,6 +57,7 @@ export async function sampleRealPlayback(page,{milliseconds=10000,rate=1.75,paus
  if(identity.episode!==undefined)expect(await page.evaluate(()=>window.LivePlayback?.current()?.episode)).toBe(identity.episode);
  if(identity.episodeKey!==undefined)expect(await page.evaluate(()=>window.LivePlayback?.current()?.episodeKey)).toBe(identity.episodeKey);
  if(identity.lineKey!==undefined)expect(await page.evaluate(()=>window.LivePlayback?.current()?.lineKey)).toBe(identity.lineKey);
+ if(Math.abs(sample.ratio-rate)>=.1)console.log('Playback-rate mismatch:',JSON.stringify(sample));
  expect(sample.elapsedMs).toBeGreaterThanOrEqual(milliseconds);expect(sample.ratio).toBeGreaterThan(rate-.1);expect(sample.ratio).toBeLessThan(rate+.1);expect(sample.decodedFrames).toBeGreaterThanOrEqual(Math.max(1,Math.floor(milliseconds/1000)));expect(sample.events).toEqual({waiting:0,pause:0,seeking:0,error:0,ended:0});expect(sample.paused).toBe(false);expect(sample.seeking).toBe(false);expect(sample.ended).toBe(false);expect(sample.error).toBe(null);expect(sample.connected).toBe(true);expect(sample.rate).toBe(rate);expect(sample.defaultRate).toBe(rate);expect(sample.muted).toBe(true);
  return sample;
 }

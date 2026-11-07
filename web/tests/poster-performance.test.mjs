@@ -4,7 +4,8 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 const app=fs.readFileSync(new URL('../app.js',import.meta.url),'utf8');
 const source=app.slice(app.indexOf('const img='),app.indexOf('function scoreClass'));
-const ctx=vm.createContext({esc:value=>String(value).replaceAll('"','&quot;')});
+const ctx=vm.createContext({window:{},esc:value=>String(value).replaceAll('"','&quot;')});
+vm.runInContext(fs.readFileSync(new URL('../../js/result-aggregator.js',import.meta.url),'utf8'),ctx);
 vm.runInContext(source,ctx);
 const render=(art,sizes)=>ctx.posterAttributes({art},sizes);
 test('TMDB posters expose responsive widths with original fallback',()=>{
@@ -23,4 +24,10 @@ test('history and featured posters have distinct display size hints',()=>{
 test('external, local and malformed URLs are never rewritten as TMDB images',()=>{
  for(const url of ['assets/a.jpg','https://other.example/a.jpg','https://image.tmdb.org.evil.test/t/p/w500/a.jpg','https://image.tmdb.org/t/p/w500/a.jpg?x=1'])assert.doesNotMatch(render(url),/srcset=/);
  assert.doesNotMatch(render('x" onerror="bad'),/src="x"/);
+});
+
+test('known successful missing-image responses render a neutral poster even in cached cards',()=>{
+ const url='https://p.bfvp26.com/upload/vod/20230619-1/9007664f78954ad2b459626a21ded7b2.png';
+ assert.match(render(url+'?v=2'),/src="assets\/poster-unavailable.svg"/);
+ assert.ok(render(url.replace('d7b2','d7b3')).includes('p.bfvp26.com'));
 });

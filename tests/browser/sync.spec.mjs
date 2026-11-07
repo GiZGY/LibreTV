@@ -4,7 +4,7 @@ import {startDeviceSyncAcceptance} from '../../scripts/device-sync-acceptance.mj
 let fixture;
 const origin='http://127.0.0.1:18450';
 const storagePrefix='openstream_live_';
-async function mute(context){await context.addInitScript(()=>{const silence=()=>document.querySelectorAll('video').forEach(video=>{video.muted=true;video.volume=0;});new MutationObserver(silence).observe(document,{subtree:true,childList:true});silence();});}
+async function mute(context){await context.addInitScript(()=>{localStorage.setItem('openstream_live_muted','true');localStorage.setItem('openstream_live_volume','0');});}
 async function openSync(page){await page.getByRole('button',{name:'偏好设置',exact:true}).click();await page.getByRole('button',{name:'管理设备',exact:true}).click();await expect(page.locator('.device-sync-dialog')).toBeVisible();}
 async function localData(page,change){await page.evaluate(change=>{const backup=OpenStreamLocalData.snapshot();for(const[k,v]of Object.entries(change))backup.data[k]=v;OpenStreamLocalData.applyBackup(backup,{mode:'replace'});},change);}
 const film={id:'film-syncshow',name:'配对验收剧',type:'电视剧',year:2025,episodes:8,seasons:1,catalogProvider:'tmdb',catalogId:'tv:321'};

@@ -79,15 +79,15 @@ html[data-theme=dark]{color-scheme:dark;--bg:#222426;--soft:#2c2f32;--ink:#e4e5e
 [data-theme=dark] .shelf{background:var(--soft)}
 [data-theme=dark] .favorite-button:hover{background:var(--soft)}
 
-/* Equal-width repeated groups make the loop seam independent of frame timing. */
+/* Groups recycle only outside the clip; the visible group never jumps at a loop boundary. */
 .film-ribbon{overflow:hidden;margin:0 0 30px;border-radius:14px;mask-image:linear-gradient(90deg,transparent,#000 2%,#000 98%,transparent)}
-.film-ribbon-track{display:flex;width:max-content;animation:ribbon-travel 90s linear infinite}
-.film-ribbon-group{display:flex;gap:20px;padding-right:20px;flex:none}
-.film-ribbon:hover .film-ribbon-track,.film-ribbon:focus-within .film-ribbon-track,.film-ribbon.is-held .film-ribbon-track{animation-play-state:paused}
-@keyframes ribbon-travel{to{transform:translateX(-50%)}}
+.film-ribbon-track{display:grid;width:max-content}
+.film-ribbon-group{grid-area:1/1;display:flex;gap:20px;padding-right:20px;animation:ribbon-travel calc(var(--ribbon-period,140s) * 2) linear infinite}.film-ribbon-group:first-child{animation-delay:calc(var(--ribbon-period,140s) * -1)}
+.film-ribbon:hover .film-ribbon-group,.film-ribbon:focus-within .film-ribbon-group,.film-ribbon.is-held .film-ribbon-group{animation-play-state:paused}
+@keyframes ribbon-travel{from{transform:translateX(100%)}to{transform:translateX(-100%)}}
 @media(max-width:700px){.film-ribbon-group{gap:14px;padding-right:14px}}
-@media(prefers-reduced-motion:reduce){.film-ribbon-track{animation:none}.film-ribbon{overflow-x:auto}.film-ribbon-group[aria-hidden=true]{display:none}}
-.reduce-motion .film-ribbon-track{animation:none}.reduce-motion .film-ribbon{overflow-x:auto}.reduce-motion .film-ribbon-group[aria-hidden=true]{display:none}
+@media(prefers-reduced-motion:reduce){.film-ribbon-group{animation:none}.film-ribbon{overflow-x:auto}.film-ribbon-group[aria-hidden=true]{display:none}}
+.reduce-motion .film-ribbon-group{animation:none}.reduce-motion .film-ribbon{overflow-x:auto}.reduce-motion .film-ribbon-group[aria-hidden=true]{display:none}
 .film-ribbon{max-width:2000px;margin-inline:auto}
 /* The wordmark alone uses a flared, lightly spaced display face. */
 .mobile-brand{font-family:Optima,"Palatino Linotype",Palatino,serif;font-weight:600;font-size:21px;letter-spacing:1.1px;line-height:1;white-space:nowrap}
@@ -110,7 +110,7 @@ html[data-theme=dark]{color-scheme:dark;--bg:#222426;--soft:#2c2f32;--ink:#e4e5e
  .nav-collapsed .sidebar .about-link{opacity:0;visibility:hidden}
  .nav-collapsed .sidebar nav a.active{background:linear-gradient(90deg,var(--accent-bg) 44px,transparent 44px)}
 }
-.film-ribbon-track{will-change:transform}
+.film-ribbon-group{will-change:transform}
 html{scrollbar-gutter:stable}
 
 @media(prefers-reduced-motion:reduce){.sidebar,.sidebar .nav-label,.sidebar .about-link{transition:none!important}}
@@ -142,7 +142,7 @@ body,.sidebar,.topbar{transition:background-color 220ms ease,color 220ms ease}
 
 /* Clip normally: a full-width alpha mask repeatedly rerasterizes during resizing. */
 .film-ribbon{mask-image:none}
-.film-ribbon-track{backface-visibility:hidden}
+.film-ribbon-group{backface-visibility:hidden}
 .poster-meta{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding-right:30px}
 .poster-score{font-weight:600;white-space:nowrap;background:none;color:var(--muted)}
 .poster-score.score-high{color:#a77814}
@@ -154,7 +154,6 @@ body,.sidebar,.topbar{transition:background-color 220ms ease,color 220ms ease}
 .poster-ribbon .poster-art{aspect-ratio:2/3}
 .poster-ribbon .poster-art img{object-fit:contain}
 .poster-ribbon .poster-card h3{font-size:14px}
-.poster-ribbon .film-ribbon-track{animation-duration:140s}
 .poster-ribbon .poster-card>a:focus-visible{outline-offset:-3px}
 @media(max-width:700px){.poster-ribbon .poster-card{width:190px}}
 /* Keep the selected rail item inside its own rounded hit target. */
@@ -168,8 +167,8 @@ body,.sidebar,.topbar{transition:background-color 220ms ease,color 220ms ease}
 .poster-ribbon{width:100%;max-width:none}
 @media(max-width:700px){#hero-slot{margin-inline:-16px}}
 /* Pause only over a poster, not the ribbon's captions, gaps or padding. */
-.film-ribbon:hover .film-ribbon-track{animation-play-state:running}
-.film-ribbon:has(.poster-art:hover) .film-ribbon-track,.film-ribbon:focus-within .film-ribbon-track,.film-ribbon.is-held .film-ribbon-track{animation-play-state:paused}
+.film-ribbon:hover .film-ribbon-group{animation-play-state:running}
+.film-ribbon:has(.poster-art:hover) .film-ribbon-group,.film-ribbon:focus-within .film-ribbon-group,.film-ribbon.is-held .film-ribbon-group{animation-play-state:paused}
 /* Keep mobile branding and search on a single compact row. */
 @media(max-width:700px){
  .topbar{height:64px;min-height:64px;padding:0 16px;flex-wrap:nowrap;gap:14px;align-items:center}
@@ -320,7 +319,7 @@ html.theme-changing .theme-glyph,html.theme-changing .theme-glyph svg{transition
 .settings-sources summary small{font-weight:400;color:var(--muted);margin-left:8px}
 .settings-sources ul{max-height:220px;overflow:auto;overscroll-behavior:contain;margin-top:12px}
 .poster-ribbon{cursor:grab}.poster-ribbon .poster-art img{-webkit-user-drag:none;user-select:none}
-.film-ribbon.is-dragging .film-ribbon-track{animation-play-state:paused}
+.film-ribbon.is-dragging .film-ribbon-group{animation-play-state:paused}
 .poster-ribbon{touch-action:pan-y pinch-zoom}
 .reduce-motion .poster-ribbon{touch-action:auto}
 @media(prefers-reduced-motion:reduce){.poster-ribbon{touch-action:auto}}
@@ -437,11 +436,10 @@ html.video-web-fullscreen{overflow:hidden}
 .watch-aside .season-tabs:has(>button:only-child){display:none}
 .watch-aside .watch-synopsis{margin-top:12px;padding-top:12px}
 .watch-aside>.watch-synopsis,.watch-aside.has-episodes>.watch-synopsis{flex:0 0 auto;min-height:0;max-height:none;overflow:visible;padding-right:0}
-.watch-synopsis:has(.watch-plot){position:relative}
-.watch-plot summary{position:absolute;right:0;bottom:0;z-index:1;list-style:none;cursor:pointer;color:var(--muted);font-size:12px;line-height:1.9;padding:0 0 0 18px;background:linear-gradient(to right,transparent,var(--bg) 14px)}
-.watch-plot:not([open]) .plot-expand:before{content:'… ';color:var(--muted)}
-.watch-plot[open] summary{bottom:0}
-.watch-plot[open]>p{padding-bottom:23px}
+.watch-synopsis:has(.watch-plot){display:flex;flex-direction:column-reverse}
+.watch-plot summary{width:fit-content;margin-left:auto;list-style:none;cursor:pointer;color:var(--muted);font-size:12px;line-height:1.9}
+.watch-plot[open]{position:relative;padding-bottom:24px}
+.watch-plot[open] summary{position:absolute;right:0;bottom:0}
 .watch-plot summary::-webkit-details-marker{display:none}
 .watch-plot summary:hover{color:var(--ink)}
 .watch-plot summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
@@ -449,7 +447,11 @@ html.video-web-fullscreen{overflow:hidden}
 .watch-plot[open] .plot-collapse{display:inline}
 .watch-synopsis .plot-preview{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;overflow:hidden}
 .watch-plot[open]+.plot-preview{display:none}
-.watch-plot[open]>p{max-height:200px;overflow:auto;scrollbar-width:thin}
+@media(min-width:1001px){
+ .watch-side-column:has(.watch-plot[open]){contain:none}
+ .watch-side-column:has(.watch-plot[open])>.watch-aside{overflow:visible}
+ .watch-aside:has(.watch-plot[open])>.detail-section{max-height:300px}
+}
 .watch-credits{display:grid;grid-template-columns:32px minmax(0,1fr);gap:6px 10px;flex-shrink:0;font-size:12px;margin:12px 0 0}
 .watch-credits dt{color:var(--muted)}
 .watch-credits dd{margin:0;line-height:1.7;overflow-wrap:anywhere}
@@ -459,5 +461,25 @@ html.video-web-fullscreen{overflow:hidden}
 [data-copy-diagnostics]{min-height:44px}
 
 /* Hit areas stay separate from the visual switch. */
-.switch-target{display:grid;place-items:center;min-width:44px;min-height:44px;flex:none;cursor:pointer}dialog .icon-button{min-width:44px;min-height:44px}.filter-strip .chip,.sort-options .chip{min-height:44px}.strip-arrow{min-width:44px;min-height:44px}.filter-tabs .chip{min-height:44px}
+.switch-target{display:grid;place-items:center;min-width:44px;min-height:44px;flex:none;cursor:pointer}dialog .icon-button{min-width:44px;min-height:44px}
+@media(pointer:coarse){.filter-strip .chip,.sort-options .chip{min-height:44px}.strip-arrow{min-width:44px;min-height:44px}.filter-tabs .chip{min-height:44px}}
 @media(hover:none),(pointer:coarse){.poster-art img{transition:none}.watch-play:hover{transform:none}.quick-favorite{min-width:44px;min-height:44px}}
+
+#command-search-all[hidden],#command-results:empty{display:none}
+#command-search-all{border-radius:0;padding:12px 18px}
+#command-search-all span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* Fixed tracks keep single- and double-digit episode numbers aligned across rows. */
+.detail-section .episodes{--episode-width:44px;--episode-height:32px;display:grid;grid-template-columns:repeat(auto-fill,var(--episode-width));grid-auto-rows:var(--episode-height);gap:6px;margin-top:12px}
+.detail-section .episode{min-width:0;width:100%;height:100%;padding:0 3px;border-radius:5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-variant-numeric:tabular-nums}
+@media(pointer:coarse){.detail-section .episodes{--episode-height:44px}}
+
+/* The source note can grow; anchor the bookmark to the title row, not the card bottom. */
+#live-results > .poster-card:not([hidden]){display:grid;grid-template-columns:minmax(0,1fr) auto;grid-template-rows:repeat(4,auto);align-content:start}
+#live-results .poster-card > a{grid-area:1/1/5/3;display:grid;grid-template-columns:subgrid;grid-template-rows:subgrid;min-width:0}
+#live-results .poster-art{grid-area:1/1/2/3}
+#live-results .poster-card h3{white-space:normal;overflow-wrap:anywhere;grid-area:2/1;align-self:center;margin:4px 4px 0 0;padding:0}
+#live-results .quick-favorite{grid-area:2/2;position:static;align-self:center;justify-self:end;margin-top:4px}
+#live-results .poster-meta{grid-area:3/1/4/3;align-items:baseline}
+#live-results .poster-meta>span:first-child{white-space:normal;overflow:visible;overflow-wrap:anywhere}
+#live-results .search-version-note{grid-area:4/1/5/3;min-width:0;overflow-wrap:anywhere}

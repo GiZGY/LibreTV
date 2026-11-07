@@ -44,7 +44,18 @@
       return url.href;
     } catch { return ''; }
   };
+  // A source can return matches from its synopsis, tags or cast. Those are not title matches.
+  const foldTitle=value=>text(value).normalize('NFKC').toLowerCase().replace(/[\p{P}\p{Z}\s]+/gu,'');
+  function titleMatcher(query){
+    const term=foldTitle(query);
+    return item=>{
+      if(!term)return false;
+      if([item.vod_name,item.title,item.original_title,item.name,item.en].some(value=>value&&foldTitle(value).includes(term)))return true;
+      return String(item.vod_sub||'').split(/[,，、/|；;]/).some(alias=>alias&&foldTitle(alias)===term);
+    };
+  }
   const allowed = item => {
+    if(window.OpenStreamContent?.trailerItem(item))return false;
     const title=String(item.vod_name||item.title||item.name||'').replace(/<[^>]*>/g,'').trim();
     const score=Number(item.rate??item.vod_douban_score??item.rating);
     // CMS commonly uses zero for an unrated title, not an actual zero-star score.
@@ -114,6 +125,7 @@
   }
   function image(url) {
     const safe = safeURL(url);
+    if(window.OpenStreamResultAggregator?.isUnavailablePoster?.(safe))return 'assets/poster-unavailable.svg';
     if(!safe)return 'assets/placeholder.svg';
     return /^img\d*\.doubanio\.com$/.test(new URL(safe).hostname)
       ? ProxyAuth.addAuthToProxyUrlSync('/proxy/' + encodeURIComponent(safe)) : safe;
@@ -127,9 +139,9 @@
       episodes: line.split('#').map((entry, n) => {
         const delimiter = entry.indexOf('$');
         const url = safeURL(delimiter < 0 ? entry : entry.slice(delimiter + 1));
-        return { name: text(delimiter < 0 ? '第 ' + (n + 1) + ' 集' : entry.slice(0, delimiter)), url };
-      }).filter(episode => episode.url && !/\.html?(?:[?#]|$)/i.test(episode.url) && !OpenStreamSourceAdapter.isLoginRequiredUrl(episode.url))
-    })).filter(line => line.episodes.length);
+        return { sourceIndex:n,name: text(delimiter < 0 ? '第 ' + (n + 1) + ' 集' : entry.slice(0, delimiter)), url };
+      }).filter(episode => !window.OpenStreamContent?.trailerEpisode(episode.name) && episode.url && !/\.html?(?:[?#]|$)/i.test(episode.url) && !OpenStreamSourceAdapter.isLoginRequiredUrl(episode.url))
+    })).filter(line => line.episodes.length&&!window.OpenStreamContent?.trailerEpisode(line.flag));
   }
   async function detail(line, signal) {
     const key = line.source_code + ':' + line.vod_id;
@@ -138,12 +150,16 @@
       const result = await OpenStreamSourceAdapter.detail(line.source_code, line.vod_id, {signal});
       if(result.status !== 'ready') throw new Error(({unsupported:'此来源暂未连接',timeout:'此来源响应超时',login_required:'此来源需要登录，暂不支持',no_result:'此来源暂无影片'})[result.status] || '此来源暂不可用');
       const info=result.data?.videoInfo||{};
-      const groups=new Map();
+      if(window.OpenStreamContent?.trailerItem({title:info.title,vod_remarks:info.remarks}))throw new Error('此来源暂无正片');
+      const groups=new Map(),positions=new Map();
       result.episodes.forEach((entry,index)=>{
         const flag=entry.flag||'';
+        const sourceIndex=positions.get(flag)||0;positions.set(flag,sourceIndex+1);
+        if(window.OpenStreamContent?.trailerEpisode(entry.name)||window.OpenStreamContent?.trailerEpisode(flag))return;
         if(!groups.has(flag))groups.set(flag,{key:line.source_code+':'+flag,sourceKey:line.source_code,videoId:String(line.vod_id),flag,name:API_SITES[line.source_code]?.name||line.source_code,label:flag||'默认',episodes:[]});
-        groups.get(flag).episodes.push({name:text(entry.name)||'第 '+(index+1)+' 集',url:'',bridgeEpisode:entry.episode??index});
+        groups.get(flag).episodes.push({sourceIndex,name:text(entry.name)||'第 '+(index+1)+' 集',url:'',bridgeEpisode:entry.episode??index});
       });
+      if(!groups.size)throw new Error('此来源暂无正片');
       return {item:{vod_name:info.title,vod_content:info.desc,vod_director:info.director,vod_actor:info.actor,vod_remarks:info.remarks},lines:[...groups.values()]};
     }
     const site = API_SITES[line.source_code];
@@ -208,6 +224,20 @@
     }
     return waitFor(tmdbPending.get(key),signal);
   }
+  async function suggestTitles(title,signal,includeSources){
+    const replies=await Promise.allSettled(['电影','电视剧'].map(type=>catalogRequest({kind:'lookup',title,type},signal)));
+    const matches=titleMatcher(title);
+    const titles=replies.flatMap(reply=>reply.status==='fulfilled'?reply.value.items.filter(allowed).filter(matches).slice(0,6):[]);
+    if(titles.length||!includeSources||signal.aborted)return titles;
+    // A catalogue miss is not a source miss. Reuse the full search adapter's first-page cache.
+    await window.HumanAccess?.ensure();
+    if(signal.aborted)return [];
+    const plan=window.OpenStreamSourceHealth.getSearchPlan(sources()).slice(0,2);
+    const budget=AbortSignal.any([signal,AbortSignal.timeout(2500)]);
+    const batches=await Promise.allSettled(plan.map(({sourceKey})=>window.OpenStreamSourceAdapter.search(sourceKey,title,{}, {maxPages:1,signal:budget})));
+    const hits=batches.flatMap(r=>r.status==='fulfilled'?(r.value.list||[]).filter(allowed).filter(matches):[]);
+    return window.OpenStreamResultAggregator.aggregateResults(hits,plan).slice(0,6).map(item=>({title:text(item.vod_name),year:item.vod_year,type_name:item.type_name,sourceItem:item}));
+  }
   async function lookupTMDB(f,signal){
     const result=await catalogRequest({kind:'lookup',title:f.name,type:f.type},signal);
     const clean=s=>text(s).replace(/[\s·:：]/g,'');
@@ -235,11 +265,21 @@
     if(!snapshot||snapshot.generation<hour-1){snapshot={generation:hour,id:'shared'};discoveryGenerations.set(key,snapshot);}
     while(discoveryGenerations.size>40)discoveryGenerations.delete(discoveryGenerations.keys().next().value);
     const params={type,genre,year,sort,region,...(minRating?{minRating}:{})};
-    const result=await catalogRequest({kind:'discover',filtered:'1',...params,
+    const request=()=>catalogRequest({kind:'discover',filtered:'1',...params,
       page:String(page),pageSize:String(pageSize),generation:String(snapshot.generation),snapshot:snapshot.id,
       ...(snapshot.revision?{revision:snapshot.revision}:{})},signal);
+    const revision=snapshot.revision;
+    let result;
+    try{result=await request();}catch(error){
+      if(error.status!==410||!revision||signal?.aborted)throw error;
+      // A retired index cannot serve another page. Do not reuse the cached unpinned response.
+      if(discoveryGenerations.get(key)===snapshot){
+        snapshot={generation:hour,id:'after-'+revision};discoveryGenerations.set(key,snapshot);
+      }else snapshot=discoveryGenerations.get(key)||{generation:hour,id:'after-'+revision};
+      result=await request();
+    }
     if(result.indexed&&result.revision)snapshot.revision=result.revision;
-    if(result.filtered)return result;
+    if(result.filtered)return {...result,items:result.items.filter(item=>!window.OpenStreamContent?.trailerItem(item))};
     // An already-running preview or older deployment may still serve raw pages.
     const start=(page-1)*pageSize,batches=[];
     for(let sourcePage=Math.floor(start/20)+1;sourcePage<=Math.ceil((start+pageSize)/20);sourcePage++){
@@ -261,5 +301,5 @@
     const state=catalogState.get(url.href)||{};
     return {items,rawCount:data.data.length,hasNext:data.data.length===20,total:null,...state};
   }
-  window.LiveData = { json, proxied, image, sources, detail, firstDetail, recommend, discover, discoverTMDB, lookupTMDB, detailTMDB, relatedTMDB, subjectMetadata, resolveEpisode, parseLines, safeURL, text, allowed };
+  window.LiveData = { json, proxied, image, sources, detail, firstDetail, recommend, discover, discoverTMDB, suggestTitles, lookupTMDB, detailTMDB, relatedTMDB, subjectMetadata, resolveEpisode, parseLines, safeURL, text, allowed, titleMatcher, foldTitle };
 })();

@@ -27,8 +27,7 @@ async function seed(context,{bridge=false,ignoreOldAbort=false}={}){
    }
    return nativeFetch(input,options);
   };
-  const mute=()=>document.querySelectorAll('video').forEach(video=>{video.muted=true;video.volume=0;});
-  addEventListener('DOMContentLoaded',()=>{mute();new MutationObserver(mute).observe(document.body,{childList:true,subtree:true});});
+  localStorage.setItem('openstream_live_muted','true');localStorage.setItem('openstream_live_volume','0');
  },{filmA,filmB,bridge,ignoreOldAbort});
 }
 async function mediaFrame(page){
@@ -70,7 +69,7 @@ async function nativeChromium(){
  const profile=await mkdtemp(path.join(os.tmpdir(),'openstream-lifecycle-'));
  const process=spawn(chromium.executablePath(),['--headless=new','--no-sandbox','--no-first-run','--no-default-browser-check','--disable-background-networking','--disable-component-update','--disable-sync','--remote-debugging-port=0','--remote-debugging-address=127.0.0.1','--user-data-dir='+profile,'about:blank'],{stdio:['ignore','ignore','pipe']});
  const ended=new Promise(resolve=>process.once('exit',resolve));let browser;
- const close=async()=>{await browser?.close().catch(()=>{});if(process.exitCode===null)process.kill('SIGTERM');await Promise.race([ended,pause(3000)]);if(process.exitCode===null){process.kill('SIGKILL');await ended;}await rm(profile,{recursive:true,force:true});};
+ const close=async()=>{await browser?.close().catch(()=>{});if(process.exitCode===null)process.kill('SIGTERM');await Promise.race([ended,pause(3000)]);if(process.exitCode===null){process.kill('SIGKILL');await ended;}await rm(profile,{recursive:true,force:true,maxRetries:5,retryDelay:100});};
  try{
   const endpoint=await new Promise((resolve,reject)=>{let output='';const timeout=setTimeout(()=>reject(Error('Native lifecycle browser did not start')),15000);process.once('error',error=>{clearTimeout(timeout);reject(error);});process.once('exit',()=>{clearTimeout(timeout);reject(Error('Native lifecycle browser stopped before connecting'));});process.stderr.on('data',chunk=>{output=(output+chunk).slice(-65536);const match=/DevTools listening on (ws:\/\/[^\s]+)/.exec(output);if(match){clearTimeout(timeout);resolve(match[1]);}});});
   // Standard Playwright forces every page visible/focused, hiding actual browser transitions.

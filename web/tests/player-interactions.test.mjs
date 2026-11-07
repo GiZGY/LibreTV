@@ -7,16 +7,17 @@ const source=readFileSync(new URL('../player-preview.js',import.meta.url),'utf8'
 
 test('speed and settings panels are mutually exclusive in both directions',()=>{
   const events={},listeners={};
-  const panel={open:false,addEventListener:(name,fn)=>listeners[name]=fn};
-  const instance={setting:{show:true},on:(name,fn)=>events[name]=fn};
+  const attributes={},summary={setAttribute:(key,value)=>attributes[key]=value};
+  const panel={open:false,querySelector:selector=>selector==='summary'?summary:null,addEventListener:(name,fn)=>listeners[name]=fn};
+  const instance={setting:{show:true},controls:{show:false},on:(name,fn)=>events[name]=fn};
   const start=source.indexOf("   panel.addEventListener('click'");
   const end=source.indexOf('   const playerElement=',start);
-  vm.runInNewContext(source.slice(start,end),{panel,instance});
+  vm.runInNewContext(source.slice(start,end),{panel,instance,tools:null,slider:{addEventListener(){}},document:{addEventListener(){}}});
   listeners.click({stopPropagation(){},target:{closest:()=>null}});
   assert.equal(instance.setting.show,false);
   panel.open=true;events.setting(true);assert.equal(panel.open,false);
   instance.setting.show=true;panel.open=true;listeners.toggle();
-  assert.equal(instance.setting.show,false);
+  assert.equal(instance.setting.show,false);assert.equal(instance.controls.show,true);assert.equal(attributes['aria-expanded'],'true');
 });
 
 test('fullscreen transition retains the player node and recovers after rejection',async()=>{
@@ -44,6 +45,23 @@ test('fullscreen transition retains the player node and recovers after rejection
   events.destroy();assert.equal(listeners.click,undefined);
 });
 
+test('remounted controls reconcile only a live native fullscreen host without requesting or exiting fullscreen',()=>{
+  const start=source.indexOf('   const retainedNativeHost=');assert.ok(start>=0);
+  const block=source.slice(start,source.indexOf('   if(webFullscreen)',start));
+  for(const api of ['fullscreenElement','webkitFullscreenElement']){
+    const next={},classes=new Set(),events=[];
+    const document={[api]:next,exitFullscreen(){throw Error('must not exit fullscreen');}};
+    next.requestFullscreen=()=>{throw Error('must not request fullscreen');};
+    vm.runInNewContext(block,{document,next,playerElement:{classList:{add:value=>classes.add(value)}},instance:{isDestroy:false,emit:(name,active)=>events.push([name,active])}});
+    assert.deepEqual([...classes],['art-fullscreen']);assert.deepEqual(events,[['fullscreen',true]]);
+  }
+  for(const scenario of ['normal','other-host','disposed']){
+    const next={},classes=[],events=[],document={fullscreenElement:scenario==='disposed'?next:scenario==='other-host'?{}:null};
+    vm.runInNewContext(block,{document,next,playerElement:{classList:{add:value=>classes.push(value)}},instance:{isDestroy:scenario==='disposed',emit:(...args)=>events.push(args)}});
+    assert.deepEqual(classes,[],scenario);assert.deepEqual(events,[],scenario);
+  }
+});
+
 test('manual next ignores autoplay, saves progress once, and stops at the final episode',()=>{
   const start=source.indexOf('   let advancing=false;');
   const end=source.indexOf('   let restored=false;',start);
@@ -61,7 +79,7 @@ test('manual next ignores autoplay, saves progress once, and stops at the final 
 test('live episode refresh retains the fullscreen host and recovers a resolution failure',async()=>{
   const live=readFileSync(new URL('../live-ui.js',import.meta.url),'utf8');
   const block=live.slice(live.indexOf('  render = async function ()'),live.indexOf('  searchAll = function ()'));
-  const film={id:'series',episodes:3},state={episode:2},events=[];
+  const film={id:'series',type:'电视剧',episodes:3,lines:[{episodes:[{},{},{}]}]},state={episode:2},events=[];
   const host={isConnected:true};let mainWrites=0,sideUpdates=0,fail=false;
   const main={set innerHTML(value){mainWrites++;}};
   const document={querySelector:selector=>selector==='#watch-player'?host:{replaceWith(){sideUpdates++;}},createRange:()=>({createContextualFragment:()=>({querySelector:()=>({})})}),dispatchEvent:event=>events.push(event.type)};
@@ -74,11 +92,24 @@ test('live episode refresh retains the fullscreen host and recovers a resolution
 });
 
 test('rate pointer buttons preserve popup focus while keyboard boundaries and Escape remain explicit',()=>{
- const handlers={},summary={focus(){context.document.activeElement=summary;}},minus={focus(){context.document.activeElement=minus;}},range={focus(){context.document.activeElement=range;}};
- const panel={open:true,addEventListener:(name,fn)=>handlers[name]=fn,querySelector:()=>summary,querySelectorAll:()=>[minus,range],contains:target=>[summary,minus,range].includes(target)};
- const context={panel,document:{activeElement:summary}};vm.createContext(context);
+ const handlers={},docHandlers={},sliderHandlers={},lifecycle={};
+ const document={activeElement:null,addEventListener:(name,fn)=>docHandlers[name]=fn,removeEventListener:name=>delete docHandlers[name]};
+ const focusable=()=>({focus(){document.activeElement=this;},setAttribute(){},removeAttribute(){}});
+ const summary=focusable(),minus=focusable(),range=Object.assign(focusable(),{addEventListener:(name,fn)=>sliderHandlers[name]=fn});
+ const panel={open:true,addEventListener:(name,fn)=>handlers[name]=fn,querySelector:()=>summary,querySelectorAll:selector=>selector==='[data-rate]'?[]:[minus,range],contains:target=>[summary,minus,range].includes(target)};
+ const context={panel,slider:range,document,instance:{controls:{show:false},on:(name,fn)=>lifecycle[name]=fn},matchMedia:()=>({matches:false,addEventListener(){},removeEventListener(){}})};
+ vm.createContext(context);summary.focus();
  const mouse=source.indexOf("   panel.addEventListener('mousedown'");vm.runInContext(source.slice(mouse,source.indexOf('   function fitSpeedPanel(',mouse)),context);
- let prevented=0;handlers.mousedown({target:{closest:()=>minus},preventDefault:()=>prevented++});assert.equal(prevented,1);
  const keyboard=source.indexOf("   panel.addEventListener('keydown'");vm.runInContext(source.slice(keyboard,source.indexOf("   slider.addEventListener('input'",keyboard)),context);
- const key=(key,shiftKey=false)=>({key,shiftKey,stopPropagation(){},preventDefault:()=>prevented++});handlers.keydown(key('Tab'));assert.equal(context.document.activeElement,minus);assert.equal(panel.open,true);handlers.keydown(key('Tab',true));assert.equal(context.document.activeElement,summary);handlers.keydown(key('Tab',true));assert.equal(panel.open,false);panel.open=true;handlers.focusout({relatedTarget:range});assert.equal(panel.open,true);handlers.focusout({relatedTarget:{}});assert.equal(panel.open,false);panel.open=true;handlers.keydown(key('Escape'));assert.equal(context.document.activeElement,summary);assert.equal(panel.open,false);
+ let prevented=0;handlers.mousedown({target:{closest:()=>minus},preventDefault:()=>prevented++});assert.equal(prevented,1);
+ const key=(key,shiftKey=false)=>({key,shiftKey,stopPropagation(){},preventDefault:()=>prevented++});
+ handlers.keydown(key('Tab'));assert.equal(document.activeElement,minus);assert.equal(panel.open,true);
+ handlers.keydown(key('Tab',true));assert.equal(document.activeElement,summary);handlers.keydown(key('Tab',true));assert.equal(panel.open,false);
+ // WebKit can transfer focus outside on thumb press. Only the next distinct outside gesture should dismiss.
+ panel.open=true;docHandlers.pointerdown({pointerId:1});sliderHandlers.pointerdown({pointerId:1});
+ handlers.focusout?.({relatedTarget:{}});assert.equal(panel.open,true);
+ docHandlers.pointerup({pointerId:1});docHandlers.click({target:{}});assert.equal(panel.open,true);
+ docHandlers.pointerdown({pointerId:2});docHandlers.click({target:{}});assert.equal(panel.open,false);
+ panel.open=true;handlers.keydown(key('Escape'));assert.equal(document.activeElement,summary);assert.equal(panel.open,false);
+ lifecycle.destroy();assert.deepEqual(Object.keys(docHandlers),[]);
 });

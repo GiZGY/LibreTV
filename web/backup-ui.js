@@ -19,6 +19,6 @@
  document.addEventListener('change',async event=>{
   if(event.target.matches('[data-backup-file]')){const file=event.target.files?.[0];event.target.value='';if(!file)return;try{if(file.size>OpenStreamLocalData.MAX_BYTES)throw Error('备份文件超过 2 MB');const result=OpenStreamLocalData.preview(await file.text());pendingBackup=result.backup;const dialog=backupDialog();dialog.querySelector('[data-backup-impact]').textContent=`备份包含 ${result.counts.favorites} 部收藏、${result.counts.history} 条观看记录。合并后新增 ${result.counts.newFavorites} 部收藏。`;dialog.querySelector('[data-backup-error]').textContent='';dialog.showModal();dialog.querySelector('[data-backup-cancel]').focus();}catch(error){backupStatus(error.message);}}
  });
- document.addEventListener('openstream:data-restored',()=>{if(!location.hash.startsWith('#player/'))void render();document.querySelector('#autoplay').checked=load('autoplay',true);document.querySelector('#motion').checked=load('motion',false);document.body.classList.toggle('reduce-motion',load('motion',false));window.refreshAppearance?.();});
+ document.addEventListener('openstream:data-restored',()=>{if(!location.hash.startsWith('#player/'))void render();document.querySelector('#autoplay').checked=load('autoplay',true);document.querySelector('#motion').checked=load('motion',false);document.body.classList.toggle('reduce-motion',load('motion',false));const autoTheme=document.querySelector('#auto-theme');if(autoTheme)autoTheme.checked=load('mobileAutoTheme',true);window.refreshAppearance?.();});
  backupControls();
 })();
