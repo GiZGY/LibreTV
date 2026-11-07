@@ -138,6 +138,16 @@
     layers:mediaUrl?[]:[{name:'empty-media',html:'<div class="watch-empty"><span>暂未获取到播放地址</span><p>请选择其他线路，或返回影片详情</p></div>',style:{inset:'0',display:'grid',placeItems:'center',pointerEvents:'none'}}]
    });
    const instance=art;
+   const sound={muted:previousSound?.muted??load('muted',false),volume:previousSound?.volume??load('volume',.8)};
+   function restoreSound(){
+    if(instance.isDestroy)return;
+    instance.video.defaultMuted=sound.muted;
+    instance.video.muted=sound.muted;
+    instance.video.volume=sound.volume;
+   }
+   // WebKit can reset the decoder's mute state on play without calling the JS setter.
+   restoreSound();
+   instance.on('video:play',restoreSound);
    session ||= media?.url?window.OpenStreamPlayback?.createSession({transition:media?.switched?'line':media?.autoplay?'episode':'open',trigger:media?.trigger||'open'}):null;
    session?.bindMedia(media,media?.episodeKey,()=>!instance.isDestroy&&media===window.LivePlayback?.current());
    instance.on('destroy',()=>session?.dispose());
@@ -154,7 +164,7 @@
    for(const event of ['video:loadedmetadata','video:canplay','video:seeked'])instance.on(event,()=>queueMicrotask(resumePlayIntent));
    instance.on('video:playing',()=>{playIntent=false;clearTimeout(playTimer);});
    instance.on('destroy',()=>{playIntent=false;clearTimeout(playTimer);});
-   instance.on('video:volumechange',()=>{if(instance.isDestroy)return;save('volume',instance.video.volume);save('muted',instance.video.muted);});
+   instance.on('video:volumechange',()=>{if(instance.isDestroy)return;sound.volume=instance.video.volume;sound.muted=instance.video.muted;save('volume',sound.volume);save('muted',sound.muted);});
    instance.on('video:waiting',()=>{if(!instance.video.paused&&!instance.video.seeking)session?.waiting();});
    instance.on('video:playing',()=>session?.playing());
    instance.on('video:pause',()=>session?.phase('paused'));
@@ -194,6 +204,9 @@
    function syncRate(){
     if(instance.isDestroy)return;
     const video=instance.video;
+    // Decoder creation and the initial resume seek can discard an early rate even
+    // when the DOM still reports it. Commit only after a frame and completed seek.
+    if(video.readyState<2||video.seeking)return;
     // A media reload resets playbackRate to defaultPlaybackRate, including HLS recovery.
     if(video.defaultPlaybackRate!==preferredRate)video.defaultPlaybackRate=preferredRate;
     const target=holding?2:preferredRate;
@@ -209,7 +222,7 @@
    }
    function updateRate(value){preferredRate=normalizeRate(value);save('playbackRate',preferredRate);syncRate();}
    // Position restoration is one-shot; speed must survive every media lifecycle/recovery.
-   for(const event of ['video:loadstart','video:loadedmetadata','video:canplay','video:play','video:playing','video:ratechange'])instance.on(event,syncRate);
+   for(const event of ['video:loadstart','video:loadedmetadata','video:loadeddata','video:seeked','video:canplay','video:play','video:playing','video:ratechange'])instance.on(event,syncRate);
    panel.addEventListener('click',event=>{event.stopPropagation();instance.setting.show=false;const button=event.target.closest('[data-rate]');if(button)updateRate(button.dataset.rate);const step=event.target.closest('[data-step]');if(step)updateRate(Number(slider.value)+Number(step.dataset.step));});
    // Safari may blur details before a non-focusable mouse button dispatches its click.
    panel.addEventListener('mousedown',event=>{if(event.target.closest('[data-rate],[data-step]'))event.preventDefault();});

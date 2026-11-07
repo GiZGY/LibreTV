@@ -57,6 +57,7 @@ export async function sampleRealPlayback(page,{milliseconds=10000,rate=1.75,paus
  if(identity.episode!==undefined)expect(await page.evaluate(()=>window.LivePlayback?.current()?.episode)).toBe(identity.episode);
  if(identity.episodeKey!==undefined)expect(await page.evaluate(()=>window.LivePlayback?.current()?.episodeKey)).toBe(identity.episodeKey);
  if(identity.lineKey!==undefined)expect(await page.evaluate(()=>window.LivePlayback?.current()?.lineKey)).toBe(identity.lineKey);
+ if(Math.abs(sample.ratio-rate)>=.1)console.log('Playback-rate mismatch:',JSON.stringify(sample));
  expect(sample.elapsedMs).toBeGreaterThanOrEqual(milliseconds);expect(sample.ratio).toBeGreaterThan(rate-.1);expect(sample.ratio).toBeLessThan(rate+.1);expect(sample.decodedFrames).toBeGreaterThanOrEqual(Math.max(1,Math.floor(milliseconds/1000)));expect(sample.events).toEqual({waiting:0,pause:0,seeking:0,error:0,ended:0});expect(sample.paused).toBe(false);expect(sample.seeking).toBe(false);expect(sample.ended).toBe(false);expect(sample.error).toBe(null);expect(sample.connected).toBe(true);expect(sample.rate).toBe(rate);expect(sample.defaultRate).toBe(rate);expect(sample.muted).toBe(true);
  return sample;
 }

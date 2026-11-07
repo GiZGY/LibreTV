@@ -3,11 +3,11 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
 const source=readFileSync(new URL('../player-preview.js',import.meta.url),'utf8');
-function player(saved=1.75){
+function player(saved=1.75,media={}){
  const events={},writes=[],nodes=new Map(),listeners={},timers=new Map();let timerId=0;
  const slider={value:'1',setAttribute(){},style:{setProperty(){}}};
  const panel={querySelector:selector=>{if(!nodes.has(selector))nodes.set(selector,{});return nodes.get(selector);},querySelectorAll:()=>[]};
- const video={playbackRate:1,defaultPlaybackRate:1};
+ const video={playbackRate:1,defaultPlaybackRate:1,readyState:4,seeking:false,...media};
  const instance={video,isDestroy:false,duration:120,currentTime:0,on:(event,fn)=>(events[event]??=[]).push(fn),get playbackRate(){return video.playbackRate;},set playbackRate(value){video.playbackRate=value;}};
  const context={instance,panel,slider,load:()=>saved,save:(...args)=>writes.push(args),document:{querySelector:()=>null,addEventListener:(n,fn)=>listeners[n]=fn,removeEventListener:n=>delete listeners[n]},window:{addEventListener:(n,fn)=>listeners[n]=fn,removeEventListener:n=>delete listeners[n]},clearTimeout:id=>timers.delete(id),setTimeout:fn=>{timers.set(++timerId,fn);return timerId;}};
  vm.createContext(context);
@@ -57,4 +57,13 @@ test('blur restores the latest selected preference and disposal removes keyboard
 test('invalid stored speed uses normal speed and values stay on supported steps',()=>{
  for(const value of [null,0,-1,'bad',Infinity])assert.equal(player(value).instance.playbackRate,1);
  const p=player();p.updateRate(9);assert.equal(p.instance.playbackRate,2);p.updateRate(.1);assert.equal(p.instance.playbackRate,.5);p.updateRate(1.36);assert.equal(p.instance.playbackRate,1.35);
+});
+
+test('a cold decoder and an unfinished resume seek do not consume the preferred-rate assignment',()=>{
+ const p=player(1.75,{readyState:0});
+ assert.equal(p.instance.playbackRate,1);assert.equal(p.instance.video.defaultPlaybackRate,1);
+ p.instance.video.readyState=1;p.emit('video:loadedmetadata');assert.equal(p.instance.playbackRate,1);
+ p.instance.video.readyState=3;p.instance.video.seeking=true;p.emit('video:canplay');assert.equal(p.instance.playbackRate,1);
+ p.instance.video.seeking=false;p.emit('video:seeked');assert.equal(p.instance.playbackRate,1.75);assert.equal(p.label(),'1.75×');
+ assert.equal(p.writes.length,0);
 });
