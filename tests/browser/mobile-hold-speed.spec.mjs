@@ -18,20 +18,25 @@ test.beforeEach(async({page})=>{
  await expectPlaybackProgress(page,{rate:preferred});
 });
 
-// Chromium exercises browser touch input. WebKit has no CDP touch injection;
-// use pointer events with a real decoder there, and label the evidence accordingly.
+// Chromium injects native touch; macOS WebKit exercises the same TouchEvent
+// path and real decoder, but cannot expose the iOS system magnifier.
 async function gesture(page,browserName,target=page.locator('video')){
  await target.scrollIntoViewIfNeeded();
  const {x,y,width,height}=await target.boundingBox();
  const origin={x:Math.round(x+width*.5),y:Math.round(y+height*.47)};
  const session=browserName==='chromium'?await page.context().newCDPSession(page):null;
- const dispatch=async(type,dx=0,second=false)=>{
-  const point={x:origin.x+dx,y:origin.y,id:1};
-  if(session)return session.send('Input.dispatchTouchEvent',{type,touchPoints:/End|Cancel/.test(type)?[]:second?[point,{x:point.x+24,y:point.y,id:2}]:[point]});
-  const pointerType={touchStart:'pointerdown',touchMove:'pointermove',touchEnd:'pointerup',touchCancel:'pointercancel'}[type];
-  await target.dispatchEvent(pointerType,{pointerType:'touch',pointerId:second?2:1,isPrimary:!second,clientX:point.x,clientY:point.y,bubbles:true,cancelable:true});
+ const dispatch=async(type,dx=0,dy=0,second=false)=>{
+  const point={x:origin.x+dx,y:origin.y+dy,id:1};
+  const ended=/End|Cancel/.test(type),extra={x:point.x+24,y:point.y,id:2};
+  if(session)return session.send('Input.dispatchTouchEvent',{type,touchPoints:ended?[]:second?[point,extra]:[point]});
+  return target.evaluate((node,{type,point,extra,ended,second})=>{
+   const touch=p=>({identifier:p.id,clientX:p.x,pageX:p.x+scrollX,clientY:p.y,pageY:p.y+scrollY,target:node});
+   const event=new Event(type.toLowerCase(),{bubbles:true,cancelable:true});
+   Object.defineProperties(event,{touches:{value:ended?[]:second?[touch(point),touch(extra)]:[touch(point)]},changedTouches:{value:second?[touch(extra)]:[touch(point)]}});
+   return node.dispatchEvent(event);
+  },{type,point,extra,ended,second});
  };
- return {origin,down:()=>dispatch('touchStart'),second:()=>dispatch('touchStart',0,true),move:dx=>dispatch('touchMove',dx),up:()=>dispatch('touchEnd'),cancel:()=>dispatch('touchCancel'),detach:()=>session?.detach()};
+ return {origin,down:()=>dispatch('touchStart'),second:()=>dispatch('touchStart',0,0,true),move:(dx,dy)=>dispatch('touchMove',dx,dy),up:()=>dispatch('touchEnd'),cancel:()=>dispatch('touchCancel'),detach:()=>session?.detach()};
 }
 
 async function baseSpeed(page){
@@ -43,33 +48,47 @@ async function baseSpeed(page){
 test('holding the picture accelerates decoded video, release does not also trigger a tap',async({page,browserName})=>{
  const video=page.locator('video'),touch=await gesture(page,browserName);
  expect(await video.evaluate((v,{x,y})=>document.elementFromPoint(x,y)===v,touch.origin)).toBe(true);
- await video.evaluate(v=>{window.__surfaceTaps=0;v.addEventListener('click',()=>window.__surfaceTaps++);});
+ await video.evaluate(v=>{window.__surfaceTaps=0;v.addEventListener('click',()=>window.__surfaceTaps++);window.__surfaceStarts=[];window.addEventListener('touchstart',e=>{if(e.target===v)window.__surfaceStarts.push(e);},{capture:true,passive:true});});
  await touch.down();await touch.up();await baseSpeed(page);
- if(browserName==='chromium')await expect.poll(()=>page.evaluate(()=>window.__surfaceTaps)).toBe(1);
+ await expect.poll(()=>page.evaluate(()=>window.__surfaceTaps)).toBe(1);
  const taps=await page.evaluate(()=>window.__surfaceTaps);
  await expect(video).toHaveJSProperty('paused',false);
  const notice=page.locator('.art-notice-inner');const initialNotice=await notice.textContent();
  await touch.down();
+ expect(await page.evaluate(()=>window.__surfaceStarts.at(-1)?.defaultPrevented)).toBe(true);
+ expect(await video.evaluate(v=>getComputedStyle(v).userSelect)).toBe('none');
  await expect(video).toHaveJSProperty('playbackRate',2);
  await expect(video).toHaveJSProperty('defaultPlaybackRate',preferred);
  expect(await notice.textContent()).toBe(initialNotice);
+ await video.evaluate(v=>{window.__holdSeeks=0;v.addEventListener('seeking',()=>window.__holdSeeks++);});
+ const progress=page.locator('.art-progress');
+ await page.evaluate(()=>Artplayer.instances[0].controls.show=true);
+ const track=await progress.boundingBox();
+ // Cross the scrubber with the same finger, then move back across the picture.
+ await touch.move(75,track.y+track.height/2-touch.origin.y);await touch.move(-60,0);
+ await expect(video).toHaveJSProperty('playbackRate',2);
+ expect(await page.evaluate(()=>window.__holdSeeks)).toBe(0);
  const sample=await video.evaluate(async v=>{
   let frames=0,frame;const tick=()=>{frames++;frame=v.requestVideoFrameCallback(tick);};frame=v.requestVideoFrameCallback(tick);
   const time=v.currentTime,wall=performance.now();await new Promise(r=>setTimeout(r,1300));v.cancelVideoFrameCallback(frame);
   return {rate:(v.currentTime-time)*1000/(performance.now()-wall),frames,muted:v.muted,paused:v.paused};
  });
  console.log(JSON.stringify({browserName,...sample}));expect(sample.rate).toBeGreaterThan(1.9);expect(sample.rate).toBeLessThan(2.1);expect(sample.frames).toBeGreaterThan(5);expect(sample.muted).toBe(true);expect(sample.paused).toBe(false);
- await touch.up();
+ await touch.move(60,track.y+track.height/2-touch.origin.y);await touch.up();
  if(browserName==='webkit')expect(await video.evaluate(v=>v.dispatchEvent(new PointerEvent('click',{bubbles:true,cancelable:true,pointerType:'touch',detail:1})))).toBe(false);
  await baseSpeed(page);await expect(video).toHaveJSProperty('paused',false);expect([initialNotice,'']).toContain(await notice.textContent());
  expect(await page.evaluate(()=>window.__surfaceTaps)).toBe(taps);
+ expect(await page.evaluate(()=>window.__holdSeeks)).toBe(0);
  await touch.detach();
  await sampleRealPlayback(page,{milliseconds:1300,rate:preferred});
 });
 
 test('controls, swipes, multiple fingers, cancel and paused video do not latch a boost',async({page,browserName})=>{
  const video=page.locator('video'),touch=await gesture(page,browserName);
- await touch.down();await touch.move(28);await page.waitForTimeout(500);await baseSpeed(page);await touch.cancel();
+ const before=await video.evaluate(v=>v.currentTime);
+ await touch.down();await touch.move(90,0);
+ await expect.poll(()=>video.evaluate(v=>v.currentTime)).toBeGreaterThan(before+4);
+ await page.waitForTimeout(500);await baseSpeed(page);await touch.up();
  await touch.down();await touch.second();await page.waitForTimeout(500);await baseSpeed(page);await touch.cancel();
  await touch.down();await expect(page.locator('video')).toHaveJSProperty('playbackRate',2);await touch.cancel();await baseSpeed(page);
  await touch.down();await expect(video).toHaveJSProperty('playbackRate',2);await video.evaluate(v=>v.pause());await baseSpeed(page);await touch.up();
@@ -78,6 +97,11 @@ test('controls, swipes, multiple fingers, cancel and paused video do not latch a
  const controls=page.locator('.fine-speed summary');await page.locator('video').dispatchEvent('click');
  const controlTouch=await gesture(page,browserName,controls);
  await controlTouch.down();await page.waitForTimeout(500);await baseSpeed(page);await controlTouch.cancel();await controlTouch.detach();
+ await page.evaluate(()=>Artplayer.instances[0].controls.show=true);
+ const trackTouch=await gesture(page,browserName,page.locator('.art-progress'));
+ await trackTouch.down();await trackTouch.move(65,0);await trackTouch.up();
+ await expect.poll(()=>video.evaluate(v=>v.currentTime/v.duration)).toBeGreaterThan(.57);
+ await baseSpeed(page);await trackTouch.detach();
 });
 
 test('web fullscreen supports hold and an episode switch clears the old gesture',async({page,browserName})=>{
