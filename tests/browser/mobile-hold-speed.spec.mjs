@@ -25,6 +25,7 @@ async function gesture(page,browserName,target=page.locator('video')){
  const {x,y,width,height}=await target.boundingBox();
  const origin={x:Math.round(x+width*.5),y:Math.round(y+height*.47)};
  const session=browserName==='chromium'?await page.context().newCDPSession(page):null;
+ let position={dx:0,dy:0};
  const dispatch=async(type,dx=0,dy=0,second=false)=>{
   const point={x:origin.x+dx,y:origin.y+dy,id:1};
   const ended=/End|Cancel/.test(type),extra={x:point.x+24,y:point.y,id:2};
@@ -36,7 +37,9 @@ async function gesture(page,browserName,target=page.locator('video')){
    return node.dispatchEvent(event);
   },{type,point,extra,ended,second});
  };
- return {origin,down:()=>dispatch('touchStart'),second:()=>dispatch('touchStart',0,0,true),move:(dx,dy)=>dispatch('touchMove',dx,dy),up:()=>dispatch('touchEnd'),cancel:()=>dispatch('touchCancel'),detach:()=>session?.detach()};
+ const down=(dx=0,dy=0)=>{position={dx,dy};return dispatch('touchStart',dx,dy);};
+ const up=()=>dispatch('touchEnd',position.dx,position.dy);
+ return {origin,down,second:()=>dispatch('touchStart',position.dx,position.dy,true),move:(dx,dy=0)=>{position={dx,dy};return dispatch('touchMove',dx,dy);},up,tap:async dx=>{await down(dx);await up();},cancel:()=>dispatch('touchCancel',position.dx,position.dy),detach:()=>session?.detach()};
 }
 
 async function baseSpeed(page){
@@ -48,7 +51,7 @@ async function baseSpeed(page){
 test('holding the picture accelerates decoded video, release does not also trigger a tap',async({page,browserName})=>{
  const video=page.locator('video'),touch=await gesture(page,browserName);
  expect(await video.evaluate((v,{x,y})=>document.elementFromPoint(x,y)===v,touch.origin)).toBe(true);
- await video.evaluate(v=>{window.__surfaceTaps=0;v.addEventListener('click',()=>window.__surfaceTaps++);window.__surfaceStarts=[];window.addEventListener('touchstart',e=>{if(e.target===v)window.__surfaceStarts.push(e);},{capture:true,passive:true});});
+ await video.evaluate(v=>{window.__surfaceTaps=0;Artplayer.instances[0].on('click',()=>window.__surfaceTaps++);window.__surfaceStarts=[];window.addEventListener('touchstart',e=>{if(e.target===v)window.__surfaceStarts.push(e);},{capture:true,passive:true});});
  await touch.down();await touch.up();await baseSpeed(page);
  await expect.poll(()=>page.evaluate(()=>window.__surfaceTaps)).toBe(1);
  const taps=await page.evaluate(()=>window.__surfaceTaps);
@@ -85,10 +88,10 @@ test('holding the picture accelerates decoded video, release does not also trigg
 
 test('controls, swipes, multiple fingers, cancel and paused video do not latch a boost',async({page,browserName})=>{
  const video=page.locator('video'),touch=await gesture(page,browserName);
- const before=await video.evaluate(v=>v.currentTime);
+ await video.evaluate(v=>{window.__pictureSeeks=0;v.addEventListener('seeking',()=>window.__pictureSeeks++);});
  await touch.down();await touch.move(90,0);
- await expect.poll(()=>video.evaluate(v=>v.currentTime)).toBeGreaterThan(before+4);
  await page.waitForTimeout(500);await baseSpeed(page);await touch.up();
+ expect(await page.evaluate(()=>window.__pictureSeeks)).toBe(0);
  await touch.down();await touch.second();await page.waitForTimeout(500);await baseSpeed(page);await touch.cancel();
  await touch.down();await expect(page.locator('video')).toHaveJSProperty('playbackRate',2);await touch.cancel();await baseSpeed(page);
  await touch.down();await expect(video).toHaveJSProperty('playbackRate',2);await video.evaluate(v=>v.pause());await baseSpeed(page);await touch.up();
@@ -114,4 +117,40 @@ test('web fullscreen supports hold and an episode switch clears the old gesture'
  await touch.up();await touch.detach();await baseSpeed(page);
  await expect(page.locator('.art-video-player')).toHaveClass(/art-fullscreen-web/);
  const next=await gesture(page,browserName);await next.down();await expect(page.locator('video')).toHaveJSProperty('playbackRate',2);await next.up();await baseSpeed(page);await next.detach();
+});
+
+test('left and right double taps seek 15 seconds, clamp to the video, and do not pause',async({page,browserName})=>{
+ const video=page.locator('video'),touch=await gesture(page,browserName);
+ const jump=(side)=>touch.tap(side).then(()=>touch.tap(side));
+ const seekTo=async time=>{
+  await video.evaluate((v,time)=>v.currentTime=time,time);
+  await expect.poll(()=>video.evaluate(v=>v.seeking)).toBe(false);
+ };
+ await seekTo(25);
+ await video.evaluate(v=>{window.__seekDelta=null;let before=v.currentTime;window.addEventListener('touchend',e=>{if(e.target===v)before=v.currentTime;},true);v.addEventListener('seeking',()=>window.__seekDelta=v.currentTime-before);});
+ await jump(-92);
+ await expect.poll(()=>page.evaluate(()=>window.__seekDelta)).toBeCloseTo(-15,1);
+ await expect(video).toHaveJSProperty('paused',false);
+ await expect.poll(()=>video.evaluate(v=>v.seeking)).toBe(false);
+ await jump(92);
+ await expect.poll(()=>page.evaluate(()=>window.__seekDelta)).toBeCloseTo(15,1);
+ await expect(video).toHaveJSProperty('paused',false);
+ await video.evaluate(v=>v.pause());
+ await seekTo(2);await jump(-92);
+ await expect(video).toHaveJSProperty('currentTime',0);
+ await expect.poll(()=>video.evaluate(v=>v.seeking)).toBe(false);
+ await seekTo(55);await jump(92);
+ const end=await video.evaluate(v=>v.duration);
+ await expect(video).toHaveJSProperty('currentTime',end);
+ await baseSpeed(page);await touch.detach();
+});
+
+test('slow or opposite-side taps are not seek gestures',async({page,browserName})=>{
+ const video=page.locator('video'),touch=await gesture(page,browserName);
+ await video.evaluate(v=>{window.__gestureCounts={seek:0,tap:0};v.addEventListener('seeking',()=>window.__gestureCounts.seek++);Artplayer.instances[0].on('click',()=>window.__gestureCounts.tap++);});
+ await touch.tap(-90);await expect.poll(()=>page.evaluate(()=>window.__gestureCounts.tap)).toBe(1);
+ await touch.tap(-90);await expect.poll(()=>page.evaluate(()=>window.__gestureCounts.tap)).toBe(2);
+ await touch.tap(-90);await touch.tap(90);
+ await expect.poll(()=>page.evaluate(()=>window.__gestureCounts.tap)).toBe(3);
+ expect(await page.evaluate(()=>window.__gestureCounts.seek)).toBe(0);await expect(video).toHaveJSProperty('paused',false);await touch.detach();
 });
