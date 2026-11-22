@@ -100,11 +100,6 @@ test('controls, swipes, multiple fingers, cancel and paused video do not latch a
  const controls=page.locator('.fine-speed summary');await page.locator('video').dispatchEvent('click');
  const controlTouch=await gesture(page,browserName,controls);
  await controlTouch.down();await page.waitForTimeout(500);await baseSpeed(page);await controlTouch.cancel();await controlTouch.detach();
- await page.evaluate(()=>Artplayer.instances[0].controls.show=true);
- const trackTouch=await gesture(page,browserName,page.locator('.art-progress'));
- await trackTouch.down();await trackTouch.move(65,0);await trackTouch.up();
- await expect.poll(()=>video.evaluate(v=>v.currentTime/v.duration)).toBeGreaterThan(.57);
- await baseSpeed(page);await trackTouch.detach();
 });
 
 test('web fullscreen supports hold and an episode switch clears the old gesture',async({page,browserName})=>{
@@ -141,7 +136,9 @@ test('left and right double taps seek 15 seconds, clamp to the video, and do not
  await expect.poll(()=>video.evaluate(v=>v.seeking)).toBe(false);
  await seekTo(55);await jump(92);
  const end=await video.evaluate(v=>v.duration);
- await expect(video).toHaveJSProperty('currentTime',end);
+ await expect.poll(()=>video.evaluate(v=>v.currentTime)).toBeCloseTo(end-.25,1);
+ await expect(video).toHaveJSProperty('paused',true);
+ expect(await page.evaluate(()=>LivePlayback.current()?.episode)).toBe(1);
  await baseSpeed(page);await touch.detach();
 });
 
@@ -153,4 +150,55 @@ test('slow or opposite-side taps are not seek gestures',async({page,browserName}
  await touch.tap(-90);await touch.tap(90);
  await expect.poll(()=>page.evaluate(()=>window.__gestureCounts.tap)).toBe(3);
  expect(await page.evaluate(()=>window.__gestureCounts.seek)).toBe(0);await expect(video).toHaveJSProperty('paused',false);await touch.detach();
+});
+
+async function pausedAt(page,time){
+ const video=page.locator('video');
+ await video.evaluate((v,time)=>{v.pause();v.currentTime=time;Artplayer.instances[0].controls.show=true;},time);
+ await expect.poll(()=>video.evaluate(v=>v.seeking)).toBe(false);
+ await expect(video).toHaveJSProperty('currentTime',time);
+ return video;
+}
+
+test('dragging the current-position thumb still seeks immediately across the full timeline',async({page,browserName})=>{
+ const video=await pausedAt(page,20);
+ const track=page.locator('.art-progress'),thumb=track.locator('.art-progress-indicator');
+ const touch=await gesture(page,browserName,track),box=await thumb.boundingBox();
+ const start=box.x+box.width/2-touch.origin.x;
+ await touch.down(start);await touch.move(start+85);
+ await expect.poll(()=>video.evaluate(v=>v.currentTime)).toBeGreaterThan(29);
+ await touch.up();await baseSpeed(page);await touch.detach();
+});
+
+test('holding the track away from the thumb previews fine shifts and commits a single seek',async({page,browserName})=>{
+ const video=await pausedAt(page,20),track=page.locator('.art-progress');
+ const touch=await gesture(page,browserName,track),played=track.locator('.art-progress-played');
+ const marker=()=>played.evaluate(el=>parseFloat(el.style.width));
+ await video.evaluate(v=>{window.__trackSeeks=0;v.addEventListener('seeking',()=>window.__trackSeeks++);});
+ await touch.down();await page.waitForTimeout(450);await touch.move(-30);
+ await expect.poll(marker).toBeCloseTo(100*17/60,2);
+ await expect(video).toHaveJSProperty('currentTime',20);
+ await touch.move(60);
+ await expect.poll(marker).toBeCloseTo(100*26/60,2);
+ expect(await page.evaluate(()=>window.__trackSeeks)).toBe(0);
+ await touch.up();await expect(video).toHaveJSProperty('currentTime',26);
+ await expect.poll(()=>video.evaluate(v=>v.seeking)).toBe(false);
+ expect(await page.evaluate(()=>window.__trackSeeks)).toBe(1);
+ // Releasing a stationary hold and cancelling a moved one must not seek.
+ await touch.down(-60);await page.waitForTimeout(450);await touch.up();
+ await expect(video).toHaveJSProperty('currentTime',26);
+ await touch.down(70);await page.waitForTimeout(450);await touch.move(20);await touch.cancel();
+ await expect.poll(marker).toBeCloseTo(100*26/60,2);
+ await expect(video).toHaveJSProperty('currentTime',26);
+ expect(await page.evaluate(()=>window.__trackSeeks)).toBe(1);
+ await baseSpeed(page);await touch.detach();
+});
+
+test('short tapping the progress track still jumps to the tapped position',async({page,browserName})=>{
+ const video=await pausedAt(page,20),track=page.locator('.art-progress');
+ const touch=await gesture(page,browserName,track);
+ const target=await track.evaluate((t,x)=>{const r=t.getBoundingClientRect();return (x-r.left)/r.width*60;},touch.origin.x+60);
+ await touch.tap(60);
+ await expect.poll(()=>video.evaluate(v=>v.currentTime)).toBeCloseTo(target,1);
+ await baseSpeed(page);await touch.detach();
 });
