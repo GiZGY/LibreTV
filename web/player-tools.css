@@ -163,3 +163,6 @@
  #watch-player .art-notice-show .art-controls .art-control-time{visibility:hidden}
  #watch-player .art-notice[data-player-message] .art-notice-inner{padding:0 4px;text-shadow:0 1px 3px #000}
 }
+
+/* Long-press belongs to the video, not to the progress bar or player controls. */
+#watch-player .art-video{-webkit-touch-callout:none}

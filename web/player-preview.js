@@ -208,7 +208,8 @@
    const format=rate=>Number(rate.toFixed(2))+'×';
    const normalizeRate=value=>{const rate=Number(value);return Number.isFinite(rate)&&rate>0?Math.max(.5,Math.min(2,Math.round(rate*20)/20)):1;};
    let preferredRate=normalizeRate(load('playbackRate',1));
-   let holdTimer=null,holding=false;
+   const holdDelay=400,boostRate=2;
+   let holdTimer=null,holding=false,touchHold=null,quietRestore=false;
    function syncRate(){
     if(instance.isDestroy)return;
     const video=instance.video;
@@ -217,9 +218,13 @@
     if(video.readyState<2||video.seeking)return;
     // A media reload resets playbackRate to defaultPlaybackRate, including HLS recovery.
     if(video.defaultPlaybackRate!==preferredRate)video.defaultPlaybackRate=preferredRate;
-    const target=holding?2:preferredRate;
-    if(video.playbackRate!==target)instance.playbackRate=target;
-    restoreSound();
+    const target=holding?boostRate:preferredRate;
+    if(video.playbackRate!==target){
+     // Artplayer's setter also opens a notice. Touch holds change only the media rate.
+     if(quietRestore||touchHold)video.playbackRate=target;
+     else instance.playbackRate=target;
+    }
+    quietRestore=false;restoreSound();
     const rate=video.playbackRate;
     if(typeof session!=='undefined')session?.rates(preferredRate,target,rate,video.defaultPlaybackRate);
     slider.value=String(rate);slider.setAttribute('aria-valuetext',format(rate));
@@ -312,12 +317,53 @@
     if(event.key!=='ArrowRight'||event.altKey||event.ctrlKey||event.metaKey||/INPUT|TEXTAREA|SELECT/.test(event.target.tagName)||instance.setting?.show||document.querySelector('dialog[open]')||document.querySelector('.player-tool-panel:not([hidden])'))return;
     event.preventDefault();event.stopImmediatePropagation();
     if(event.repeat||holdTimer)return;
-    holdTimer=setTimeout(()=>{holding=true;syncRate();},400);
+    holdTimer=setTimeout(()=>{holding=true;syncRate();},holdDelay);
    }
-   function releaseHold(event){if(event.key==='ArrowRight'&&holdTimer){event.preventDefault();event.stopImmediatePropagation();endHold(true);}}
-   const blurHold=()=>endHold(false);
+   function releaseHold(event){if(event.key==='ArrowRight'&&holdTimer&&!touchHold){event.preventDefault();event.stopImmediatePropagation();endHold(true);}}
+   const blurHold=()=>{if(!touchHold)endHold();};
    document.addEventListener('keydown',startHold,true);document.addEventListener('keyup',releaseHold,true);window.addEventListener('blur',blurHold);
-   instance.on('destroy',()=>{endHold();document.removeEventListener('keydown',startHold,true);document.removeEventListener('keyup',releaseHold,true);window.removeEventListener('blur',blurHold);});
+   instance.on('destroy',()=>{blurHold();document.removeEventListener('keydown',startHold,true);document.removeEventListener('keyup',releaseHold,true);window.removeEventListener('blur',blurHold);});
+   function bindTouchHold(){
+    const video=instance.video,bindings=new AbortController(),capture={capture:true,signal:bindings.signal};
+    let suppressTap=false;
+    const canBoost=()=>!document.hidden&&!instance.isDestroy&&video.isConnected&&!video.paused&&!video.ended&&!video.seeking&&video.readyState>=2&&!instance.isLock&&!instance.setting?.show&&!panel.open&&!document.querySelector('dialog[open],.player-tool-panel:not([hidden])');
+    function cancel(){
+     if(!touchHold)return;
+     suppressTap=touchHold.active;
+     if(touchHold.active)quietRestore=true;
+     touchHold=null;endHold();
+    }
+    function press(event){
+     if(touchHold){if(event.pointerId!==touchHold.id)cancel();return;}
+     suppressTap=false;
+     if(event.pointerType!=='touch'||!event.isPrimary||event.target!==video||holdTimer||!canBoost())return;
+     const pointer={id:event.pointerId,x:event.clientX,y:event.clientY,active:false};
+     touchHold=pointer;
+     holdTimer=setTimeout(()=>{
+      if(!canBoost()){cancel();return;}
+      pointer.active=true;holding=true;syncRate();
+     },holdDelay);
+    }
+    const release=event=>{if(touchHold?.id===event.pointerId)cancel();};
+    const move=event=>{
+     if(touchHold?.id===event.pointerId&&Math.hypot(event.clientX-touchHold.x,event.clientY-touchHold.y)>10)cancel();
+    };
+    const suppress=event=>{event.preventDefault();event.stopImmediatePropagation();};
+    document.addEventListener('pointerdown',press,capture);
+    document.addEventListener('pointermove',move,{...capture,passive:true});
+    for(const type of ['pointerup','pointercancel','lostpointercapture'])document.addEventListener(type,release,capture);
+    playerElement.addEventListener('click',event=>{
+     // A completed hold must not also become a tap; a fresh pointerdown clears this flag.
+     if(suppressTap&&event.detail>0&&event.pointerType!=='mouse'){suppressTap=false;suppress(event);}
+    },capture);
+    playerElement.addEventListener('contextmenu',event=>{if(event.target===video&&(touchHold||suppressTap))suppress(event);},capture);
+    for(const type of ['visibilitychange','fullscreenchange','webkitfullscreenchange'])document.addEventListener(type,cancel,capture);
+    for(const type of ['blur','pagehide','hashchange'])window.addEventListener(type,cancel,capture);
+    for(const type of ['pause','ended','seeking','emptied','webkitbeginfullscreen','webkitendfullscreen','enterpictureinpicture'])video.addEventListener(type,cancel,capture);
+    for(const type of ['fullscreenWeb','setting','lock'])instance.on(type,cancel);
+    instance.on('destroy',()=>{cancel();bindings.abort();});
+   }
+   bindTouchHold();
    let advancing=false;
    const resetAdvance=()=>{advancing=false;instance.notice.show='切集失败，请重试';};
    document.addEventListener('playback-error',resetAdvance);

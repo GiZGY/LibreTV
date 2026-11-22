@@ -14,7 +14,7 @@ function player(saved=1.75,media={}){
  const start=source.indexOf('   const format=rate=>');
  vm.runInContext(source.slice(start,source.indexOf("   panel.addEventListener('click'",start)),context);
  const hold=source.indexOf('   function endHold(');
- vm.runInContext(source.slice(hold,source.indexOf('   let advancing=false;',hold)),context);
+ vm.runInContext(source.slice(hold,source.indexOf('   function bindTouchHold(){',hold)),context);
  context.syncRate();
  return{...context,events,writes,nodes,listeners,timers,emit:name=>events[name]?.forEach(fn=>fn()),label:()=>nodes.get('summary').textContent};
 }
