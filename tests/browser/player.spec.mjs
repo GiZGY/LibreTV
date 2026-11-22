@@ -54,3 +54,11 @@ test('rapid next requests and detached media events cannot advance or overwrite 
  await expect(page.locator('video')).toHaveJSProperty('playbackRate',1.75);
  await page.locator('#watch-player .player-next-episode').click();await nextReady(page,3);await page.locator('#watch-player .player-next-episode').click();await nextReady(page,4);
 });
+
+test('desktop mouse double click still enters fullscreen instead of seeking',async({page})=>{
+ await openPlayer(page);const video=page.locator('video');
+ await video.evaluate(async v=>{await v.play();window.__desktopSeeks=0;v.addEventListener('seeking',()=>window.__desktopSeeks++);});
+ await video.dblclick({position:{x:70,y:70}});
+ await expect.poll(()=>page.evaluate(()=>document.fullscreenElement?.id)).toBe('watch-player');
+ expect(await page.evaluate(()=>window.__desktopSeeks)).toBe(0);
+});

@@ -165,4 +165,4 @@
 }
 
 /* Long-press belongs to the video, not to the progress bar or player controls. */
-#watch-player .art-video{-webkit-touch-callout:none}
+@media(any-pointer:coarse){#watch-player :is(.art-video,.art-progress,.art-subtitle,.player-local-subtitle,.player-tool-head){-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}}

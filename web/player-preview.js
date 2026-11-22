@@ -316,54 +316,128 @@
    function startHold(event){
     if(event.key!=='ArrowRight'||event.altKey||event.ctrlKey||event.metaKey||/INPUT|TEXTAREA|SELECT/.test(event.target.tagName)||instance.setting?.show||document.querySelector('dialog[open]')||document.querySelector('.player-tool-panel:not([hidden])'))return;
     event.preventDefault();event.stopImmediatePropagation();
-    if(event.repeat||holdTimer)return;
+    if(event.repeat||holdTimer||touchHold)return;
     holdTimer=setTimeout(()=>{holding=true;syncRate();},holdDelay);
    }
    function releaseHold(event){if(event.key==='ArrowRight'&&holdTimer&&!touchHold){event.preventDefault();event.stopImmediatePropagation();endHold(true);}}
    const blurHold=()=>{if(!touchHold)endHold();};
    document.addEventListener('keydown',startHold,true);document.addEventListener('keyup',releaseHold,true);window.addEventListener('blur',blurHold);
    instance.on('destroy',()=>{blurHold();document.removeEventListener('keydown',startHold,true);document.removeEventListener('keyup',releaseHold,true);window.removeEventListener('blur',blurHold);});
-   function bindTouchHold(){
+   function bindTouchGestures(){
     const video=instance.video,bindings=new AbortController(),capture={capture:true,signal:bindings.signal};
-    let suppressTap=false;
-    const canBoost=()=>!document.hidden&&!instance.isDestroy&&video.isConnected&&!video.paused&&!video.ended&&!video.seeking&&video.readyState>=2&&!instance.isLock&&!instance.setting?.show&&!panel.open&&!document.querySelector('dialog[open],.player-tool-panel:not([hidden])');
-    function cancel(){
-     if(!touchHold)return;
-     suppressTap=touchHold.active;
-     if(touchHold.active)quietRestore=true;
-     touchHold=null;endHold();
+    const activeTouch={...capture,passive:false},doubleTapMs=280,seekStep=15,finePixelsPerSecond=10;
+    const progress=instance.template.$progress,thumb=progress.querySelector('.art-progress-indicator');
+    let suppressTap=false,lastTap=null,tapTimer;
+    const ready=()=>!document.hidden&&!instance.isDestroy&&video.isConnected&&!video.ended&&!video.seeking&&video.readyState>=2&&!instance.isLock&&!instance.setting?.show&&!panel.open&&!document.querySelector('dialog[open],.player-tool-panel:not([hidden])');
+    function clearTap(){clearTimeout(tapTimer);lastTap=null;}
+    const seekable=()=>Number.isFinite(video.duration)&&video.duration>0;
+    // An exact-duration touch seek can emit ended even while paused in WebKit.
+    const clampTime=time=>Math.min(Math.max(0,video.duration-.25),Math.max(0,time));
+    const hasPreview=()=>Number.isFinite(touchHold?.preview);
+    function drawPreview(event){
+     if(hasPreview()&&seekable())instance.emit('setBar','played',touchHold.preview/video.duration,event);
+    }
+    function stopHold(){
+     if(!touchHold||touchHold.phase==='interrupted')return;
+     if(touchHold.phase==='boost')quietRestore=true;
+     if(hasPreview()){delete touchHold.preview;if(!instance.isDestroy&&seekable())instance.emit('setBar','played',video.currentTime/video.duration);}
+     touchHold.phase='interrupted';endHold();
+    }
+    function interrupt(){clearTap();stopHold();}
+    const suppress=event=>{event.preventDefault();event.stopImmediatePropagation();};
+    const changed=event=>touchHold&&Array.from(event.changedTouches).find(touch=>touch.identifier===touchHold.id);
+    const moved=touch=>Math.hypot(touch.clientX-touchHold.x,touch.clientY-touchHold.y)>10;
+    function tap(touch,event){
+     const {left,width}=video.getBoundingClientRect();
+     const side=touch.clientX<left+width/2?-1:1,now=performance.now();
+     const doubleTap=lastTap?.side===side&&now-lastTap.at<=doubleTapMs;
+     clearTap();
+     if(doubleTap&&seekable()){
+      video.currentTime=clampTime(video.currentTime+side*seekStep);
+      return;
+     }
+     lastTap={side,at:now};
+     tapTimer=setTimeout(()=>{
+      clearTap();
+      if(!touchHold&&ready())instance.emit('click',event);
+     },doubleTapMs);
     }
     function press(event){
-     if(touchHold){if(event.pointerId!==touchHold.id)cancel();return;}
+     // A new single-finger start also recovers if the OS dropped the previous end.
+     if(touchHold&&event.touches.length===1){interrupt();touchHold=null;}
+     if(touchHold){suppress(event);return;}
      suppressTap=false;
-     if(event.pointerType!=='touch'||!event.isPrimary||event.target!==video||holdTimer||!canBoost())return;
-     const pointer={id:event.pointerId,x:event.clientX,y:event.clientY,active:false};
-     touchHold=pointer;
-     holdTimer=setTimeout(()=>{
-      if(!canBoost()){cancel();return;}
-      pointer.active=true;holding=true;syncRate();
+     const onVideo=event.target===video,onTrack=progress.contains(event.target);
+     if(!onVideo)clearTap();
+     if(!onVideo&&!onTrack)return;
+     if(onVideo)event.stopImmediatePropagation();
+     if(event.touches.length!==1||holdTimer||!event.cancelable||!ready()){clearTap();return;}
+     const touch=event.touches[0];
+     if(onTrack){
+      if(!seekable())return;
+      const rect=thumb.getBoundingClientRect();
+      // Keep Artplayer's fast drag when the finger lands on the current-position thumb.
+      if(rect.width>0&&Math.abs(touch.clientX-(rect.left+rect.width/2))<=Math.max(10,rect.width/2)){event.preventDefault();suppressTap=true;return;}
+     }
+     // iOS can start its selection loupe before contextmenu or the hold timer.
+     suppress(event);suppressTap=true;clearTimeout(tapTimer);
+     touchHold={id:touch.identifier,x:touch.clientX,y:touch.clientY,track:onTrack,phase:'pending'};
+     if(onTrack||!video.paused)holdTimer=setTimeout(()=>{
+      if(!ready()){interrupt();return;}
+      clearTap();
+      if(onTrack){touchHold.phase='fine';touchHold.anchor=video.currentTime;return;}
+      if(video.paused){interrupt();return;}
+      touchHold.phase='boost';holding=true;syncRate();
      },holdDelay);
     }
-    const release=event=>{if(touchHold?.id===event.pointerId)cancel();};
-    const move=event=>{
-     if(touchHold?.id===event.pointerId&&Math.hypot(event.clientX-touchHold.x,event.clientY-touchHold.y)>10)cancel();
-    };
-    const suppress=event=>{event.preventDefault();event.stopImmediatePropagation();};
-    document.addEventListener('pointerdown',press,capture);
-    document.addEventListener('pointermove',move,{...capture,passive:true});
-    for(const type of ['pointerup','pointercancel','lostpointercapture'])document.addEventListener(type,release,capture);
-    playerElement.addEventListener('click',event=>{
-     // A completed hold must not also become a tap; a fresh pointerdown clears this flag.
-     if(suppressTap&&event.detail>0&&event.pointerType!=='mouse'){suppressTap=false;suppress(event);}
-    },capture);
-    playerElement.addEventListener('contextmenu',event=>{if(event.target===video&&(touchHold||suppressTap))suppress(event);},capture);
-    for(const type of ['visibilitychange','fullscreenchange','webkitfullscreenchange'])document.addEventListener(type,cancel,capture);
-    for(const type of ['blur','pagehide','hashchange'])window.addEventListener(type,cancel,capture);
-    for(const type of ['pause','ended','seeking','emptied','webkitbeginfullscreen','webkitendfullscreen','enterpictureinpicture'])video.addEventListener(type,cancel,capture);
-    for(const type of ['fullscreenWeb','setting','lock'])instance.on(type,cancel);
-    instance.on('destroy',()=>{cancel();bindings.abort();});
+    function move(event){
+     const touch=changed(event);
+     if(!touch){if(event.target===video)event.stopImmediatePropagation();return;}
+     if(touchHold.phase==='pending'&&moved(touch))interrupt();
+     if(touchHold.phase==='fine'&&seekable()){
+      const dx=touch.clientX-touchHold.x;
+      touchHold.preview=clampTime(touchHold.anchor+Math.round(dx*10/finePixelsPerSecond)/10);
+      drawPreview(event);
+     }
+     // The originating touch keeps its role even when it crosses the scrubber.
+     suppress(event);
+    }
+    function release(event){
+     const touch=changed(event);
+     if(!touch)return;
+     const shortTap=event.type==='touchend'&&touchHold.phase==='pending'&&!moved(touch)&&ready();
+     const track=touchHold.track;
+     let target;
+     if(track&&event.type==='touchend'&&ready()&&seekable()){
+      if(hasPreview())target=touchHold.preview;
+      else if(shortTap){
+       const {left,width}=progress.getBoundingClientRect();
+       if(width>0)target=clampTime((touch.clientX-left)/width*video.duration);
+      }
+     }
+     stopHold();touchHold=null;
+     event.preventDefault();
+     // Show a relative preview while dragging, then seek only once on release.
+     if(target!==undefined){video.currentTime=target;instance.emit('setBar','played',target/video.duration,event);}
+     else if(shortTap&&!track)tap(touch,event);
+     else clearTap();
+    }
+    instance.on('video:timeupdate',()=>drawPreview());
+    instance.on('control',visible=>{if(!visible&&touchHold?.track&&touchHold.phase!=='interrupted')instance.controls.show=true;});
+    playerElement.addEventListener('touchstart',press,activeTouch);
+    playerElement.addEventListener('touchmove',move,activeTouch);
+    for(const type of ['touchend','touchcancel'])playerElement.addEventListener(type,release,activeTouch);
+    document.addEventListener('touchstart',event=>{if(event.touches.length>1)interrupt();},{...capture,passive:true});
+    playerElement.addEventListener('pointerdown',event=>{if(event.pointerType!=='touch'){suppressTap=false;clearTap();}},capture);
+    playerElement.addEventListener('click',event=>{if(suppressTap&&event.detail>0)suppress(event);},capture);
+    playerElement.addEventListener('contextmenu',event=>{if((event.target===video||progress.contains(event.target))&&(touchHold||suppressTap))suppress(event);},capture);
+    for(const type of ['visibilitychange','fullscreenchange','webkitfullscreenchange'])document.addEventListener(type,interrupt,capture);
+    for(const type of ['blur','pagehide','hashchange'])window.addEventListener(type,interrupt,capture);
+    for(const type of ['pause','ended','seeking','emptied','webkitbeginfullscreen','webkitendfullscreen','enterpictureinpicture'])video.addEventListener(type,interrupt,capture);
+    for(const type of ['fullscreenWeb','setting','lock'])instance.on(type,interrupt);
+    instance.on('destroy',()=>{interrupt();touchHold=null;bindings.abort();});
    }
-   bindTouchHold();
+   bindTouchGestures();
    let advancing=false;
    const resetAdvance=()=>{advancing=false;instance.notice.show='切集失败，请重试';};
    document.addEventListener('playback-error',resetAdvance);
